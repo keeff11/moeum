@@ -3,7 +3,7 @@
 #
 # handle 블록만 쓴다. 위에서부터 첫 매치 하나만 실행되므로 순서가 곧 우선순위다.
 # respond 같은 디렉티브를 섞으면 Caddy 의 고정 순서 규칙에 걸려 의도와 다르게 평가된다.
-{$DOMAIN} {
+(app) {
 	encode gzip
 
 	# 운영에서는 스웨거를 꺼 두지만(application.yml), 경로 자체도 막아 한 겹 더 준다.
@@ -32,8 +32,14 @@
 	}
 }
 
-# www 로 들어와도 인증서 오류를 보지 않게 한다.
-# 쿠키와 Origin 검증(ALLOWED_ORIGINS)이 호스트 단위라 출처는 하나로 모은다.
-www.{$DOMAIN} {
-	redir https://{$DOMAIN}{uri} permanent
+# 운영 API. 프론트(www.moeum.store)와 등록 도메인이 같아야 세션 쿠키가 전송된다.
+# 다른 도메인이면 SameSite=Lax 가 cross-site 로 판정해 쿠키를 싣지 않는다.
+{$DOMAIN} {
+	import app
+}
+
+# 예전 도메인. 아직 살아 있어 인증서를 유지하되 API 로 쓰지는 않는다.
+# 여기로 들어와도 동작은 하지만 프론트와 cross-site 라 로그인은 되지 않는다.
+{$LEGACY_DOMAIN} {
+	import app
 }

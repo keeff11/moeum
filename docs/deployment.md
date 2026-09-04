@@ -27,8 +27,8 @@ GitHub Actions ── 테스트(Testcontainers)
 
 | | |
 |---|---|
-| 도메인 | `shop1.cloud` (가비아). prod 프로파일이 `cookie-secure: true` 라 **HTTPS 없이는 로그인이 안 된다** |
-| 카카오 | REST API 키, Redirect URI(`https://shop1.cloud/auth/kakao/callback`). Client Secret 은 선택 |
+| 도메인 | API 는 `api.moeum.store`. prod 프로파일이 `cookie-secure: true` 라 **HTTPS 없이는 로그인이 안 된다** |
+| 카카오 | REST API 키, Redirect URI(`https://api.moeum.store/auth/kakao/callback`). Client Secret 은 선택 |
 | 암호화 키 | `openssl rand -base64 32` 로 생성. 로컬 개발 키를 운영에 쓰지 않는다 |
 
 point3 의 운영 서버 IP 등록은 EIP 를 받은 **6번 이후**에 한다.
@@ -206,9 +206,10 @@ put MYSQL_ROOT_PASSWORD "$(openssl rand -base64 24)"
 put MYSQL_PASSWORD "$(openssl rand -base64 24)"
 put SELLER_CRYPTO_KEY "$(openssl rand -base64 32)"
 put KAKAO_CLIENT_ID "카카오-REST-API-키"
-put KAKAO_REDIRECT_URI "https://shop1.cloud/auth/kakao/callback"
-put ALLOWED_ORIGINS "https://shop1.cloud"
-put DOMAIN "shop1.cloud"
+put KAKAO_REDIRECT_URI "https://api.moeum.store/auth/kakao/callback"
+put ALLOWED_ORIGINS "https://www.moeum.store,https://moeum.store"
+put DOMAIN "api.moeum.store"
+put LEGACY_DOMAIN "shop1.cloud"
 ```
 
 `SELLER_CRYPTO_KEY` 는 **한 번 정하면 못 바꾼다.** 이 키로 암호화된 사업자번호·정산계좌를

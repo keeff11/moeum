@@ -300,3 +300,37 @@ Fargate 태스크는 IP 가 매번 바뀌어서 고정 IP 로 나가려면 NAT G
 **GitHub 에도 AWS 액세스 키를 두지 않는다.** OIDC 로 역할을 빌리고,
 신뢰 정책의 `sub` 조건이 이 저장소 main 브랜치로 범위를 좁힌다.
 포크에서 워크플로를 돌려도 역할을 못 가져간다.
+
+---
+
+## D-018. API 도메인을 프론트와 같은 등록 도메인 아래 둔다
+
+**결정:** API 를 `shop1.cloud` 가 아니라 **`api.moeum.store`** 로 서비스한다.
+프론트는 `www.moeum.store`(Vercel) 다.
+
+**이유:** 세션 쿠키가 `SameSite=Lax` 다. 브라우저는 등록 도메인(eTLD+1) 단위로
+같은 사이트인지 판단하는데, `moeum.store` 와 `shop1.cloud` 는 소유자가 같아도 남남이다.
+cross-site 로 판정되면 **쿠키를 저장하지도 전송하지도 않는다.** CORS 로는 못 고친다.
+
+`api.moeum.store` 와 `www.moeum.store` 는 등록 도메인이 같아 same-site 다.
+쿠키가 그대로 동작한다. 출처(origin)는 여전히 다르므로 CORS 설정은 필요하다.
+**same-site 와 same-origin 은 다른 개념이다.**
+
+**대안과 비교**
+
+| | A. `api.moeum.store` | B. `shop1.cloud` + `SameSite=None` |
+|---|---|---|
+| 코드 수정 | 없음 | 쿠키 정책 변경 |
+| Chrome | 동작 | 동작 (정책 강화 중) |
+| Safari · Firefox | 동작 | **서드파티 쿠키 차단으로 로그인 불가** |
+| CSRF 방어 | Lax + Origin 검증 2중 | Origin 검증 단일 |
+| 비용 | 0 (서브도메인) | 이미 보유 |
+
+B 는 사파리 사용자가 로그인을 못 한다. 결제 서비스에서 받아들일 수 없다.
+그리고 `SameSite=Lax` 자체가 CSRF 방어의 한 겹인데 그걸 걷어내게 된다.
+
+**따라서:** `shop1.cloud` 는 `LEGACY_DOMAIN` 으로 함께 서빙해 인증서는 유지하되,
+프론트 연동의 기준 주소는 `api.moeum.store` 하나로 한다.
+
+**주의:** Vercel 프리뷰 배포(`*.vercel.app`)는 등록 도메인이 달라 로그인이 동작하지 않는다.
+프리뷰에서 인증 흐름을 테스트하려면 별도 방안이 필요하다.
