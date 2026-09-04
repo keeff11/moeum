@@ -27,8 +27,8 @@ GitHub Actions ── 테스트(Testcontainers)
 
 | | |
 |---|---|
-| 도메인 | prod 프로파일이 `cookie-secure: true` 라 **HTTPS 없이는 로그인이 안 된다.** IP 로는 인증서를 못 받는다 |
-| 카카오 | REST API 키, Redirect URI(`https://<도메인>/auth/kakao/callback`). Client Secret 은 선택 |
+| 도메인 | `shop1.cloud` (가비아). prod 프로파일이 `cookie-secure: true` 라 **HTTPS 없이는 로그인이 안 된다** |
+| 카카오 | REST API 키, Redirect URI(`https://shop1.cloud/auth/kakao/callback`). Client Secret 은 선택 |
 | 암호화 키 | `openssl rand -base64 32` 로 생성. 로컬 개발 키를 운영에 쓰지 않는다 |
 
 point3 의 운영 서버 IP 등록은 EIP 를 받은 **6번 이후**에 한다.
@@ -175,17 +175,23 @@ put MYSQL_ROOT_PASSWORD "$(openssl rand -base64 24)"
 put MYSQL_PASSWORD "$(openssl rand -base64 24)"
 put SELLER_CRYPTO_KEY "$(openssl rand -base64 32)"
 put KAKAO_CLIENT_ID "카카오-REST-API-키"
-put KAKAO_CLIENT_SECRET ""
-put KAKAO_REDIRECT_URI "https://도메인/auth/kakao/callback"
-put ALLOWED_ORIGINS "https://도메인"
-put DOMAIN "도메인"
+put KAKAO_REDIRECT_URI "https://shop1.cloud/auth/kakao/callback"
+put ALLOWED_ORIGINS "https://shop1.cloud"
+put DOMAIN "shop1.cloud"
 ```
 
 `SELLER_CRYPTO_KEY` 는 **한 번 정하면 못 바꾼다.** 이 키로 암호화된 사업자번호·정산계좌를
 복호화할 수 없게 된다. 별도로 안전한 곳에 백업해 둔다.
 
-`KAKAO_CLIENT_SECRET` 은 빈 값이라도 반드시 등록해야 한다.
-prod 프로파일의 `${KAKAO_CLIENT_SECRET}` 에 기본값이 없어서, 없으면 앱이 기동하지 않는다.
+**`KAKAO_CLIENT_SECRET` 은 등록하지 않았다.** Parameter Store 는 빈 값을 저장할 수 없고
+(최소 1자), 카카오 Client Secret 은 선택 기능이라 안 쓰는 구성이 정상이기 때문이다.
+`deploy.sh` 가 파라미터가 없으면 빈 값으로 채워 주므로 앱은 정상 기동한다.
+
+나중에 Client Secret 을 쓰기로 하면 이것만 추가하고 재배포하면 된다.
+
+```bash
+put KAKAO_CLIENT_SECRET "카카오-콘솔에서-발급한-값"
+```
 
 ---
 
@@ -258,13 +264,34 @@ aws ssm start-session --target "$INSTANCE_ID" --region ap-northeast-2
 
 ---
 
-## 9. DNS
+## 9. DNS (가비아)
 
-도메인의 A 레코드를 6번의 EIP 로 향하게 한다.
-전파된 뒤 첫 배포가 돌면 Caddy 가 Let's Encrypt 인증서를 자동으로 받는다.
+도메인은 `shop1.cloud`, 네임서버는 가비아(`ns.gabia.co.kr`)다.
+가비아 My가비아 → DNS 관리툴 → 도메인 선택 → DNS 설정 에서 A 레코드를 고친다.
+
+| 호스트 | 타입 | 값 |
+|---|---|---|
+| `@` | A | 6번의 EIP |
+| `www` | A | 6번의 EIP |
+
+기존 값 `52.78.173.129` 는 예전에 쓰던 ALB 의 IP 다.
+**ALB 는 IP 가 바뀌는 자원이라 A 레코드에 박으면 안 된다.** 지금 그 IP 는 남의 로드밸런서를 가리키고 있다.
+EIP 는 해제하기 전까지 고정이므로 A 레코드로 박아도 된다.
+
+MX 레코드가 없어 메일은 영향받지 않는다.
+
+**바꾸기 전에 TTL 을 300초로 낮춰 두면** 전파를 30분씩 기다리지 않아도 된다.
+반영됐는지는 이렇게 확인한다.
+
+```bash
+nslookup shop1.cloud 8.8.8.8
+```
 
 DNS 가 아직 안 붙은 상태로 배포하면 인증서 발급이 실패하고 Caddy 가 재시도를 반복한다.
 **DNS 를 먼저 붙이고 배포한다.**
+
+`www` 도 같은 EIP 를 가리켜야 한다. Caddy 가 `www.shop1.cloud` 인증서도 함께 발급하고
+본 도메인으로 301 리다이렉트한다. 레코드를 지우면 인증서 발급이 실패하며 재시도 로그가 쌓인다.
 
 ---
 

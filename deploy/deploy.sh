@@ -21,6 +21,13 @@ aws ssm get-parameters-by-path \
 	| jq -r '.[] | "\(.name | split("/") | last)=\(.value | @sh)"' > .env.new
 
 echo "APP_IMAGE='${IMAGE}'" >> .env.new
+
+# Parameter Store 는 빈 값을 저장할 수 없다(최소 1자). 그런데 prod 프로파일의
+# ${KAKAO_CLIENT_SECRET} 에는 기본값이 없어서, 파라미터가 없으면 앱이 기동조차 못 한다.
+# Client Secret 을 안 쓰는 구성에서도 뜨도록 빈 값을 채워 준다.
+# KakaoOAuthClient 는 값이 비어 있으면 토큰 요청에 secret 을 붙이지 않는다.
+grep -q '^KAKAO_CLIENT_SECRET=' .env.new || echo "KAKAO_CLIENT_SECRET=''" >> .env.new
+
 mv .env.new .env
 
 # ── 2. ECR 로그인 ──────────────────────────────────────────────────────

@@ -1,25 +1,39 @@
 # Let's Encrypt 인증서를 Caddy 가 알아서 발급하고 갱신한다.
 # ALB($18/월) 와 ACM 없이 HTTPS 를 얻는 자리다.
+#
+# handle 블록만 쓴다. 위에서부터 첫 매치 하나만 실행되므로 순서가 곧 우선순위다.
+# respond 같은 디렉티브를 섞으면 Caddy 의 고정 순서 규칙에 걸려 의도와 다르게 평가된다.
 {$DOMAIN} {
 	encode gzip
 
-	# 운영에서는 스웨거를 꺼 두지만(application.yml), 경로 자체를 막아 한 겹 더 준다.
-	@blocked path /swagger-ui* /v3/api-docs*
-	respond @blocked 404
+	# 운영에서는 스웨거를 꺼 두지만(application.yml), 경로 자체도 막아 한 겹 더 준다.
+	@swagger path /swagger-ui* /v3/api-docs*
+	handle @swagger {
+		respond 404
+	}
 
-	# actuator 는 헬스체크만 열고 나머지는 밖에서 못 부르게 한다.
-	@actuator path /actuator/*
+	# actuator 는 헬스체크만 열고 나머지(env, metrics 등)는 밖에서 못 부르게 한다.
 	@health path /actuator/health /actuator/health/*
 	handle @health {
 		reverse_proxy app:8080
 	}
+
+	@actuator path /actuator/*
 	handle @actuator {
 		respond 404
 	}
 
-	reverse_proxy app:8080 {
-		# 앱이 Secure 쿠키를 내려면 프록시 앞단이 https 였다는 걸 알아야 한다.
-		header_up X-Forwarded-Proto {scheme}
-		header_up X-Real-IP {remote_host}
+	handle {
+		reverse_proxy app:8080 {
+			# 앱이 Secure 쿠키를 내려면 프록시 앞단이 https 였다는 걸 알아야 한다.
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Real-IP {remote_host}
+		}
 	}
+}
+
+# www 로 들어와도 인증서 오류를 보지 않게 한다.
+# 쿠키와 Origin 검증(ALLOWED_ORIGINS)이 호스트 단위라 출처는 하나로 모은다.
+www.{$DOMAIN} {
+	redir https://{$DOMAIN}{uri} permanent
 }
