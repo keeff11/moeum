@@ -70,7 +70,12 @@ aws iam create-open-id-connect-provider --url https://token.actions.githubuserco
     "Action": "sts:AssumeRoleWithWebIdentity",
     "Condition": {
       "StringEquals": { "token.actions.githubusercontent.com:aud": "sts.amazonaws.com" },
-      "StringLike": { "token.actions.githubusercontent.com:sub": "repo:keeff11/moeum:ref:refs/heads/main" }
+      "StringLike": {
+        "token.actions.githubusercontent.com:sub": [
+          "repo:keeff11@131992685/moeum@1356865473:ref:refs/heads/main",
+          "repo:keeff11/moeum:ref:refs/heads/main"
+        ]
+      }
     }
   }]
 }
@@ -78,6 +83,25 @@ aws iam create-open-id-connect-provider --url https://token.actions.githubuserco
 
 `sub` 조건이 핵심이다. **이 저장소의 main 브랜치에서 돈 워크플로만** 이 역할을 쓸 수 있다.
 포크에서 돌린 워크플로는 조건에 걸려 튕긴다.
+
+**형식이 두 개인 이유가 있다.** GitHub 은 `sub` 클레임에 소유자·저장소의 숫자 ID 를 넣는
+불변(immutable) 형식을 쓴다.
+
+```
+repo:keeff11@131992685/moeum@1356865473:ref:refs/heads/main
+```
+
+문서 대부분이 안내하는 고전 형식(`repo:owner/name:ref:...`)만 적으면
+`AccessDenied: Not authorized to perform sts:AssumeRoleWithWebIdentity` 로 튕긴다.
+워크플로 로그에는 원인이 안 나오고, **CloudTrail 의 `AssumeRoleWithWebIdentity` 이벤트에서
+실제 `sub` 값을 봐야** 알 수 있다.
+
+```bash
+aws cloudtrail lookup-events --lookup-attributes AttributeKey=EventName,AttributeValue=AssumeRoleWithWebIdentity --max-results 3 --region ap-northeast-2
+```
+
+ID 형식이 오히려 더 안전하다. 저장소 이름을 바꾸거나 소유자를 옮겨도 ID 는 그대로라
+이름을 가로채는 공격이 통하지 않는다.
 
 ```bash
 aws iam create-role --role-name moeum-github-deploy --assume-role-policy-document file://gh-trust.json
