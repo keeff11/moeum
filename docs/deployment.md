@@ -141,7 +141,10 @@ aws iam attach-role-policy --role-name moeum-ec2 --policy-arn arn:aws:iam::aws:p
   "Statement": [
     { "Effect": "Allow",
       "Action": ["ssm:GetParametersByPath", "ssm:GetParameters", "ssm:GetParameter"],
-      "Resource": "arn:aws:ssm:ap-northeast-2:<ACCOUNT_ID>:parameter/moeum/prod/*" },
+      "Resource": [
+        "arn:aws:ssm:ap-northeast-2:<ACCOUNT_ID>:parameter/moeum/prod",
+        "arn:aws:ssm:ap-northeast-2:<ACCOUNT_ID>:parameter/moeum/prod/*"
+      ] },
     { "Effect": "Allow", "Action": "kms:Decrypt", "Resource": "*",
       "Condition": { "StringEquals": { "kms:ViaService": "ssm.ap-northeast-2.amazonaws.com" } } }
   ]
@@ -151,6 +154,10 @@ aws iam attach-role-policy --role-name moeum-ec2 --policy-arn arn:aws:iam::aws:p
 ```bash
 aws iam put-role-policy --role-name moeum-ec2 --policy-name read-secrets --policy-document file://ec2-secrets.json
 ```
+
+**리소스가 두 줄인 이유가 있다.** `GetParametersByPath` 는 하위 파라미터가 아니라
+**경로 노드 자체**(`parameter/moeum/prod`)에 대한 권한을 검사한다.
+`/*` 만 적으면 `AccessDeniedException` 이 나고, 첫 배포의 시크릿 주입 단계에서 터진다.
 
 ```bash
 aws iam create-instance-profile --instance-profile-name moeum-ec2
