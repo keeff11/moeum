@@ -1,0 +1,89 @@
+# EC2 한 대에서 도는 운영 구성. 배포는 이 파일을 그대로 두고 이미지 태그만 바꾼다.
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: moeum-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: moeum
+      MYSQL_USER: moeum
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      # 로컬 docker-compose.yml 과 같은 값이어야 한다.
+      # EOB 차단 시간대 판단이 DB 시각에 걸려 있다.
+      TZ: Asia/Seoul
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_0900_ai_ci
+      - --default-time-zone=+09:00
+      - --innodb-lock-wait-timeout=5
+      # 2GB 인스턴스다. 로컬(300)을 그대로 쓰면 커넥션만으로 메모리가 마른다.
+      - --max-connections=100
+      - --innodb-buffer-pool-size=384M
+    volumes:
+      - mysql-data:/var/lib/mysql
+    # 포트를 호스트로 열지 않는다. 앱만 도커 네트워크로 붙는다.
+    expose:
+      - "3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    logging: &logging
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  app:
+    image: ${APP_IMAGE}
+    container_name: moeum-app
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      DB_URL: jdbc:mysql://mysql:3306/moeum?useSSL=false&allowPublicKeyRetrieval=true&characterEncoding=UTF-8&connectionTimeZone=Asia/Seoul&rewriteBatchedStatements=true
+      DB_USERNAME: moeum
+      DB_PASSWORD: ${MYSQL_PASSWORD}
+      # MySQL max-connections 100 안에서 앱이 쓸 몫
+      DB_POOL_SIZE: "20"
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
+      SELLER_CRYPTO_KEY: ${SELLER_CRYPTO_KEY}
+      KAKAO_CLIENT_ID: ${KAKAO_CLIENT_ID}
+      KAKAO_CLIENT_SECRET: ${KAKAO_CLIENT_SECRET}
+      KAKAO_REDIRECT_URI: ${KAKAO_REDIRECT_URI}
+    expose:
+      - "8080"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/actuator/health/readiness"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      # Flyway 마이그레이션까지 끝나야 readiness 가 뜬다. 첫 기동에 여유를 준다.
+      start_period: 90s
+    logging: *logging
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: moeum-caddy
+    restart: unless-stopped
+    depends_on:
+      - app
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    logging: *logging
+
+volumes:
+  mysql-data:
+  caddy-data:
+  caddy-config:
