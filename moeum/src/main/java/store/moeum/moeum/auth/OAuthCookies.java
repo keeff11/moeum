@@ -7,7 +7,10 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseCookie;
 import org.springframework.stereotype.Component;
+import store.moeum.moeum.global.auth.AllowedOrigins;
 
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -15,13 +18,14 @@ import java.security.SecureRandom;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.Base64;
+import java.util.List;
 import java.util.Optional;
 
 /**
  * OAuth 왕복 동안만 쓰는 임시 쿠키. 전부 httpOnly 다.
  *
  * state 는 CSRF 방어용이라 브라우저가 읽을 이유가 없고, returnTo 는 열린 리다이렉트의 입구라
- * 값을 그대로 믿지 않고 콜백에서 상대 경로인지 다시 검증한다.
+ * 값을 그대로 믿지 않고 콜백에서 허용 출처인지 다시 검증한다.
  */
 @Component
 public class OAuthCookies {
@@ -36,9 +40,12 @@ public class OAuthCookies {
 	private static final SecureRandom RANDOM = new SecureRandom();
 
 	private final boolean secure;
+	private final AllowedOrigins allowedOrigins;
 
-	public OAuthCookies(@Value("${moeum.auth.cookie-secure:false}") boolean secure) {
+	public OAuthCookies(@Value("${moeum.auth.cookie-secure:false}") boolean secure,
+	                    @Value("${moeum.auth.allowed-origins:}") List<String> allowedOrigins) {
 		this.secure = secure;
+		this.allowedOrigins = AllowedOrigins.of(allowedOrigins);
 	}
 
 	public String newState() {
@@ -65,7 +72,7 @@ public class OAuthCookies {
 					}
 				})
 				.map(this::sanitizeReturnTo)
-				.orElse(DEFAULT_RETURN_TO);
+				.orElseGet(this::defaultReturnTo);
 	}
 
 	public void clear(HttpServletResponse response) {
@@ -85,21 +92,49 @@ public class OAuthCookies {
 	}
 
 	/**
-	 * 우리 사이트 안의 상대 경로만 허용한다.
+	 * 로그인 후 돌아갈 곳을 정한다.
+	 *
+	 * 프론트(www · studio.moeum.store)와 API(api.moeum.store)가 다른 호스트다.
+	 * 상대 경로만 허용하면 API 호스트로 302 를 보내게 되고, 거기엔 화면이 없다.
+	 * 그래서 **허용 출처 목록에 있는 절대 URL 이면 그대로 쓴다.**
+	 * 판매자는 studio 로, 구매자는 www 로 각자 돌아가야 하므로 목록 대조가 필요하다.
+	 *
+	 * 허용 목록이 비어 있으면(로컬 · 테스트) 프론트와 API 가 같은 출처라는 뜻이라
+	 * 예전처럼 상대 경로만 허용한다.
+	 *
 	 * "//evil.com" 은 브라우저가 프로토콜 상대 URL 로 읽어 외부로 나가고,
 	 * 역슬래시는 일부 브라우저가 "/" 로 정규화하므로 같이 막는다.
 	 */
 	public String sanitizeReturnTo(String returnTo) {
+		String fallback = defaultReturnTo();
 		if (returnTo == null || returnTo.isBlank()) {
-			return DEFAULT_RETURN_TO;
+			return fallback;
 		}
-		if (!returnTo.startsWith("/")) {
-			return DEFAULT_RETURN_TO;
+		String value = returnTo.trim();
+		if (value.contains("\\") || value.startsWith("//")) {
+			return fallback;
 		}
-		if (returnTo.startsWith("//") || returnTo.contains("\\")) {
-			return DEFAULT_RETURN_TO;
+		if (value.startsWith("/")) {
+			return allowedOrigins.isEmpty() ? value : allowedOrigins.primary() + value;
 		}
-		return returnTo;
+		return allowedOrigins.contains(originOf(value)) ? value : fallback;
+	}
+
+	/** 절대 URL 에서 스킴·호스트·포트만 꺼낸다. 파싱이 안 되면 null 이라 대조에서 걸러진다 */
+	private String originOf(String url) {
+		try {
+			URI uri = new URI(url);
+			return (uri.getScheme() == null || uri.getHost() == null)
+					? null
+					: uri.getScheme() + "://" + uri.getAuthority();
+		} catch (URISyntaxException e) {
+			return null;
+		}
+	}
+
+	private String defaultReturnTo() {
+		String primary = allowedOrigins.primary();
+		return (primary == null) ? DEFAULT_RETURN_TO : primary + DEFAULT_RETURN_TO;
 	}
 
 	private void add(HttpServletResponse response, String name, String value, Duration maxAge) {

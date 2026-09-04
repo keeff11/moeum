@@ -8,6 +8,7 @@ import org.springframework.core.Ordered;
 import org.springframework.web.method.support.HandlerMethodArgumentResolver;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
+import store.moeum.moeum.global.auth.AllowedOrigins;
 import store.moeum.moeum.global.auth.OriginValidationFilter;
 import store.moeum.moeum.global.auth.SessionUserArgumentResolver;
 
@@ -19,8 +20,8 @@ public class WebConfig implements WebMvcConfigurer {
 	private static final long PREFLIGHT_CACHE_SECONDS = 3600;
 
 	/**
-	 * 믿는 프론트 출처 목록. CORS 허용과 Origin 검증이 같은 목록을 쓴다 —
-	 * 둘이 갈라지면 "CORS 는 통과했는데 필터가 막는" 상황이 생긴다.
+	 * 믿는 프론트 출처 목록. CORS 허용 · Origin 검증 · 로그인 후 returnTo 판정이
+	 * 같은 목록을 쓴다 — 갈라지면 "CORS 는 통과했는데 필터가 막는" 상황이 생긴다.
 	 *
 	 * 비어 있으면 CORS 를 열지 않고 Origin 검증도 하지 않는다.
 	 * 로컬에서 curl · Swagger 로 찌를 때는 동일 출처라 둘 다 필요 없기 때문이다.
@@ -65,14 +66,11 @@ public class WebConfig implements WebMvcConfigurer {
 		return registration;
 	}
 
-	/** 빈 값이나 공백만 있는 항목을 걸러낸다. 프로퍼티가 비면 빈 리스트다 */
+	/**
+	 * 빈 값·공백을 걸러내고 Origin 헤더 형태로 정규화한다.
+	 * OAuthCookies 의 returnTo 판정도 같은 목록을 쓴다.
+	 */
 	private List<String> allowedOrigins() {
-		if (configuredOrigins == null) {
-			return List.of();
-		}
-		return configuredOrigins.stream()
-				.filter(origin -> origin != null && !origin.isBlank())
-				.map(String::trim)
-				.toList();
+		return AllowedOrigins.of(configuredOrigins).list();
 	}
 }
