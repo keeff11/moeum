@@ -1,0 +1,28 @@
+# 테스트 프로파일. datasource 는 Testcontainers 가 @DynamicPropertySource 로 주입한다.
+spring:
+  jpa:
+    show-sql: false
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+moeum:
+  auth:
+    cookie-secure: false
+  crypto:
+    seller-key: bW9ldW0tbG9jYWwtZGV2LWtleS1ETy1OT1QtVVNFISE=
+  oauth:
+    kakao:
+      client-id: test-client-id
+      client-secret: test-secret
+      redirect-uri: http://localhost/auth/kakao/callback
+
+management:
+  endpoint:
+    health:
+      show-details: always
+
+logging:
+  level:
+    org.testcontainers: warn
+    com.github.dockerjava: warn

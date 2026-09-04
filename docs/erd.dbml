@@ -1,0 +1,373 @@
+Table "seller" {
+  "id" BIGINT [pk, not null, increment]
+  "kakao_id" VARCHAR(64) [not null]
+  "store_slug" VARCHAR(64) [not null, note: '판매공간 URL 식별자']
+  "review_status" VARCHAR(20) [not null, default: 'PENDING', note: 'PENDING, APPROVED, REJECTED']
+  "business_no_enc" VARBINARY(255) [note: '사업자번호(암호화)']
+  "settlement_acct_enc" VARBINARY(255) [note: '정산계좌(암호화)']
+  "representative_name" VARCHAR(50)
+  "phone" VARCHAR(20)
+  "email" VARCHAR(120)
+  "approved_at" DATETIME(6)
+  "created_at" DATETIME(6) [not null, default: `CURRENT_TIMESTAMP(6)`]
+  "updated_at" DATETIME(6) [not null, default: `CURRENT_TIMESTAMP(6)`]
+
+  Indexes {
+    kakao_id [unique, name: "uk_seller_kakao"]
+    store_slug [unique, name: "uk_seller_slug"]
+  }
+
+  Note: '판매자 계정. 카카오 로그인으로 가입하고 심사를 통과해야 판매공간 URL이 발급된다. 사업자번호와 정산계좌는 암호화 저장.'
+}
+
+Table "sale_form" {
+  "id" BIGINT [pk, not null, increment]
+  "seller_id" BIGINT [not null]
+  "title" VARCHAR(200) [not null]
+  "slug" VARCHAR(120) [not null]
+  "sale_type" VARCHAR(10) [not null, note: 'GROUP, SOLO']
+  "status" VARCHAR(20) [not null, default: 'DRAFT', note: 'DRAFT, SELLING, PAUSED, CLOSED, ENDED']
+  "stock_max" INT [not null]
+  "held" INT [not null, default: 0, note: '결제 확정 전 선점 수량']
+  "sold" INT [not null, default: 0]
+  "target_qty" INT [note: '목표수량(최소). SOLO 는 NULL']
+  "opens_at" DATETIME(6)
+  "closes_at" DATETIME(6)
+  "extended_count" INT [not null, default: 0]
+  "shortfall_policy" VARCHAR(10) [note: 'CANCEL, EXTEND, PROCEED']
+  "second_type" VARCHAR(20) [not null, default: 'NONE', note: 'SHIPPING_FEE, BALANCE, NONE']
+  "second_amount" INT [note: 'BALANCE 는 입고 후 확정 → NULL 허용']
+  "progress_public" TINYINT(1) [not null, default: 1]
+  "created_at" DATETIME(6) [not null, default: `CURRENT_TIMESTAMP(6)`]
+  "updated_at" DATETIME(6) [not null, default: `CURRENT_TIMESTAMP(6)`]
+
+  Indexes {
+    (seller_id, slug) [unique, name: "uk_sale_form_slug"]
+    (status, closes_at) [name: "idx_sale_form_status"]
+  }
+
+  Note: '판매 단위이자 재고 확보의 주체. 셀러가 링크 하나를 발급하면 이 행이 하나 생긴다. 가용 재고 = stock_max - held - sold 이며 확보는 조건부 UPDATE로 처리한다.'
+}
+
+Table "sale_form_history" {
+  "id" BIGINT [pk, not null, increment]
+  "sale_form_id" BIGINT [not null]
+  "field" VARCHAR(50) [not null]
+  "old_value" VARCHAR(500)
+  "new_value" VARCHAR(500)
+  "changed_by" BIGINT [note: 'seller.id']
+  "created_at" DATETIME(6) [not null, default: `CURRENT_TIMESTAMP(6)`]
+
+  Indexes {
+    (sale_form_id, created_at) [name: "idx_history_form"]
+  }
+
+  Note: '판매 설정 변경 이력. 셀러 대시보드의 「변경 이력」 탭을 채우고, 마감일이나 가격을 바꿨을 때 분쟁 근거가 된다.'
+}
+
+Table "product" {
+  "id" BIGINT [pk, not null, increment]
+  "sale_form_id" BIGINT [not null]
+  "name" VARCHAR(200) [not null]
+  "base_price" INT [not null]
+  "sort_order" INT [not null, default: 0]
+  "created_at" DATETIME(6) [not null, default: `CURRENT_TIMESTAMP(6)`]
+
+  Indexes {
+    (sale_form_id, sort_order) [name: "idx_product_form"]
+  }
+
+  Note: '판매 폼 안의 개별 상품. 가격 계산의 기준이며, 재고는 여기가 아니라 sale_form 단위로 관리한다.'
+}
+
+Table "product_option" {
+  "id" BIGINT [pk, not null, increment]
+  "product_id" BIGINT [not null]
+  "name" VARCHAR(100) [not null]
+  "extra_price" INT [not null, default: 0]
+  "sort_order" INT [not null, default: 0]
+
+  Indexes {
+    (product_id, sort_order) [name: "idx_option_product"]
+  }
+
+  Note: '상품 옵션과 추가금. 자체 재고는 갖지 않으며 결제 금액 계산과 발주서의 옵션별 수량 집계에 쓰인다.'
+}
+
+Table "buyer" {
+  "id" BIGINT [pk, not null, increment]
+  "kakao_id" VARCHAR(64) [not null]
+  "name" VARCHAR(50)
+  "phone" VARCHAR(20)
+  "payer_id" VARCHAR(64) [note: 'point3 결제자 식별값. 받은 문자열 그대로 저장']
+  "created_at" DATETIME(6) [not null, default: `CURRENT_TIMESTAMP(6)`]
+
+  Indexes {
+    kakao_id [unique, name: "uk_buyer_kakao"]
+  }
+
+  Note: '구매자 계정. payer_id를 저장해 두면 다음 결제에서 인증 단계가 줄어든다. point3가 준 문자열을 가공하지 말 것.'
+}
+
+Table "cart" {
+  "id" BIGINT [pk, not null, increment]
+  "buyer_id" BIGINT [not null]
+  "seller_id" BIGINT [not null]
+  "created_at" DATETIME(6) [not null, default: `CURRENT_TIMESTAMP(6)`]
+  "updated_at" DATETIME(6) [not null, default: `CURRENT_TIMESTAMP(6)`]
+
+  Indexes {
+    (buyer_id, seller_id) [unique, name: "uk_cart_buyer_seller"]
+  }
+
+  Note: '장바구니 헤더. 배송비를 한 번만 받기 위해 셀러 단위로 묶는다. 다른 셀러 상품을 담으면 기존 장바구니를 비우지 않고 새 장바구니가 생긴다.'
+}
+
+Table "cart_item" {
+  "id" BIGINT [pk, not null, increment]
+  "cart_id" BIGINT [not null]
+  "sale_form_id" BIGINT [not null, note: '담을 때 cart.seller_id 와 일치하는지 검증']
+  "product_id" BIGINT [not null]
+  "option_id" BIGINT
+  "qty" INT [not null]
+  "created_at" DATETIME(6) [not null, default: `CURRENT_TIMESTAMP(6)`]
+
+  Indexes {
+    (cart_id, product_id, option_id) [unique, name: "uk_cart_item"]
+    sale_form_id [name: "idx_cart_item_form"]
+  }
+
+  Note: '장바구니에 담긴 상품·옵션·수량. 재고를 잡지 않으므로 담아둔 사이 마감·품절될 수 있고, 실제 검증은 주문 생성 시점에 한다.'
+}
+
+Table "order_group" {
+  "id" BIGINT [pk, not null, increment]
+  "group_no" VARCHAR(32) [not null, note: '외부 노출용 주문번호']
+  "buyer_id" BIGINT [not null]
+  "seller_id" BIGINT [not null, note: '한 묶음은 한 셀러로 제한']
+  "first_amount" INT [not null, note: '1차금 = 하위 orders 상품가 합계']
+  "second_amount" INT [note: '배송비 등 2차금. 전 폼 입고 후 확정']
+  "status" VARCHAR(20) [not null, default: 'CREATED', note: 'CREATED, PAY_PENDING, PAID, SECOND_PENDING, SECOND_PAID, SHIPPED, CANCELED, EXPIRED, FAILED']
+  "canceled_at" DATETIME(6)
+  "created_at" DATETIME(6) [not null, default: `CURRENT_TIMESTAMP(6)`]
+  "updated_at" DATETIME(6) [not null, default: `CURRENT_TIMESTAMP(6)`]
+
+  Indexes {
+    group_no [unique, name: "uk_group_no"]
+    (buyer_id, created_at) [name: "idx_group_buyer"]
+    (seller_id, status) [name: "idx_group_seller"]
+    (status, updated_at) [name: "idx_group_status_updated"]
+  }
+
+  Note: '결제 1회 · 배송지 1개 · 배송비 1회의 단위. 여러 판매 폼을 함께 산 경우에도 결제창은 한 번만 뜨므로 point3 세션과 배송지가 이 단위에 붙는다.'
+}
+
+Table "orders" {
+  "id" BIGINT [pk, not null, increment]
+  "order_group_id" BIGINT [not null]
+  "sale_form_id" BIGINT [not null]
+  "qty" INT [not null, note: '이 폼에서 확보한 총 수량']
+  "amount" INT [not null, note: '이 폼 몫의 상품가 합계']
+  "status" VARCHAR(20) [not null, default: 'CREATED', note: 'CREATED, PAID, RECRUITING, CLOSED, PRODUCING, ARRIVED, SHIPPED, CANCELED, EXPIRED']
+  "canceled_at" DATETIME(6)
+  "created_at" DATETIME(6) [not null, default: `CURRENT_TIMESTAMP(6)`]
+  "updated_at" DATETIME(6) [not null, default: `CURRENT_TIMESTAMP(6)`]
+
+  Indexes {
+    (order_group_id, sale_form_id) [unique, name: "uk_orders_group_form"]
+    (sale_form_id, status) [name: "idx_orders_form"]
+  }
+
+  Note: '판매 폼별 주문. 모집→마감→발주→제작→입고 상태 머신이 여기서 돈다. A폼은 마감, B폼은 모집중일 수 있어 묶음 하나의 status로는 표현할 수 없기 때문에 분리했다.'
+}
+
+Table "order_item" {
+  "id" BIGINT [pk, not null, increment]
+  "order_id" BIGINT [not null]
+  "product_id" BIGINT [not null]
+  "option_id" BIGINT
+  "qty" INT [not null]
+  "unit_price" INT [not null, note: 'product.base_price 스냅샷']
+  "extra_price" INT [not null, default: 0, note: 'option.extra_price 스냅샷']
+  "line_amount" INT [not null, note: '(unit_price + extra_price) * qty']
+  "product_name" VARCHAR(200) [not null, note: '표시용 스냅샷']
+  "option_name" VARCHAR(100)
+
+  Indexes {
+    order_id [name: "idx_item_order"]
+    (product_id, option_id) [name: "idx_item_option"]
+  }
+
+  Note: '주문에 담긴 상품 한 줄. 가격과 이름을 주문 시점 값으로 복사해 두어, 셀러가 가격을 바꾸거나 옵션을 삭제해도 과거 주문 내역이 깨지지 않게 한다.'
+}
+
+Table "stock_hold" {
+  "id" BIGINT [pk, not null, increment]
+  "order_id" BIGINT [not null]
+  "sale_form_id" BIGINT [not null]
+  "qty" INT [not null]
+  "status" VARCHAR(20) [not null, default: 'HELD', note: 'HELD, COMMITTED, RELEASED']
+  "expires_at" DATETIME(6) [not null]
+  "created_at" DATETIME(6) [not null, default: `CURRENT_TIMESTAMP(6)`]
+
+  Indexes {
+    order_id [unique, name: "uk_hold_order"]
+    (status, expires_at) [name: "idx_hold_expire"]
+  }
+
+  Note: '결제 전 재고 선점 기록. sale_form.held와 짝을 이룬다. 만료 배치는 승인 결과가 미확정(CAPTURE_PENDING)인 묶음의 홀드를 건드리면 안 된다 — 초과 판매의 원인이 된다.'
+}
+
+Table "payment" {
+  "id" BIGINT [pk, not null, increment]
+  "order_group_id" BIGINT [not null]
+  "phase" VARCHAR(10) [not null, note: 'FIRST, SECOND']
+  "session_id" VARCHAR(128) [note: 'point3 sessionId']
+  "amount" INT [not null]
+  "supply_amount" INT
+  "vat" INT
+  "tax_free_amount" INT [not null, default: 0]
+  "status" VARCHAR(20) [not null, default: 'CREATED', note: 'CREATED, CAPTURE_PENDING, CAPTURED, FAILED']
+  "fail_reason" VARCHAR(100)
+  "refunded_amount" INT [not null, default: 0]
+  "captured_at" DATETIME(6)
+  "created_at" DATETIME(6) [not null, default: `CURRENT_TIMESTAMP(6)`]
+  "updated_at" DATETIME(6) [not null, default: `CURRENT_TIMESTAMP(6)`]
+
+  Indexes {
+    (order_group_id, phase) [unique, name: "uk_payment_group_phase"]
+    session_id [unique, name: "uk_payment_session"]
+    (status, updated_at) [name: "idx_payment_pending"]
+  }
+
+  Note: 'point3 결제 1건. 묶음당 최대 2행(1차금·2차금). CAPTURE_PENDING은 point3에 없는 우리만의 상태로, 승인 API 호출 직전에 커밋해 두어야 서버가 죽어도 대사 배치가 복구할 수 있다. 세금 3종을 저장하는 이유는 취소 API가 자동 계산을 하지 않기 때문이다.'
+}
+
+Table "payment_event" {
+  "id" BIGINT [pk, not null, increment]
+  "payment_id" BIGINT [not null]
+  "from_status" VARCHAR(20)
+  "to_status" VARCHAR(20) [not null]
+  "reason" VARCHAR(200)
+  "actor" VARCHAR(10) [not null, note: 'USER, BATCH, SELLER, SYSTEM']
+  "created_at" DATETIME(6) [not null, default: `CURRENT_TIMESTAMP(6)`]
+
+  Indexes {
+    (payment_id, created_at) [name: "idx_event_payment"]
+  }
+
+  Note: '결제 상태 전이 로그. 누가(사용자·배치·셀러) 언제 왜 바꿨는지 남긴다. 분쟁 시 유일한 근거이며 토큰·PIN·전체 payer_id는 절대 기록하지 않는다.'
+}
+
+Table "refund" {
+  "id" BIGINT [pk, not null, increment]
+  "payment_id" BIGINT [not null]
+  "order_id" BIGINT [note: '특정 폼만 취소한 경우. 전액 취소면 NULL']
+  "point3_refund_id" VARCHAR(128)
+  "idempotency_key" VARCHAR(300) [note: '중복 차단용. 재시도용 아님']
+  "amount" INT [not null]
+  "tax_free_amount" INT [not null, default: 0]
+  "vat" INT [not null, default: 0]
+  "reason" VARCHAR(200) [note: '최대 200자']
+  "requested_by" VARCHAR(10) [not null, note: 'BUYER, SELLER, SYSTEM']
+  "status" VARCHAR(20) [not null, default: 'PROCESSING', note: 'PROCESSING, COMPLETED, FAILED']
+  "settled_manual" TINYINT(1) [not null, default: 0, note: '정산 완료 후 셀러 직접 환불 접수건']
+  "created_at" DATETIME(6) [not null, default: `CURRENT_TIMESTAMP(6)`]
+  "updated_at" DATETIME(6) [not null, default: `CURRENT_TIMESTAMP(6)`]
+
+  Indexes {
+    idempotency_key [unique, name: "uk_refund_idem"]
+    (payment_id, created_at) [name: "idx_refund_payment"]
+    (status, updated_at) [name: "idx_refund_pending"]
+  }
+
+  Note: '취소·환불 내역. 부분 취소가 기본이라 payment당 N행이 쌓인다. 결과가 불확실할 때 같은 키로 재요청하면 409가 나므로 반드시 상태 조회로 확인한다. 정산이 끝난 뒤에는 API 취소가 막혀 settled_manual로 접수만 받는다.'
+}
+
+Table "shipping" {
+  "id" BIGINT [pk, not null, increment]
+  "order_group_id" BIGINT [not null]
+  "recipient" VARCHAR(50) [not null]
+  "phone" VARCHAR(20) [not null]
+  "zipcode" VARCHAR(10)
+  "address" VARCHAR(255) [not null]
+  "address_detail" VARCHAR(255)
+  "memo" VARCHAR(200)
+  "carrier" VARCHAR(50)
+  "tracking_no" VARCHAR(50)
+  "shipped_at" DATETIME(6)
+  "updated_at" DATETIME(6) [not null, default: `CURRENT_TIMESTAMP(6)`]
+
+  Indexes {
+    order_group_id [unique, name: "uk_shipping_group"]
+  }
+
+  Note: '배송지와 송장. 앞부분은 구매자가 주문 시 입력하고 뒷부분은 셀러가 발송 처리 때 채운다. 묶음 배송이므로 묶음당 1건이며, 분할 배송을 도입하면 이 유니크 제약을 풀고 1:N으로 바꾼다.'
+}
+
+Table "outbox" {
+  "id" BIGINT [pk, not null, increment]
+  "aggregate_type" VARCHAR(30) [not null, note: 'ORDER_GROUP, ORDER, SALE_FORM, PAYMENT']
+  "aggregate_id" BIGINT [not null]
+  "event_type" VARCHAR(50) [not null]
+  "payload" JSON [not null]
+  "status" VARCHAR(20) [not null, default: 'PENDING', note: 'PENDING, SENT, DEAD']
+  "retry_count" INT [not null, default: 0]
+  "last_error" VARCHAR(500)
+  "created_at" DATETIME(6) [not null, default: `CURRENT_TIMESTAMP(6)`]
+  "sent_at" DATETIME(6)
+
+  Indexes {
+    (status, created_at) [name: "idx_outbox_pending"]
+  }
+
+  Note: '알림톡 등 외부 발송 대기열. 상태 변경 트랜잭션 안에서 적재하고 릴레이가 나중에 발송한다. 확정되지 않은 사실은 절대 넣지 않는다 — 유령 알림이 나간다. FK 없이 aggregate_id로 느슨하게 참조.'
+}
+
+Ref "fk_sale_form_seller":"seller"."id" <? "sale_form"."seller_id"
+
+Ref "fk_history_form":"sale_form"."id" <? "sale_form_history"."sale_form_id"
+
+Ref "fk_product_form":"sale_form"."id" <? "product"."sale_form_id"
+
+Ref "fk_option_product":"product"."id" <? "product_option"."product_id"
+
+Ref "fk_cart_buyer":"buyer"."id" <? "cart"."buyer_id"
+
+Ref "fk_cart_seller":"seller"."id" <? "cart"."seller_id"
+
+Ref "fk_cart_item_cart":"cart"."id" <? "cart_item"."cart_id"
+
+Ref "fk_cart_item_form":"sale_form"."id" <? "cart_item"."sale_form_id"
+
+Ref "fk_cart_item_product":"product"."id" <? "cart_item"."product_id"
+
+Ref "fk_cart_item_option":"product_option"."id" ?<? "cart_item"."option_id"
+
+Ref "fk_group_buyer":"buyer"."id" <? "order_group"."buyer_id"
+
+Ref "fk_group_seller":"seller"."id" <? "order_group"."seller_id"
+
+Ref "fk_orders_group":"order_group"."id" <? "orders"."order_group_id"
+
+Ref "fk_orders_form":"sale_form"."id" <? "orders"."sale_form_id"
+
+Ref "fk_item_order":"orders"."id" <? "order_item"."order_id"
+
+Ref "fk_item_product":"product"."id" <? "order_item"."product_id"
+
+Ref "fk_item_option":"product_option"."id" ?<? "order_item"."option_id"
+
+Ref "fk_hold_order":"orders"."id" <? "stock_hold"."order_id"
+
+Ref "fk_hold_form":"sale_form"."id" <? "stock_hold"."sale_form_id"
+
+Ref "fk_payment_group":"order_group"."id" <? "payment"."order_group_id"
+
+Ref "fk_event_payment":"payment"."id" <? "payment_event"."payment_id"
+
+Ref "fk_refund_payment":"payment"."id" <? "refund"."payment_id"
+
+Ref "fk_refund_order":"orders"."id" ?<? "refund"."order_id"
+
+Ref "fk_shipping_group":"order_group"."id" <? "shipping"."order_group_id"

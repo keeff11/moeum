@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>재고 홀드 동시성 실험 · moeum</title>
+<style>
+  :root {
+    --bg: #f7f7f5;
+    --panel: #ffffff;
+    --border: #e3e3df;
+    --text: #1a1a18;
+    --muted: #6b6b66;
+    --ok: #1f7a4d;
+    --ok-bg: #e8f5ee;
+    --bad: #b4231f;
+    --bad-bg: #fdeceb;
+    --accent: #4a3fb8;
+    --held: #4a3fb8;
+    --oos: #b8b8b2;
+    --over: #b4231f;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #17171a; --panel: #1f1f23; --border: #32323a; --text: #ececef;
+      --muted: #9a9aa2; --ok: #6ddba0; --ok-bg: #16302370; --bad: #ff8b84;
+      --bad-bg: #3a1c1a70; --accent: #a89dff; --held: #a89dff; --oos: #4c4c56; --over: #ff8b84;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Malgun Gothic", sans-serif;
+    line-height: 1.6; padding: 28px 20px 60px;
+  }
+  .wrap { max-width: 880px; margin: 0 auto; }
+  h1 { font-size: 21px; margin: 0 0 4px; letter-spacing: -0.01em; }
+  .sub { color: var(--muted); font-size: 13px; margin: 0 0 24px; }
+  .badge {
+    display: inline-block; font-size: 11px; padding: 2px 7px; border-radius: 4px;
+    background: var(--bad-bg); color: var(--bad); font-weight: 600; vertical-align: 2px;
+    margin-left: 6px;
+  }
+  .panel {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 10px; padding: 18px 20px; margin-bottom: 16px;
+  }
+  .controls { display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-end; }
+  label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 5px; }
+  input[type=number] {
+    width: 110px; padding: 8px 10px; font-size: 15px; font-family: inherit;
+    border: 1px solid var(--border); border-radius: 7px;
+    background: var(--bg); color: var(--text);
+  }
+  .btns { display: flex; gap: 8px; margin-left: auto; }
+  button {
+    padding: 9px 15px; font-size: 14px; font-family: inherit; font-weight: 600;
+    border-radius: 7px; cursor: pointer; border: 1px solid var(--border);
+    background: var(--panel); color: var(--text);
+  }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button:disabled { opacity: 0.5; cursor: progress; }
+  .verdict {
+    display: flex; align-items: center; gap: 10px;
+    padding: 12px 14px; border-radius: 8px; font-weight: 700; font-size: 15px;
+    margin-bottom: 16px;
+  }
+  .verdict.ok { background: var(--ok-bg); color: var(--ok); }
+  .verdict.bad { background: var(--bad-bg); color: var(--bad); }
+  .verdict .formula { font-weight: 500; font-size: 13px; opacity: 0.85; margin-left: auto;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .mode-name {
+    font-size: 12px; color: var(--muted); margin-bottom: 12px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .bar { display: flex; height: 30px; border-radius: 6px; overflow: hidden; margin: 6px 0 8px;
+    border: 1px solid var(--border); background: var(--bg); }
+  .seg { display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 700; color: #fff; min-width: 0; white-space: nowrap; }
+  .seg.held { background: var(--held); }
+  .seg.oos { background: var(--oos); color: var(--text); }
+  .seg.over { background: var(--over); }
+  .legend { font-size: 12px; color: var(--muted); display: flex; gap: 14px; flex-wrap: wrap; }
+  .legend i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 4px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 1px;
+    background: var(--border); border: 1px solid var(--border); border-radius: 8px;
+    overflow: hidden; margin-top: 16px; }
+  .cell { background: var(--panel); padding: 12px 14px; }
+  .cell .k { font-size: 11px; color: var(--muted); }
+  .cell .v { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .cell.danger .v { color: var(--bad); }
+  ul.notes { margin: 14px 0 0; padding-left: 18px; font-size: 13px; color: var(--muted); }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 10px; }
+  .err { color: var(--bad); font-size: 13px; }
+  .placeholder { color: var(--muted); font-size: 13px; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
+    background: var(--bg); padding: 1px 5px; border-radius: 4px; border: 1px solid var(--border); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>재고 홀드 동시성 실험<span class="badge">local 전용</span></h1>
+  <p class="sub">
+    실제 <code>OrderService.place()</code> 를 동시에 호출한다. 매번 일회용 판매 폼을 만들어 쓰고 지운다.
+  </p>
+
+  <div class="panel">
+    <div class="controls">
+      <div>
+        <label for="stock">재고 (stock_max)</label>
+        <input id="stock" type="number" value="100" min="1" max="1000">
+      </div>
+      <div>
+        <label for="threads">동시 요청 수</label>
+        <input id="threads" type="number" value="200" min="1" max="500">
+      </div>
+      <div class="btns">
+        <button id="run-naive">순진한 방식으로</button>
+        <button id="run-safe" class="primary">조건부 UPDATE로 실행</button>
+      </div>
+    </div>
+    <p class="hint">
+      <strong>순진한 방식</strong>은 일부러 잘못 짠 코드다 — <code>SELECT</code> 로 재고를 읽고 판단한 뒤
+      <code>UPDATE</code> 한다. 초과 판매가 어떻게 생기는지 보기 위한 비교용이다.
+    </p>
+  </div>
+
+  <div id="out"><p class="placeholder">실행하면 결과가 여기 나온다.</p></div>
+</div>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  const out = $('out');
+
+  async function run(mode) {
+    const stock = $('stock').value;
+    const threads = $('threads').value;
+    const buttons = [$('run-safe'), $('run-naive')];
+    buttons.forEach(b => b.disabled = true);
+    out.innerHTML = '<div class="panel"><p class="placeholder">' + threads + '개 요청을 동시에 던지는 중…</p></div>';
+
+    try {
+      const res = await fetch(`/dev/stock-hold/run?mode=${mode}&stock=${stock}&threads=${threads}`,
+                              { method: 'POST' });
+      if (!res.ok) {
+        const body = await res.text();
+        out.innerHTML = `<div class="panel"><p class="err">요청 실패 (${res.status})</p>
+                         <pre class="err">${escapeHtml(body).slice(0, 600)}</pre></div>`;
+        return;
+      }
+      render(await res.json());
+    } catch (e) {
+      out.innerHTML = `<div class="panel"><p class="err">호출 실패: ${escapeHtml(String(e))}</p>
+        <p class="hint">앱이 <code>local</code> 프로파일로 떠 있는지 확인하라.</p></div>`;
+    } finally {
+      buttons.forEach(b => b.disabled = false);
+    }
+  }
+
+  function render(r) {
+    const total = Math.max(r.stockMax, r.held + r.sold);
+    const pct = (n) => (n / total * 100).toFixed(2) + '%';
+    const inStock = Math.min(r.held + r.sold, r.stockMax);
+    const free = Math.max(0, r.stockMax - inStock);
+
+    const segs = [];
+    if (inStock > 0) segs.push(`<div class="seg held" style="width:${pct(inStock)}">확보 ${inStock}</div>`);
+    if (free > 0) segs.push(`<div class="seg oos" style="width:${pct(free)}">남음 ${free}</div>`);
+    if (r.oversold > 0) segs.push(`<div class="seg over" style="width:${pct(r.oversold)}">초과 ${r.oversold}</div>`);
+
+    const okClass = r.invariantHeld ? 'ok' : 'bad';
+    const okText = r.invariantHeld
+      ? '초과 판매 없음'
+      : `초과 판매 ${r.oversold}개 — 재고보다 많이 팔렸다`;
+
+    out.innerHTML = `
+      <div class="panel">
+        <div class="verdict ${okClass}">
+          <span>${r.invariantHeld ? '✓' : '✕'}</span>
+          <span>${okText}</span>
+          <span class="formula">held ${r.held} + sold ${r.sold} ${r.invariantHeld ? '≤' : '>'} stock_max ${r.stockMax}</span>
+        </div>
+
+        <div class="mode-name">${r.mode} · ${r.threads}개 동시 요청 · ${r.elapsedMs}ms</div>
+
+        <div class="bar">${segs.join('')}</div>
+        <div class="legend">
+          <span><i style="background:var(--held)"></i>확보(held)</span>
+          <span><i style="background:var(--oos)"></i>남은 재고</span>
+          ${r.oversold > 0 ? '<span><i style="background:var(--over)"></i>초과 판매</span>' : ''}
+        </div>
+
+        <div class="grid">
+          <div class="cell"><div class="k">성공</div><div class="v">${r.success}</div></div>
+          <div class="cell"><div class="k">품절 거절</div><div class="v">${r.outOfStock}</div></div>
+          <div class="cell ${r.otherError > 0 ? 'danger' : ''}"><div class="k">그 외 예외</div><div class="v">${r.otherError}</div></div>
+          <div class="cell"><div class="k">held</div><div class="v">${r.held}</div></div>
+          <div class="cell"><div class="k">sold</div><div class="v">${r.sold}</div></div>
+          <div class="cell ${r.oversold > 0 ? 'danger' : ''}"><div class="k">초과 판매</div><div class="v">${r.oversold}</div></div>
+        </div>
+
+        <ul class="notes">${r.notes.map(n => `<li>${escapeHtml(n)}</li>`).join('')}</ul>
+      </div>`;
+  }
+
+  function escapeHtml(s) {
+    return s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+
+  $('run-safe').addEventListener('click', () => run('CONDITIONAL_UPDATE'));
+  $('run-naive').addEventListener('click', () => run('NAIVE_READ_THEN_WRITE'));
+</script>
+</body>
+</html>
