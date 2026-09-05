@@ -12,6 +12,15 @@
 		respond 404
 	}
 
+	# 운영자용 심사 API. 앱에 아직 운영자 인증이 없어(AdminSellerController 주석)
+	# 인터넷에 그대로 열리면 누구나 셀러를 승인·거절할 수 있다.
+	# 앱에 접근 제어가 붙기 전까지는 프록시에서 막는다. 운영자는 SSM 으로 접속해
+	# 인스턴스 내부에서 호출한다.
+	@admin path /admin/*
+	handle @admin {
+		respond 404
+	}
+
 	# actuator 는 헬스체크만 열고 나머지(env, metrics 등)는 밖에서 못 부르게 한다.
 	@health path /actuator/health /actuator/health/*
 	handle @health {
