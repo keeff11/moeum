@@ -24,6 +24,14 @@ class FlywayMigrationTest extends IntegrationTest {
 			"shipping", "outbox"
 	);
 
+	/**
+	 * 도메인 테이블이 아닌 것들. Flyway 이력과 세션 저장소(V2, D-020) 다.
+	 * 개수만 늘리지 않고 이름을 적어 둔다 — 의도치 않게 생긴 테이블을 잡아내는 것이 이 검증의 목적이다.
+	 */
+	private static final List<String> INFRA_TABLES = List.of(
+			"flyway_schema_history", "SPRING_SESSION", "SPRING_SESSION_ATTRIBUTES"
+	);
+
 	@Autowired
 	private JdbcTemplate jdbcTemplate;
 
@@ -44,7 +52,8 @@ class FlywayMigrationTest extends IntegrationTest {
 				String.class));
 
 		assertThat(actual).containsAll(EXPECTED_TABLES);
-		assertThat(actual).hasSize(EXPECTED_TABLES.size() + 1); // + flyway_schema_history
+		assertThat(actual).containsAll(INFRA_TABLES);
+		assertThat(actual).hasSize(EXPECTED_TABLES.size() + INFRA_TABLES.size());
 	}
 
 	@Test

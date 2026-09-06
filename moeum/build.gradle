@@ -30,6 +30,7 @@ dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-actuator'
 	implementation 'org.springframework.boot:spring-boot-starter-aop'   // @Retryable AOP
 	implementation 'org.springframework.retry:spring-retry'
+	implementation 'org.springframework.session:spring-session-jdbc'   // 세션을 MySQL 로 (D-020)
 	implementation 'org.flywaydb:flyway-core'
 	implementation 'org.flywaydb:flyway-mysql'
 	implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.17'

@@ -27,7 +27,8 @@ import java.net.URI;
 /**
  * 카카오 인가 코드 흐름. 로그인 시작 · 콜백 · 토큰 교환 · 세션 발급까지 서버가 전부 갖는다.
  *
- * 브라우저에 나가는 것은 세션 ID 쿠키뿐이다. 카카오 access/refresh 토큰은 서버 세션에만 둔다.
+ * 브라우저에 나가는 것은 세션 ID 쿠키뿐이다. 카카오 토큰은 프로필 조회에만 쓰고 어디에도 보관하지 않는다 —
+ * 세션이 MySQL 에 저장되므로(D-020) 세션에 넣으면 평문 blob 으로 디스크에 남는다.
  */
 @Slf4j
 @Tag(name = "인증", description = "카카오 로그인 · 세션")
@@ -87,7 +88,6 @@ public class AuthController {
 		HttpSession session = request.getSession(true);
 		session.setAttribute(SessionKeys.LOGIN_USER,
 				new SessionUser(profile.kakaoId(), profile.nickname()));
-		session.setAttribute(SessionKeys.KAKAO_ACCESS_TOKEN, tokens.accessToken());
 
 		log.info("카카오 로그인 성공: kakaoId={}", mask(profile.kakaoId()));
 

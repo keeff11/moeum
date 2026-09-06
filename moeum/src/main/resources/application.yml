@@ -23,6 +23,17 @@ spring:
     baseline-on-migrate: false
     validate-on-migrate: true
 
+  # 세션을 톰캣 힙이 아니라 MySQL 에 둔다 (D-020).
+  # 배포로 컨테이너가 교체돼도 로그인이 유지된다. 애플리케이션 코드는 바뀌지 않는다 —
+  # Spring Session 이 HttpSession 구현만 바꿔치기한다.
+  session:
+    store-type: jdbc
+    jdbc:
+      # 스키마는 Flyway(V2__spring_session.sql)가 소유한다. 라이브러리가 만들게 두지 않는다.
+      initialize-schema: never
+      # 톰캣이 하던 만료 세션 정리를 이제 이 스케줄러가 한다
+      cleanup-cron: "0 * * * * *"
+
   jackson:
     time-zone: Asia/Seoul
     default-property-inclusion: non_null

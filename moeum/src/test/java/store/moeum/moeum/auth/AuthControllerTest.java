@@ -1,6 +1,7 @@
 package store.moeum.moeum.auth;
 
 import jakarta.servlet.http.Cookie;
+import jakarta.servlet.http.HttpSession;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -20,6 +21,7 @@ import store.moeum.moeum.global.auth.SessionUser;
 import store.moeum.moeum.support.IntegrationTest;
 
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -103,8 +105,8 @@ class AuthControllerTest extends IntegrationTest {
 	}
 
 	@Test
-	@DisplayName("카카오_토큰은_응답_어디에도_실리지_않는다")
-	void 카카오_토큰은_응답_어디에도_실리지_않는다() throws Exception {
+	@DisplayName("카카오_토큰은_응답에도_세션에도_남지_않는다")
+	void 카카오_토큰은_응답에도_세션에도_남지_않는다() throws Exception {
 		MvcResult result = mockMvc.perform(get("/auth/kakao/callback")
 						.param("code", "auth-code")
 						.param("state", "the-state")
@@ -120,9 +122,11 @@ class AuthControllerTest extends IntegrationTest {
 		assertThat(body).doesNotContain(ACCESS_TOKEN);
 		assertThat(headers).doesNotContain(ACCESS_TOKEN).doesNotContain("kakao-refresh-token");
 
-		// 서버 세션에는 남아 있다 — 브라우저에 나가지 않을 뿐이다
-		assertThat(result.getRequest().getSession(false).getAttribute(SessionKeys.KAKAO_ACCESS_TOKEN))
-				.isEqualTo(ACCESS_TOKEN);
+		// 세션에도 넣지 않는다 (D-020). 세션이 MySQL 에 저장되므로 넣으면 평문 blob 으로 디스크에 남는다.
+		// 담기는 값은 로그인 주체 하나뿐이다.
+		HttpSession session = result.getRequest().getSession(false);
+		assertThat(Collections.list(session.getAttributeNames()))
+				.containsExactly(SessionKeys.LOGIN_USER);
 	}
 
 	@Test
