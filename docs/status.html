@@ -384,7 +384,7 @@
       <span class="sep">/</span>
       <span>2026-09-06 기준</span>
       <span class="sep">/</span>
-      <span>main @ 088a5d1</span>
+      <span>main @ 3e44704</span>
     </div>
     <h1>도메인별 개발 현황</h1>
     <p class="lede">
@@ -438,16 +438,16 @@
 
   const DOMAINS = [
     {
-      name: "인증 · 세션", pct: 95, weight: 8,
+      name: "인증 · 세션", pct: 97, weight: 8,
       items: [
         ["카카오 OAuth 로그인 · 콜백 · 로그아웃", "state 검증 + httpOnly 쿠키", "done"],
         ["GET /me 프로필 조회", "", "done"],
         ["returnTo 절대 URL 화이트리스트", "D-018. 목록에 없으면 기본값 — 열린 리다이렉트 차단", "done"],
         ["Origin 검증 필터 + CORS", "AllowedOrigins 하나를 셋이 공유한다", "done"],
         ["카카오 앱 1개 정책", "D-019. 판매자·구매자 겸업 시 동일인으로 기록", "done"],
-        ["세션 저장소", "톰캣 인메모리 — 배포마다 전원 로그아웃된다", "check"],
+        ["세션 저장소", "Spring Session JDBC — MySQL 에 저장한다 (D-020). 배포해도 로그인이 유지된다", "done"],
         ["Vercel 프리뷰 로그인", "등록 도메인이 달라 쿠키가 실리지 않는다. 대응 미정", "check"],
-        ["테스트 18개", "AuthControllerTest · ReturnToTest", "done"]
+        ["테스트 23개", "AuthControllerTest · ReturnToTest · SessionStoreTest", "done"]
       ]
     },
     {
