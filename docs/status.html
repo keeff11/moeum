@@ -384,7 +384,7 @@
       <span class="sep">/</span>
       <span>2026-09-06 기준</span>
       <span class="sep">/</span>
-      <span>main @ 3e44704</span>
+      <span>main @ 66b7597</span>
     </div>
     <h1>도메인별 개발 현황</h1>
     <p class="lede">
@@ -394,9 +394,9 @@
 
     <div class="total">
       <div class="total-label">전체 진척 (로드맵 단계 비중 가중)</div>
-      <div class="total-num" id="totalNum">48<small>%</small></div>
+      <div class="total-num" id="totalNum">50<small>%</small></div>
       <div class="total-bar">
-        <div class="bar"><i style="width:48%"></i></div>
+        <div class="bar"><i style="width:50%"></i></div>
       </div>
       <div class="total-note">
         1~3단계 완료. 남은 절반의 대부분이 <strong style="font-weight:500">4단계 결제(point3)</strong> 와 그 위에 얹히는 취소·알림이다.
@@ -419,7 +419,7 @@
   <main class="rows" id="rows"></main>
 
   <footer>
-    <div><strong style="font-weight:500;color:var(--ink-2)">다음 한 걸음</strong> — ① point3 가맹점 키·운영 IP 신청(외부 대기) → ② <code>/products</code> 공개 API 2개 → ③ <code>Point3Client</code></div>
+    <div><strong style="font-weight:500;color:var(--ink-2)">다음 한 걸음</strong> — ① point3 가맹점 키·운영 IP 신청(외부 대기) → ② <code>Point3Client</code> → ③ <code>/pay</code> · <code>/confirm</code></div>
     <div>가중치는 로드맵 8단계의 작업량 비중으로 잡았다. 결제 22 · 주문 12 · 판매폼 10 · 취소 10 · 인증 8 · 인프라 8 · 셀러운영 8 · 셀러심사 6 · 장바구니 6 · 알림 6 · 구매자 4.</div>
   </footer>
 </div>
@@ -458,20 +458,24 @@
         ["민감정보 AES 암호화 컬럼", "business_no · settlement_account", "done"],
         ["미승인 셀러 판매 폼 차단", "SELLER_NOT_APPROVED", "done"],
         ["운영자 인증", "앱에 없다. Caddy 의 /admin/* 404 차단이 유일한 방어선", "check"],
+        ["상호명(store_name)", "공개 페이지 표시용 (V3). 대표자 실명을 쓰지 않는다", "done"],
         ["테스트 8개", "SellerServiceTest", "done"]
       ]
     },
     {
-      name: "판매 폼 · 상품", pct: 70, weight: 10,
+      name: "판매 폼 · 상품", pct: 88, weight: 10,
       items: [
         ["판매 폼 생성 (상품 · 옵션 포함)", "", "done"],
         ["목록 · 상세 조회", "fetch join + batch fetch 로 N+1 차단", "done"],
         ["수정 + sale_form_history 기록", "필드 단위 변경 이력", "done"],
         ["슬러그 중복 검증", "", "done"],
-        ["GET /products/{id} 공개 조회", "구매자용 API 가 없어 구매 페이지를 만들 수 없다", "todo"],
-        ["GET /products/{id}/availability", "재고 · 모집 현황 (no-store)", "todo"],
-        ["목표수량 미달 자동 취소", "shortfall_policy · 6단계", "todo"],
-        ["테스트 19개", "SaleFormServiceTest · SaleFormUpdateTest", "done"]
+        ["GET /products/{id} 공개 조회", "D-021. id 는 판매 폼이다. DRAFT 는 404 로 숨긴다", "done"],
+        ["GET /products/{id}/availability", "모집 수는 확정 주문만 센다. no-store 를 응답에 직접 싣는다", "done"],
+        ["공구 마감 배치", "closes_at 지난 SELLING → CLOSED. 상태 전이만 한다", "done"],
+        ["상품 이미지", "sale_form_image (V3). 업로드 인프라가 없어 외부 URL 을 받는다", "check"],
+        ["판매 시작 · 일시중지 흐름", "생성하면 DRAFT 인데 SELLING 으로 올릴 방법이 없다", "todo"],
+        ["목표수량 미달 자동 취소", "shortfall_policy · 6단계. 결제·환불이 있어야 한다", "todo"],
+        ["테스트 32개", "SaleFormServiceTest · SaleFormUpdateTest · PublicProductTest", "done"]
       ]
     },
     {
