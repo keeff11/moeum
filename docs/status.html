@@ -474,7 +474,7 @@
         ["공구 마감 배치", "closes_at 지난 SELLING → CLOSED. 상태 전이만 한다", "done"],
         ["상품 이미지 업로드", "D-022. presigned URL 로 브라우저가 S3 에 직접 올린다. DB 엔 키만", "done"],
         ["업로드 고아 파일 정리", "폼을 저장 안 하면 버킷에 남는다. 수명주기 규칙 미설정", "check"],
-        ["S3 버킷 · CORS · IAM", "AWS 쪽 작업이 남았다. 설정이 비면 업로드만 꺼진다", "check"],
+        ["S3 버킷 · CORS · IAM", "moeum-images-prod. 공개 읽기는 sale-forms/* 에만, 앱 권한은 PutObject 뿐", "done"],
         ["판매 시작 · 일시중지 흐름", "생성하면 DRAFT 인데 SELLING 으로 올릴 방법이 없다", "todo"],
         ["목표수량 미달 자동 취소", "shortfall_policy · 6단계. 결제·환불이 있어야 한다", "todo"],
         ["테스트 39개", "SaleFormServiceTest · SaleFormUpdateTest · PublicProductTest · ImageUploadUrlTest", "done"]
@@ -570,8 +570,8 @@
       name: "공통 · 인프라", pct: 90, weight: 8,
       items: [
         ["전역 예외 핸들러 · 에러 코드 체계", "공통 응답 포맷 + 토큰 유출 방지 테스트", "done"],
-        ["Flyway V1__init.sql · 18개 테이블", "ddl-auto: validate", "done"],
-        ["Testcontainers MySQL 8.0 통합 테스트 100개", "H2 로 대체하지 않는다", "done"],
+        ["Flyway 마이그레이션 V1~V4", "18개 테이블 + 세션 · 공개상품 · 이미지 키. ddl-auto: validate", "done"],
+        ["Testcontainers MySQL 8.0 통합 테스트 123개", "H2 로 대체하지 않는다", "done"],
         ["EC2 + Docker Compose + Caddy 자동 TLS", "D-016. 월 $26", "done"],
         ["GitHub Actions OIDC → ECR → SSM 배포", "AWS 액세스 키를 GitHub 에 두지 않는다", "done"],
         ["Parameter Store 시크릿", "D-017. 배포 때마다 .env 재생성", "done"],
