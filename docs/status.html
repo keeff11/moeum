@@ -1,0 +1,647 @@
+<title>모음 개발 현황판</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+KR:wght@300;400;500;600;700&display=swap">
+<style>
+  :root {
+    --ground:      #F4F3F7;
+    --surface:     #FFFFFF;
+    --surface-2:   #EDEBF3;
+    --line:        #DCD8E6;
+    --line-soft:   #E8E5EF;
+    --ink:         #1B1830;
+    --ink-2:       #4A455F;
+    --ink-3:       #7C7791;
+    --accent:      #5B47E0;
+    --accent-soft: #ECE8FE;
+    --done:        #1F8A5B;
+    --done-soft:   #DFF1E8;
+    --check:       #A76A05;
+    --check-soft:  #FBEEDA;
+    --todo:        #8D89A0;
+    --todo-soft:   #E7E5EC;
+    --track:       #E2DFEB;
+    --shadow:      0 1px 2px rgba(27, 24, 48, .06), 0 8px 24px -16px rgba(27, 24, 48, .28);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground:      #131126;
+      --surface:     #1B1832;
+      --surface-2:   #232040;
+      --line:        #322D52;
+      --line-soft:   #272346;
+      --ink:         #EFEDF7;
+      --ink-2:       #B9B4D0;
+      --ink-3:       #8A85A6;
+      --accent:      #9C8CFF;
+      --accent-soft: #2B2554;
+      --done:        #56C795;
+      --done-soft:   #17362A;
+      --check:       #E0A34A;
+      --check-soft:  #3A2C15;
+      --todo:        #7B7699;
+      --todo-soft:   #262244;
+      --track:       #262244;
+      --shadow:      0 1px 2px rgba(0, 0, 0, .3), 0 10px 30px -20px rgba(0, 0, 0, .8);
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground:      #131126;
+    --surface:     #1B1832;
+    --surface-2:   #232040;
+    --line:        #322D52;
+    --line-soft:   #272346;
+    --ink:         #EFEDF7;
+    --ink-2:       #B9B4D0;
+    --ink-3:       #8A85A6;
+    --accent:      #9C8CFF;
+    --accent-soft: #2B2554;
+    --done:        #56C795;
+    --done-soft:   #17362A;
+    --check:       #E0A34A;
+    --check-soft:  #3A2C15;
+    --todo:        #7B7699;
+    --todo-soft:   #262244;
+    --track:       #262244;
+    --shadow:      0 1px 2px rgba(0, 0, 0, .3), 0 10px 30px -20px rgba(0, 0, 0, .8);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: "IBM Plex Sans KR", -apple-system, "Segoe UI", "Malgun Gothic", sans-serif;
+    font-size: 15px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 1020px;
+    margin: 0 auto;
+    padding: 40px 24px 72px;
+    display: flex;
+    flex-direction: column;
+    gap: 28px;
+  }
+
+  /* ---------- 머리말 ---------- */
+  .masthead { display: flex; flex-direction: column; gap: 18px; }
+
+  .eyebrow {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 11.5px;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+  }
+  .eyebrow .sep { color: var(--line); }
+
+  h1 {
+    margin: 0;
+    font-size: clamp(28px, 4.2vw, 40px);
+    font-weight: 600;
+    letter-spacing: -.022em;
+    text-wrap: balance;
+  }
+  .lede {
+    margin: 0;
+    max-width: 62ch;
+    color: var(--ink-2);
+    font-weight: 300;
+    font-size: 15.5px;
+  }
+
+  .total {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 22px 24px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 6px 28px;
+    align-items: end;
+    box-shadow: var(--shadow);
+  }
+  .total-label {
+    grid-column: 1;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11.5px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+  .total-num {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 46px;
+    font-weight: 500;
+    line-height: 1;
+    letter-spacing: -.03em;
+    font-variant-numeric: tabular-nums;
+    color: var(--accent);
+  }
+  .total-num small { font-size: 20px; color: var(--ink-3); margin-left: 2px; }
+  .total-bar { grid-column: 1; }
+  .total-note {
+    grid-column: 1 / -1;
+    font-size: 13px;
+    color: var(--ink-3);
+    margin-top: 8px;
+  }
+
+  /* ---------- 단계 스트립 ---------- */
+  .stages {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    gap: 6px;
+  }
+  .stage {
+    border: 1px solid var(--line-soft);
+    border-radius: 3px;
+    padding: 9px 8px 10px;
+    background: var(--surface);
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+  }
+  .stage .n {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    color: var(--ink-3);
+    letter-spacing: .06em;
+  }
+  .stage .t {
+    font-size: 12.5px;
+    color: var(--ink-2);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .stage[data-s="done"] { border-color: var(--done); background: var(--done-soft); }
+  .stage[data-s="done"] .t { color: var(--ink); }
+  .stage[data-s="next"] { border-color: var(--accent); background: var(--accent-soft); }
+  .stage[data-s="next"] .t { color: var(--ink); font-weight: 500; }
+
+  /* ---------- 범례 · 조작 ---------- */
+  .toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 12px;
+  }
+  .legend { display: flex; flex-wrap: wrap; gap: 14px; }
+  .legend span {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12.5px;
+    color: var(--ink-2);
+  }
+  .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+  .dot.done  { background: var(--done); }
+  .dot.check { background: var(--check); }
+  .dot.part  { background: var(--accent); }
+  .dot.todo  { background: var(--todo); }
+
+  button.toggle-all {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px;
+    letter-spacing: .04em;
+    color: var(--ink-2);
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    padding: 6px 12px;
+    cursor: pointer;
+  }
+  button.toggle-all:hover { border-color: var(--accent); color: var(--accent); }
+  button.toggle-all:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* ---------- 도메인 행 ---------- */
+  .rows { display: flex; flex-direction: column; gap: 8px; }
+
+  details.row {
+    background: var(--surface);
+    border: 1px solid var(--line-soft);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  details.row[open] { border-color: var(--line); box-shadow: var(--shadow); }
+
+  summary {
+    list-style: none;
+    cursor: pointer;
+    padding: 14px 18px;
+    display: grid;
+    grid-template-columns: 16px minmax(150px, 250px) minmax(0, 1fr) 92px;
+    align-items: center;
+    gap: 14px;
+  }
+  summary::-webkit-details-marker { display: none; }
+  summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  summary:hover .name { color: var(--accent); }
+
+  .chev {
+    width: 16px; height: 16px;
+    color: var(--ink-3);
+    transition: transform .18s ease;
+  }
+  details[open] .chev { transform: rotate(90deg); }
+
+  .name-cell { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+  .name { font-weight: 500; font-size: 15px; letter-spacing: -.01em; }
+  .counts {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    color: var(--ink-3);
+    letter-spacing: .02em;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .bar {
+    height: 10px;
+    border-radius: 2px;
+    background:
+      linear-gradient(90deg, transparent calc(25% - 1px), var(--surface) 25%, transparent calc(25% + 1px)),
+      linear-gradient(90deg, transparent calc(50% - 1px), var(--surface) 50%, transparent calc(50% + 1px)),
+      linear-gradient(90deg, transparent calc(75% - 1px), var(--surface) 75%, transparent calc(75% + 1px)),
+      var(--track);
+    overflow: hidden;
+  }
+  .bar i {
+    display: block;
+    height: 100%;
+    background: var(--accent);
+    border-radius: 2px 0 0 2px;
+    transform-origin: left;
+  }
+  .bar[data-zero="1"] i { background: var(--todo); }
+
+  .pct {
+    justify-self: end;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 17px;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -.02em;
+    color: var(--ink);
+  }
+  .pct small { font-size: 11.5px; color: var(--ink-3); margin-left: 1px; }
+  .pct[data-zero="1"] { color: var(--ink-3); }
+
+  /* ---------- 상세 표 ---------- */
+  .detail { border-top: 1px solid var(--line-soft); background: var(--surface-2); }
+  .detail-inner { padding: 4px 18px 16px; overflow-x: auto; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  caption {
+    caption-side: top;
+    text-align: left;
+    padding: 12px 0 8px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+  th {
+    text-align: left;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10.5px;
+    font-weight: 500;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    padding: 0 0 8px;
+    border-bottom: 1px solid var(--line);
+  }
+  th:last-child { text-align: right; }
+  td { padding: 10px 0; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  td.item { padding-right: 20px; }
+  td.state { text-align: right; white-space: nowrap; width: 1%; }
+  .item-t { color: var(--ink); }
+  .item-n { display: block; color: var(--ink-3); font-size: 12.5px; font-weight: 300; margin-top: 1px; }
+
+  .badge {
+    display: inline-block;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11.5px;
+    font-weight: 500;
+    letter-spacing: .03em;
+    padding: 3px 9px;
+    border-radius: 2px;
+    font-variant-numeric: tabular-nums;
+  }
+  .badge.done  { background: var(--done-soft);  color: var(--done); }
+  .badge.check { background: var(--check-soft); color: var(--check); }
+  .badge.part  { background: var(--accent-soft); color: var(--accent); }
+  .badge.todo  { background: var(--todo-soft);  color: var(--ink-3); }
+
+  footer {
+    border-top: 1px solid var(--line);
+    padding-top: 16px;
+    color: var(--ink-3);
+    font-size: 13px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  footer code {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12.5px;
+    color: var(--ink-2);
+  }
+
+  @media (max-width: 720px) {
+    .wrap { padding: 28px 16px 56px; }
+    .stages { grid-template-columns: repeat(4, 1fr); }
+    summary { grid-template-columns: 14px minmax(0, 1fr) 68px; row-gap: 10px; }
+    .bar { grid-column: 1 / -1; }
+    .total { grid-template-columns: minmax(0, 1fr) auto; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; animation: none !important; }
+  }
+</style>
+
+<div class="wrap">
+  <header class="masthead">
+    <div class="eyebrow">
+      <span>moeum · 공동구매 결제 플랫폼</span>
+      <span class="sep">/</span>
+      <span>2026-09-06 기준</span>
+      <span class="sep">/</span>
+      <span>main @ 088a5d1</span>
+    </div>
+    <h1>도메인별 개발 현황</h1>
+    <p class="lede">
+      <code style="font-family:'IBM Plex Mono',monospace;font-size:13.5px">docs/roadmap.md</code> 의 체크박스가 아니라
+      실제 코드·스키마·배포 상태를 읽어 정리했다. 도메인 이름을 누르면 항목별 상태가 펼쳐진다.
+    </p>
+
+    <div class="total">
+      <div class="total-label">전체 진척 (로드맵 단계 비중 가중)</div>
+      <div class="total-num" id="totalNum">48<small>%</small></div>
+      <div class="total-bar">
+        <div class="bar"><i style="width:48%"></i></div>
+      </div>
+      <div class="total-note">
+        1~3단계 완료. 남은 절반의 대부분이 <strong style="font-weight:500">4단계 결제(point3)</strong> 와 그 위에 얹히는 취소·알림이다.
+      </div>
+    </div>
+
+    <div class="stages" id="stages"></div>
+  </header>
+
+  <div class="toolbar">
+    <div class="legend">
+      <span><i class="dot done"></i>완료</span>
+      <span><i class="dot part"></i>부분 진행</span>
+      <span><i class="dot check"></i>점검 필요</span>
+      <span><i class="dot todo"></i>진행 전</span>
+    </div>
+    <button class="toggle-all" id="toggleAll" type="button">모두 펼치기</button>
+  </div>
+
+  <main class="rows" id="rows"></main>
+
+  <footer>
+    <div><strong style="font-weight:500;color:var(--ink-2)">다음 한 걸음</strong> — ① point3 가맹점 키·운영 IP 신청(외부 대기) → ② <code>/products</code> 공개 API 2개 → ③ <code>Point3Client</code></div>
+    <div>가중치는 로드맵 8단계의 작업량 비중으로 잡았다. 결제 22 · 주문 12 · 판매폼 10 · 취소 10 · 인증 8 · 인프라 8 · 셀러운영 8 · 셀러심사 6 · 장바구니 6 · 알림 6 · 구매자 4.</div>
+  </footer>
+</div>
+
+<script>
+  const STAGES = [
+    { n: "1단계", t: "뼈대",        s: "done" },
+    { n: "2단계", t: "셀러·판매폼",  s: "done" },
+    { n: "3단계", t: "주문·홀드",    s: "done" },
+    { n: "4단계", t: "1차금 결제",   s: "next" },
+    { n: "5단계", t: "2차금",        s: "" },
+    { n: "6단계", t: "취소·환불",    s: "" },
+    { n: "7단계", t: "알림·대시보드", s: "" },
+    { n: "8단계", t: "마무리",       s: "" }
+  ];
+
+  const DOMAINS = [
+    {
+      name: "인증 · 세션", pct: 95, weight: 8,
+      items: [
+        ["카카오 OAuth 로그인 · 콜백 · 로그아웃", "state 검증 + httpOnly 쿠키", "done"],
+        ["GET /me 프로필 조회", "", "done"],
+        ["returnTo 절대 URL 화이트리스트", "D-018. 목록에 없으면 기본값 — 열린 리다이렉트 차단", "done"],
+        ["Origin 검증 필터 + CORS", "AllowedOrigins 하나를 셋이 공유한다", "done"],
+        ["카카오 앱 1개 정책", "D-019. 판매자·구매자 겸업 시 동일인으로 기록", "done"],
+        ["세션 저장소", "톰캣 인메모리 — 배포마다 전원 로그아웃된다", "check"],
+        ["Vercel 프리뷰 로그인", "등록 도메인이 달라 쿠키가 실리지 않는다. 대응 미정", "check"],
+        ["테스트 18개", "AuthControllerTest · ReturnToTest", "done"]
+      ]
+    },
+    {
+      name: "셀러 · 심사", pct: 90, weight: 6,
+      items: [
+        ["온보딩 제출 → PENDING", "", "done"],
+        ["심사 승인 · 반려 API", "로드맵상 '일단 수동 API'", "done"],
+        ["민감정보 AES 암호화 컬럼", "business_no · settlement_account", "done"],
+        ["미승인 셀러 판매 폼 차단", "SELLER_NOT_APPROVED", "done"],
+        ["운영자 인증", "앱에 없다. Caddy 의 /admin/* 404 차단이 유일한 방어선", "check"],
+        ["테스트 8개", "SellerServiceTest", "done"]
+      ]
+    },
+    {
+      name: "판매 폼 · 상품", pct: 70, weight: 10,
+      items: [
+        ["판매 폼 생성 (상품 · 옵션 포함)", "", "done"],
+        ["목록 · 상세 조회", "fetch join + batch fetch 로 N+1 차단", "done"],
+        ["수정 + sale_form_history 기록", "필드 단위 변경 이력", "done"],
+        ["슬러그 중복 검증", "", "done"],
+        ["GET /products/{id} 공개 조회", "구매자용 API 가 없어 구매 페이지를 만들 수 없다", "todo"],
+        ["GET /products/{id}/availability", "재고 · 모집 현황 (no-store)", "todo"],
+        ["목표수량 미달 자동 취소", "shortfall_policy · 6단계", "todo"],
+        ["테스트 19개", "SaleFormServiceTest · SaleFormUpdateTest", "done"]
+      ]
+    },
+    {
+      name: "구매자 · 배송지", pct: 90, weight: 4,
+      items: [
+        ["카카오 첫 로그인 시 buyer 생성", "findOrCreate", "done"],
+        ["GET · PUT /me/address", "", "done"],
+        ["주문 시 shipping 스냅샷 복사", "4단계", "todo"],
+        ["payer_id 저장", "1차금 승인 응답에서 받아 2차금 인증을 줄인다", "todo"]
+      ]
+    },
+    {
+      name: "장바구니", pct: 80, weight: 6,
+      items: [
+        ["담기 · 조회 · 수량 변경 · 삭제", "", "done"],
+        ["같은 셀러 검증", "배송비가 셀러 단위 · 묶음당 1회라 섞이면 나눌 수 없다", "done"],
+        ["마감 · 품절 상태 표시", "", "done"],
+        ["1 · 2차금 합계 계산", "", "done"],
+        ["무료배송 기준 반영", "free_shipping_over 를 응답에 내보내면서 청구액에는 쓰지 않는다", "check"],
+        ["주문 후 장바구니 정리", "담긴 항목이 남아 같은 것으로 홀드를 계속 만들 수 있다", "todo"],
+        ["로그인 복귀 후 자동 담기", "D-015", "todo"],
+        ["테스트 11개", "CartServiceTest", "done"]
+      ]
+    },
+    {
+      name: "주문 · 재고 홀드", pct: 90, weight: 12,
+      items: [
+        ["POST · GET /checkout-sessions", "B2 옵션·수량 확정 시 홀드 (D-001)", "done"],
+        ["조건부 UPDATE 한 방 재고 확보", "영향 행 0이면 품절 또는 마감", "done"],
+        ["판매 폼 id 오름차순 잠금", "두 구매자가 반대 순서로 잠그면 데드락", "done"],
+        ["@Retryable 을 트랜잭션 바깥에 배치", "품절은 재시도하지 않는다 (D-003)", "done"],
+        ["/release 멱등 해제", "두 번 불러도 재고가 두 번 돌아가지 않는다", "done"],
+        ["홀드 만료 배치", "FOR UPDATE SKIP LOCKED + 멱등 가드 + CAPTURE_PENDING 제외", "done"],
+        ["동시성 · 만료 테스트 11개", "200스레드 동시 주문, 중복 회수 방지", "done"],
+        ["ACTIVE_SESSION_EXISTS 이어받기", "D-015 가 정했는데 코드에 없다 — 홀드가 이중 생성된다", "check"],
+        ["배송비 계산", "항상 seller.shippingFee 고정 — 무료배송 기준을 타지 않는다", "check"],
+        ["POST /checkout-sessions/{id}/pay", "4단계", "todo"]
+      ]
+    },
+    {
+      name: "결제 · point3", pct: 5, weight: 22, open: true,
+      items: [
+        ["payment · payment_event 스키마", "테이블과 설계 문서만 있고 payment 패키지가 없다", "done"],
+        ["point3 가맹점 키 발급 + 운영 IP 등록", "외부 대기. 지금 신청해야 4단계가 안 막힌다", "todo"],
+        ["Point3Client (세션 생성 · 조회 · 승인)", "connect · read 타임아웃 필수", "todo"],
+        ["4xx / 5xx 예외 분리", "D-006. 하나로 잡으면 5xx 가 실패 처리되어 미수금이 된다", "todo"],
+        ["POST /checkout-sessions/{id}/pay", "홀드 유효성 확인 후 세션 생성", "todo"],
+        ["POST /orders/{token}/confirm", "검증 4종 → CAPTURE_PENDING 커밋 → 승인 호출", "todo"],
+        ["GET /orders/{token} 상태 조회", "부작용 없음 (D-014). 프론트는 조회만 반복한다", "todo"],
+        ["finalizeCapture 멱등 확정", "홀드 커밋 + 재고 확정", "todo"],
+        ["승인 대사 배치", "D-005. 다음 날 00:00 KST 를 넘기면 복구할 수 없다", "todo"],
+        ["payment_event 기록", "상태 전이 감사 로그", "todo"],
+        ["WireMock 실패 테스트 8종", "타임아웃 · 5xx · processing · 중복 confirm", "todo"],
+        ["uk_payment_group_phase 재결제 정책", "실패 후 같은 (group, phase) 로 새 행을 못 만든다. 착수 전 결정", "check"],
+        ["2차금 — phase 만 바꿔 재사용", "5단계. 입고 처리 · 미수 추적 · 미납 배치", "todo"]
+      ]
+    },
+    {
+      name: "취소 · 환불", pct: 3, weight: 10,
+      items: [
+        ["refund 스키마", "", "done"],
+        ["취소 가능 여부 판단", "정산 전 / EOB 시간대 / 이미 취소 중", "todo"],
+        ["부분 취소 세금 3종 계산", "point3 가 자동 계산하지 않는다 (D-011)", "todo"],
+        ["Point3Client.refund + 409 분기", "Idempotency-Key 는 중복 차단용이지 재시도용이 아니다", "todo"],
+        ["resume API 연동", "", "todo"],
+        ["취소 대사 배치", "", "todo"],
+        ["EOB 시간대 차단", "23:30~00:30 KST 는 버튼 비활성화 + 안내", "todo"],
+        ["정산 후 환불 접수", "settled_manual", "todo"]
+      ]
+    },
+    {
+      name: "알림 · Outbox", pct: 3, weight: 6,
+      items: [
+        ["outbox 스키마", "", "done"],
+        ["Outbox 릴레이 배치", "대사 배치 · 만료 배치 다음 순위 (D-012)", "todo"],
+        ["카카오 알림톡 연동", "2차금 청구 · 상태 변경. 알림이 곧 결제 요청이다", "todo"],
+        ["재시도 상한 + DEAD 처리", "", "todo"]
+      ]
+    },
+    {
+      name: "셀러 운영 (대시보드 · 발주 · 송장)", pct: 0, weight: 8,
+      items: [
+        ["입고 처리 → orders.status = ARRIVED", "5단계 시작점", "todo"],
+        ["셀러 대시보드 집계 API", "", "todo"],
+        ["발주서 다운로드", "옵션별 수량 집계 → CSV", "todo"],
+        ["송장 등록 (개별 · 일괄 업로드)", "", "todo"]
+      ]
+    },
+    {
+      name: "공통 · 인프라", pct: 90, weight: 8,
+      items: [
+        ["전역 예외 핸들러 · 에러 코드 체계", "공통 응답 포맷 + 토큰 유출 방지 테스트", "done"],
+        ["Flyway V1__init.sql · 18개 테이블", "ddl-auto: validate", "done"],
+        ["Testcontainers MySQL 8.0 통합 테스트 100개", "H2 로 대체하지 않는다", "done"],
+        ["EC2 + Docker Compose + Caddy 자동 TLS", "D-016. 월 $26", "done"],
+        ["GitHub Actions OIDC → ECR → SSM 배포", "AWS 액세스 키를 GitHub 에 두지 않는다", "done"],
+        ["Parameter Store 시크릿", "D-017. 배포 때마다 .env 재생성", "done"],
+        ["api.moeum.store 도메인 이전", "D-018. SameSite=Lax 가 동작하려면 등록 도메인이 같아야 한다", "done"],
+        ["EBS 스냅샷 정책", "문서에만 있다. 안 걸려 있으면 인스턴스 장애 = 데이터 전손", "check"],
+        ["운영 로그인 왕복 확인", "카카오 키 등록 후 실제 성공 여부 미확인", "check"],
+        ["로그 마스킹", "토큰 · PIN · 전체 payer_id", "todo"],
+        ["부하 테스트", "재고 확보 구간", "todo"],
+        ["README 아키텍처 다이어그램", "", "todo"]
+      ]
+    }
+  ];
+
+  const LABEL = { done: "완료", check: "점검 필요", todo: "진행 전" };
+
+  const el = (tag, cls, html) => {
+    const n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (html !== undefined) n.innerHTML = html;
+    return n;
+  };
+  const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+  // 단계 스트립
+  const stagesEl = document.getElementById("stages");
+  STAGES.forEach((s) => {
+    const d = el("div", "stage");
+    if (s.s) d.dataset.s = s.s;
+    d.appendChild(el("span", "n", s.n));
+    d.appendChild(el("span", "t", esc(s.t)));
+    stagesEl.appendChild(d);
+  });
+
+  // 도메인 행
+  const rowsEl = document.getElementById("rows");
+  DOMAINS.forEach((dom) => {
+    const done = dom.items.filter((i) => i[2] === "done").length;
+    const check = dom.items.filter((i) => i[2] === "check").length;
+    const todo = dom.items.filter((i) => i[2] === "todo").length;
+    const zero = dom.pct === 0 ? "1" : "0";
+
+    const details = el("details", "row");
+    if (dom.open) details.open = true;
+
+    const summary = el("summary");
+    summary.innerHTML =
+      '<svg class="chev" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>' +
+      '<span class="name-cell"><span class="name">' + esc(dom.name) + '</span>' +
+      '<span class="counts">완료 ' + done + ' · 점검 ' + check + ' · 남음 ' + todo + '</span></span>' +
+      '<span class="bar" data-zero="' + zero + '"><i style="width:' + dom.pct + '%"></i></span>' +
+      '<span class="pct" data-zero="' + zero + '">' + dom.pct + '<small>%</small></span>';
+    details.appendChild(summary);
+
+    const rows = dom.items.map((it) =>
+      '<tr><td class="item"><span class="item-t">' + esc(it[0]) + '</span>' +
+      (it[1] ? '<span class="item-n">' + esc(it[1]) + '</span>' : '') + '</td>' +
+      '<td class="state"><span class="badge ' + it[2] + '">' + LABEL[it[2]] + '</span></td></tr>'
+    ).join("");
+
+    const detail = el("div", "detail");
+    detail.innerHTML =
+      '<div class="detail-inner"><table>' +
+      '<caption>' + esc(dom.name) + ' · 항목 ' + dom.items.length + '개 · 가중치 ' + dom.weight + '</caption>' +
+      '<thead><tr><th scope="col">내용</th><th scope="col">상태</th></tr></thead>' +
+      '<tbody>' + rows + '</tbody></table></div>';
+    details.appendChild(detail);
+
+    rowsEl.appendChild(details);
+  });
+
+  // 모두 펼치기 · 접기
+  const btn = document.getElementById("toggleAll");
+  btn.addEventListener("click", () => {
+    const all = [...document.querySelectorAll("details.row")];
+    const expand = all.some((d) => !d.open);
+    all.forEach((d) => { d.open = expand; });
+    btn.textContent = expand ? "모두 접기" : "모두 펼치기";
+  });
+</script>
