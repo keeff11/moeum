@@ -7,6 +7,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import store.moeum.moeum.global.error.BusinessException;
 import store.moeum.moeum.global.error.ErrorCode;
+import store.moeum.moeum.global.storage.ImageStorage;
+import store.moeum.moeum.saleform.dto.ImageUploadUrlResponse;
+import store.moeum.moeum.saleform.dto.ImageUploadUrlRequest;
 import store.moeum.moeum.saleform.domain.FieldChange;
 import store.moeum.moeum.saleform.domain.Product;
 import store.moeum.moeum.saleform.domain.ProductOption;
@@ -32,6 +35,7 @@ import java.util.List;
 public class SaleFormService {
 
 	private final SaleFormRepository saleFormRepository;
+	private final ImageStorage imageStorage;
 	private final SaleFormHistoryRepository saleFormHistoryRepository;
 	private final SellerService sellerService;
 
@@ -108,7 +112,8 @@ public class SaleFormService {
 	@Transactional(readOnly = true)
 	public SaleFormDetailResponse findMineDetail(String kakaoId, Long saleFormId) {
 		Seller seller = sellerService.getByKakaoId(kakaoId);
-		return SaleFormDetailResponse.of(findOwned(seller, saleFormId), seller);
+		SaleForm owned = findOwned(seller, saleFormId);
+		return SaleFormDetailResponse.of(owned, seller, imageUrlsOf(owned));
 	}
 
 	/**
@@ -139,7 +144,7 @@ public class SaleFormService {
 					.toList());
 		}
 
-		return SaleFormDetailResponse.of(form, seller);
+		return SaleFormDetailResponse.of(form, seller, imageUrlsOf(form));
 	}
 
 	@Transactional(readOnly = true)
@@ -202,5 +207,31 @@ public class SaleFormService {
 		if (opensAt != null && closesAt != null && !opensAt.isBefore(closesAt)) {
 			throw new BusinessException(ErrorCode.INVALID_SALE_FORM, "마감일시는 오픈일시보다 뒤여야 합니다.");
 		}
+	}
+
+	/** 엔티티에는 S3 키만 있다. 읽기용 주소는 여기서 조립한다 */
+	private List<String> imageUrlsOf(SaleForm form) {
+		return form.imageKeys().stream().map(imageStorage::publicUrl).toList();
+	}
+
+	/**
+	 * 이미지 업로드용 presigned URL 을 발급한다.
+	 *
+	 * 심사를 통과한 셀러만 받는다 — 미승인 셀러가 버킷에 파일을 쌓을 이유가 없다.
+	 * 키는 셀러 id 로 나뉘므로 남의 경로에 쓸 수 없다.
+	 *
+	 * <b>여기서 발급만 하고 파일은 브라우저가 S3 로 직접 올린다.</b>
+	 * 올린 뒤 판매 폼을 저장하지 않으면 그 파일은 아무 데서도 참조되지 않는다 —
+	 * 버킷 수명주기 규칙으로 걷어내야 한다 (D-022).
+	 */
+	@Transactional(readOnly = true)
+	public ImageUploadUrlResponse issueImageUploadUrl(String kakaoId, ImageUploadUrlRequest request) {
+		Seller seller = sellerService.getByKakaoId(kakaoId);
+		if (!seller.isApproved()) {
+			throw new BusinessException(ErrorCode.SELLER_NOT_APPROVED);
+		}
+
+		return ImageUploadUrlResponse.from(imageStorage.presignUpload(
+				seller.getId(), request.contentType(), request.contentLength()));
 	}
 }

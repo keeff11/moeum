@@ -87,6 +87,10 @@ moeum:
   crypto:
     # 로컬 전용 개발 키. 환경변수가 있으면 그쪽을 쓴다
     seller-key: ${SELLER_CRYPTO_KEY:bW9ldW0tbG9jYWwtZGV2LWtleS1ETy1OT1QtVVNFISE=}
+  storage:
+    # 비워 두면 이미지 업로드만 꺼진다. 로컬에서 AWS 자격증명을 갖추게 만들 이유가 없다
+    bucket: ${S3_BUCKET:}
+    public-base-url: ${S3_PUBLIC_BASE_URL:}
   oauth:
     kakao:
       client-id: ${KAKAO_CLIENT_ID:local-client-id}
@@ -140,6 +144,12 @@ moeum:
   crypto:
     # 32바이트 AES-256 키의 Base64. 환경변수로만 주입한다
     seller-key: ${SELLER_CRYPTO_KEY}
+  storage:
+    # 기본값을 비워 둔다. 파라미터가 없어도 앱은 뜨고 이미지 업로드만 꺼진다.
+    # KAKAO_CLIENT_SECRET 과 같은 이유다 — 값 하나가 없다고 서비스 전체가 멈추면 안 된다.
+    bucket: ${S3_BUCKET:}
+    # 나중에 CloudFront 를 앞에 세우면 이 값만 바꾼다. 쌓인 행은 키만 갖고 있어 손대지 않는다
+    public-base-url: ${S3_PUBLIC_BASE_URL:}
   oauth:
     kakao:
       # 카카오 앱 등록 정보는 전부 서버가 갖는다 (api-spec 10-8)

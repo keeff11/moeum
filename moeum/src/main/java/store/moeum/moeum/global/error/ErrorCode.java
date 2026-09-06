@@ -51,7 +51,12 @@ public enum ErrorCode {
 	// --- 판매 폼 ---
 	SALE_FORM_NOT_FOUND(HttpStatus.NOT_FOUND, "판매 폼을 찾을 수 없습니다."),
 	DUPLICATE_SALE_FORM_SLUG(HttpStatus.CONFLICT, "이미 사용 중인 판매 폼 주소입니다."),
-	INVALID_SALE_FORM(HttpStatus.BAD_REQUEST, "판매 폼 구성이 올바르지 않습니다.");
+	INVALID_SALE_FORM(HttpStatus.BAD_REQUEST, "판매 폼 구성이 올바르지 않습니다."),
+
+	// --- 이미지 업로드 ---
+	UNSUPPORTED_IMAGE_TYPE(HttpStatus.BAD_REQUEST, "지원하지 않는 이미지 형식입니다."),
+	IMAGE_TOO_LARGE(HttpStatus.PAYLOAD_TOO_LARGE, "이미지 크기가 허용 범위를 넘었습니다."),
+	STORAGE_NOT_CONFIGURED(HttpStatus.SERVICE_UNAVAILABLE, "이미지 업로드를 사용할 수 없습니다.");
 
 	private final HttpStatus status;
 	private final String message;

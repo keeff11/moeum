@@ -79,7 +79,7 @@ public record SaleFormDetailResponse(
 		}
 	}
 
-	public static SaleFormDetailResponse of(SaleForm form, Seller seller) {
+	public static SaleFormDetailResponse of(SaleForm form, Seller seller, List<String> imageUrls) {
 		return new SaleFormDetailResponse(
 				form.getId(),
 				form.getTitle(),
@@ -100,7 +100,7 @@ public record SaleFormDetailResponse(
 				form.getMinOrderAmount(),
 				form.getDescriptionJson(),
 				form.isProgressPublic(),
-				form.imageUrls(),
+				imageUrls,
 				seller.getShippingFee(),
 				seller.getFreeShippingOver(),
 				form.getProducts().stream().map(ProductResponse::from).toList(),

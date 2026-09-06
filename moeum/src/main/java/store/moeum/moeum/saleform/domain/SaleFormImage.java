@@ -22,8 +22,7 @@ import java.time.LocalDateTime;
 /**
  * 상품 이미지. 순서가 곧 노출 순서이고 첫 번째가 대표 이미지다.
  *
- * 파일 업로드 인프라가 없어 지금은 셀러가 외부 URL 을 입력한다.
- * 업로드가 붙어도 이 값을 채우는 주체만 바뀐다.
+ * 담는 값은 S3 객체 키다. 읽기용 주소는 {@code ImageStorage#publicUrl} 이 조립한다.
  */
 @Entity
 @Table(name = "sale_form_image")
@@ -42,8 +41,9 @@ public class SaleFormImage {
 			foreignKey = @ForeignKey(name = "fk_sale_form_image_form"))
 	private SaleForm saleForm;
 
-	@Column(name = "url", nullable = false, length = 500)
-	private String url;
+	/** S3 객체 키. 전체 URL 을 저장하지 않는다 (V4) — 버킷·CDN 이 바뀌면 조립하는 쪽만 고친다 */
+	@Column(name = "object_key", nullable = false, length = 500)
+	private String objectKey;
 
 	@Column(name = "sort_order", nullable = false)
 	private int sortOrder;
@@ -52,13 +52,13 @@ public class SaleFormImage {
 	@Column(name = "created_at", nullable = false, updatable = false)
 	private LocalDateTime createdAt;
 
-	private SaleFormImage(String url, int sortOrder) {
-		this.url = url;
+	private SaleFormImage(String objectKey, int sortOrder) {
+		this.objectKey = objectKey;
 		this.sortOrder = sortOrder;
 	}
 
-	public static SaleFormImage of(String url, int sortOrder) {
-		return new SaleFormImage(url, sortOrder);
+	public static SaleFormImage of(String objectKey, int sortOrder) {
+		return new SaleFormImage(objectKey, sortOrder);
 	}
 
 	/** 연관관계 주인 쪽 설정. {@link SaleForm#replaceImages} 를 통해서만 부른다 */

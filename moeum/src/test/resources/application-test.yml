@@ -11,6 +11,9 @@ moeum:
     cookie-secure: false
   crypto:
     seller-key: bW9ldW0tbG9jYWwtZGV2LWtleS1ETy1OT1QtVVNFISE=
+  storage:
+    bucket: moeum-test-bucket
+    public-base-url: https://img.test.moeum.store
   oauth:
     kakao:
       client-id: test-client-id

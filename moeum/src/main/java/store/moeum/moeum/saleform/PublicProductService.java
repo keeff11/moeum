@@ -5,6 +5,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import store.moeum.moeum.global.error.BusinessException;
 import store.moeum.moeum.global.error.ErrorCode;
+import store.moeum.moeum.global.storage.ImageStorage;
 import store.moeum.moeum.saleform.domain.SaleForm;
 import store.moeum.moeum.saleform.domain.SaleFormRepository;
 import store.moeum.moeum.saleform.domain.SaleFormStatus;
@@ -12,6 +13,7 @@ import store.moeum.moeum.saleform.dto.ProductAvailabilityResponse;
 import store.moeum.moeum.saleform.dto.ProductDetailResponse;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 import static store.moeum.moeum.global.jpa.JpaAuditingConfig.KST;
 
@@ -27,6 +29,7 @@ import static store.moeum.moeum.global.jpa.JpaAuditingConfig.KST;
 public class PublicProductService {
 
 	private final SaleFormRepository saleFormRepository;
+	private final ImageStorage imageStorage;
 
 	@Transactional(readOnly = true)
 	public ProductDetailResponse detail(Long saleFormId) {
@@ -34,7 +37,8 @@ public class PublicProductService {
 				.filter(PublicProductService::isPublished)
 				.orElseThrow(() -> new BusinessException(ErrorCode.SALE_FORM_NOT_FOUND));
 
-		return ProductDetailResponse.of(form, LocalDateTime.now(KST));
+		List<String> imageUrls = form.imageKeys().stream().map(imageStorage::publicUrl).toList();
+		return ProductDetailResponse.of(form, LocalDateTime.now(KST), imageUrls);
 	}
 
 	@Transactional(readOnly = true)

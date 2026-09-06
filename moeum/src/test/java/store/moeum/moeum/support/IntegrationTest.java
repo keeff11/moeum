@@ -37,6 +37,12 @@ public abstract class IntegrationTest {
 					.withReuse(true);
 
 	static {
+		// presigned URL 서명에만 쓰는 더미 자격증명. 네트워크로 나가지 않는다 —
+		// 서명은 전부 로컬 계산이라 실제 AWS 없이도 발급 로직을 검증할 수 있다.
+		System.setProperty("aws.accessKeyId", "test-access-key");
+		System.setProperty("aws.secretAccessKey", "test-secret-key");
+		System.setProperty("aws.region", "ap-northeast-2");
+
 		MYSQL.start();
 	}
 

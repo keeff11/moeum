@@ -384,7 +384,7 @@
       <span class="sep">/</span>
       <span>2026-09-06 기준</span>
       <span class="sep">/</span>
-      <span>main @ 66b7597</span>
+      <span>main @ (미푸시)</span>
     </div>
     <h1>도메인별 개발 현황</h1>
     <p class="lede">
@@ -472,10 +472,12 @@
         ["GET /products/{id} 공개 조회", "D-021. id 는 판매 폼이다. DRAFT 는 404 로 숨긴다", "done"],
         ["GET /products/{id}/availability", "모집 수는 확정 주문만 센다. no-store 를 응답에 직접 싣는다", "done"],
         ["공구 마감 배치", "closes_at 지난 SELLING → CLOSED. 상태 전이만 한다", "done"],
-        ["상품 이미지", "sale_form_image (V3). 업로드 인프라가 없어 외부 URL 을 받는다", "check"],
+        ["상품 이미지 업로드", "D-022. presigned URL 로 브라우저가 S3 에 직접 올린다. DB 엔 키만", "done"],
+        ["업로드 고아 파일 정리", "폼을 저장 안 하면 버킷에 남는다. 수명주기 규칙 미설정", "check"],
+        ["S3 버킷 · CORS · IAM", "AWS 쪽 작업이 남았다. 설정이 비면 업로드만 꺼진다", "check"],
         ["판매 시작 · 일시중지 흐름", "생성하면 DRAFT 인데 SELLING 으로 올릴 방법이 없다", "todo"],
         ["목표수량 미달 자동 취소", "shortfall_policy · 6단계. 결제·환불이 있어야 한다", "todo"],
-        ["테스트 32개", "SaleFormServiceTest · SaleFormUpdateTest · PublicProductTest", "done"]
+        ["테스트 39개", "SaleFormServiceTest · SaleFormUpdateTest · PublicProductTest · ImageUploadUrlTest", "done"]
       ]
     },
     {

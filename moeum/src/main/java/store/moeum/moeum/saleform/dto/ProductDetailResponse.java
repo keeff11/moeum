@@ -87,14 +87,18 @@ public record ProductDetailResponse(
 		}
 	}
 
-	public static ProductDetailResponse of(SaleForm form, LocalDateTime now) {
+	/**
+	 * @param imageUrls 서비스가 {@code ImageStorage} 로 조립해 넘긴 읽기용 주소.
+	 *                  엔티티에는 S3 키만 있고, 여기서 키를 만지지 않는다
+	 */
+	public static ProductDetailResponse of(SaleForm form, LocalDateTime now, List<String> imageUrls) {
 		boolean group = form.getSaleType() == SaleType.GROUP;
 
 		return new ProductDetailResponse(
 				form.getId(),
 				form.getSaleType(),
 				form.getTitle(),
-				form.imageUrls(),
+				imageUrls,
 				SellerResponse.from(form.getSeller()),
 				form.getMinOrderAmount(),
 				form.getShipStartText(),

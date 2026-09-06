@@ -94,8 +94,10 @@ class PublicProductTest extends IntegrationTest {
 
 		assertThat(response.seller().name()).isEqualTo("모으미 상점");
 		assertThat(response.seller().name()).isNotEqualTo("홍길동");
+		// 엔티티에는 S3 키만 있고 읽기 주소는 조립된다 — 버킷·CDN 이 바뀌어도 쌓인 행은 그대로다
 		assertThat(response.images()).containsExactly(
-				"https://cdn.example.com/1.jpg", "https://cdn.example.com/2.jpg");
+				"https://img.test.moeum.store/sale-forms/1/first.jpg",
+				"https://img.test.moeum.store/sale-forms/1/second.jpg");
 		assertThat(response.status()).isEqualTo(PublicStatus.SELLING);
 		assertThat(response.recruitTarget()).isEqualTo(30);
 		assertThat(response.recruitDDay()).isEqualTo(4);
@@ -293,7 +295,7 @@ class PublicProductTest extends IntegrationTest {
 				.progressPublic(progressPublic)
 				.build();
 		form.addProduct(productWithOption());
-		form.replaceImages(List.of("https://cdn.example.com/1.jpg", "https://cdn.example.com/2.jpg"));
+		form.replaceImages(List.of("sale-forms/1/first.jpg", "sale-forms/1/second.jpg"));
 		saleFormRepository.saveAndFlush(form);
 		publish(form.getId(), status);
 		return form.getId();

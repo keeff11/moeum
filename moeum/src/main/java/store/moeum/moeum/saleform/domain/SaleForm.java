@@ -181,23 +181,23 @@ public class SaleForm extends BaseTimeEntity {
 		return Collections.unmodifiableList(images);
 	}
 
-	/** 노출 순서대로의 URL 목록 */
-	public List<String> imageUrls() {
-		return images.stream().map(SaleFormImage::getUrl).toList();
+	/** 노출 순서대로의 S3 객체 키 목록. 읽기용 주소는 ImageStorage 가 조립한다 */
+	public List<String> imageKeys() {
+		return images.stream().map(SaleFormImage::getObjectKey).toList();
 	}
 
 	/**
-	 * 이미지를 통째로 교체한다. 넘긴 순서가 그대로 노출 순서가 된다.
+	 * 이미지를 통째로 교체한다. 넘긴 순서가 그대로 노출 순서가 되고, 값은 S3 객체 키다.
 	 * null 을 넘기면 전부 비운다.
 	 */
-	public void replaceImages(List<String> urls) {
+	public void replaceImages(List<String> objectKeys) {
 		images.forEach(image -> image.assignTo(null));
 		images.clear();
-		if (urls == null) {
+		if (objectKeys == null) {
 			return;
 		}
-		for (int i = 0; i < urls.size(); i++) {
-			SaleFormImage image = SaleFormImage.of(urls.get(i), i);
+		for (int i = 0; i < objectKeys.size(); i++) {
+			SaleFormImage image = SaleFormImage.of(objectKeys.get(i), i);
 			image.assignTo(this);
 			images.add(image);
 		}
@@ -239,7 +239,7 @@ public class SaleForm extends BaseTimeEntity {
 		record(changes, "descriptionJson", descriptionJson, update.descriptionJson());
 		record(changes, "progressPublic", progressPublic, newProgressPublic);
 		List<String> newImages = (update.images() == null) ? List.of() : update.images();
-		record(changes, "images", String.join(",", imageUrls()), String.join(",", newImages));
+		record(changes, "images", String.join(",", imageKeys()), String.join(",", newImages));
 
 		this.title = update.title();
 		this.stockMax = update.stockMax();

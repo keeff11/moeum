@@ -486,3 +486,61 @@ EBS 스냅샷도 모니터링도 없는 지금, 조용히 죽어도 알아챌 �
 
 **남은 것:** 판매 폼을 `DRAFT` 에서 `SELLING` 으로 올리는 흐름이 아직 없다.
 지금은 테스트가 직접 UPDATE 로 올린다. 판매 시작 · 일시중지 API 가 필요하다.
+
+---
+
+## D-022. 이미지는 presigned URL 로 브라우저가 S3 에 직접 올리고, DB 에는 키만 저장한다
+
+**결정:** 서버는 presigned PUT URL 만 발급한다. 파일 바이트는 서버를 지나가지 않는다.
+`sale_form_image` 에는 **S3 객체 키**를 저장하고 읽기용 주소는 응답에서 조립한다.
+
+**서버가 중계하지 않는 이유:** t3.small 한 대에 JVM 과 MySQL 이 같이 살고 스왑에 기대는 구성이다
+(deployment.md). 이미지를 중계하면 그 힙을 바이트가 지나가 동시 업로드 몇 개에 메모리가 마르고,
+대역폭도 EC2 를 두 번 탄다.
+
+```
+1. 프론트 → 서버   POST /seller/sale-forms/images/upload-url
+2. 프론트 → S3     PUT (파일). 우리 서버를 거치지 않는다
+3. 프론트 → 서버   판매 폼 저장 요청의 images[] 에 objectKey 를 실어 보낸다
+```
+
+**대신 서버가 바이트를 못 보므로 검증 지점이 발급 시점뿐이다.** 셋을 서명에 넣는다.
+
+- **키** — 서버가 만든다 (`sale-forms/{sellerId}/{uuid}.{ext}`). 클라이언트가 정하게 두면
+  남의 경로를 지정해 덮어쓸 수 있다. 그래서 요청에 파일 이름을 받지 않는다
+- **Content-Type** — 허용 목록(jpeg · png · webp · gif) 밖이면 발급하지 않는다
+- **Content-Length** — 서명에 넣는다. 다른 크기로 올리면 S3 가 서명 불일치로 거부하므로
+  크기 상한이 실제로 강제된다. presigned POST 가 아니라 PUT 을 쓰는데도 상한이 서는 이유다
+
+URL 유효 시간은 5분이다. 새어 나가도 그 시간만 쓸 수 있다.
+심사를 통과한 셀러만 발급받는다.
+
+**키만 저장하는 이유 (V4).** V3 에서 `url VARCHAR(500)` 으로 넣었던 것을 `object_key` 로 바꿨다.
+전체 URL 을 저장하면 버킷 이름을 바꾸거나 CloudFront 를 앞에 세울 때 쌓인 행을 전부 고쳐야 한다.
+키만 두면 `ImageStorage.publicUrl` 한 곳과 설정 한 줄만 바뀐다.
+쌓인 데이터가 없는 시점이라 이전 작업도 필요 없었다.
+
+**자격증명은 설정에 두지 않는다.** EC2 인스턴스 역할(`moeum-ec2`)이 준다.
+이 프로젝트는 배포도 OIDC 로 하고 시크릿도 Parameter Store 에서 받는다 (D-017).
+여기만 액세스 키를 박으면 그 원칙이 깨진다. 서명은 로컬 계산이라 테스트는 더미 키로 검증한다.
+
+**설정이 비면 업로드만 꺼진다.** `S3_BUCKET` 이 없으면 발급 요청이 `STORAGE_NOT_CONFIGURED`
+(503)로 떨어지고 나머지는 정상 동작한다. prod 프로파일에도 기본값을 비워 두었다 —
+파라미터 하나가 없다고 배포가 기동 실패로 죽으면 안 된다 (`KAKAO_CLIENT_SECRET` 과 같은 이유).
+
+**남은 것 — 고아 파일.** presigned 로 올렸는데 판매 폼을 저장하지 않으면 그 파일은
+아무 데서도 참조되지 않고 버킷에 남는다. 수명주기 규칙으로 걷어내야 한다.
+지금은 규칙을 걸지 않았다.
+
+**AWS 쪽 준비 (저장소 밖 작업)**
+
+```bash
+# 버킷 (퍼블릭 읽기). 트래픽이 붙으면 CloudFront 를 앞에 세우고 public-base-url 만 바꾼다
+aws s3api create-bucket --bucket moeum-images --region ap-northeast-2 \
+  --create-bucket-configuration LocationConstraint=ap-northeast-2
+
+# 프론트 도메인에서 PUT 할 수 있도록 CORS. 빠뜨리면 브라우저가 막는다
+# 인스턴스 역할에 PutObject 만 준다. 삭제·목록 권한은 주지 않는다
+```
+
+Parameter Store 에 `S3_BUCKET`, `S3_PUBLIC_BASE_URL` 을 넣고 재배포하면 켜진다.
