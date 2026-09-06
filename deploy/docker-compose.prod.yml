@@ -81,6 +81,9 @@ services:
     environment:
       DOMAIN: ${DOMAIN}
       LEGACY_DOMAIN: ${LEGACY_DOMAIN}
+      # 스웨거 기본인증. 비어 있으면 Caddy 가 기동에 실패하므로 기본값을 둔다 —
+      # 값이 없을 때 사이트 전체가 내려가는 것이 스웨거가 안 열리는 것보다 나쁘다.
+      SWAGGER_PASSWORD_HASH: ${SWAGGER_PASSWORD_HASH:-$$2a$$14$$K9bLszttkZJGped7CxwyA.8a8VAiLRrH7Rg2beWsrFh8AoX1d7y1a}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data

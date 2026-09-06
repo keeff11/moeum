@@ -166,11 +166,13 @@ server:
         secure: true
 
 springdoc:
-  # 운영에서는 통째로 끈다. 켜 두면 관리자 API 까지 그대로 노출된다
+  # 프론트 연동용으로 연다. 인터넷 노출은 Caddy 기본인증이 막는다.
+  # 관리자 API(/admin/*)는 문서에 보이지만 Caddy 가 404 로 호출을 막는다 —
+  # 앱에 운영자 인증이 붙기 전까지 그 404 가 유일한 방어선이라는 점은 그대로다.
   api-docs:
-    enabled: false
+    enabled: true
   swagger-ui:
-    enabled: false
+    enabled: true
 
 management:
   endpoint:

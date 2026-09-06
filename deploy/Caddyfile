@@ -6,10 +6,17 @@
 (app) {
 	encode gzip
 
-	# 운영에서는 스웨거를 꺼 두지만(application.yml), 경로 자체도 막아 한 겹 더 준다.
+	# 스웨거는 프론트 연동용으로 열되 기본인증을 건다.
+	# 계정은 Parameter Store 의 SWAGGER_PASSWORD_HASH (bcrypt) 로 주입한다 —
+	# 평문은 저장소에도 서버에도 두지 않는다.
+	#
+	# 아래 @admin 404 는 그대로 둔다. 문서에 심사 API 가 보이더라도 호출은 막혀 있어야 한다.
 	@swagger path /swagger-ui* /v3/api-docs*
 	handle @swagger {
-		respond 404
+		basic_auth {
+			moeum {$SWAGGER_PASSWORD_HASH}
+		}
+		reverse_proxy app:8080
 	}
 
 	# 운영자용 심사 API. 앱에 아직 운영자 인증이 없어(AdminSellerController 주석)
