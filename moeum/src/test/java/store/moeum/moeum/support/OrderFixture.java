@@ -31,7 +31,7 @@ public class OrderFixture {
 		for (String table : new String[]{
 				"stock_hold", "order_item", "orders", "order_group",
 				"cart_item", "cart", "buyer_address", "buyer",
-				"sale_form_history", "product_option", "product", "sale_form", "seller"}) {
+				"sale_form_history", "sale_form_image", "product_option", "product", "sale_form", "seller"}) {
 			jdbcTemplate.execute("DELETE FROM " + table);
 		}
 	}

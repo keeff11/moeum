@@ -7,6 +7,7 @@ import store.moeum.moeum.saleform.domain.SaleFormUpdate;
 import store.moeum.moeum.saleform.domain.ShortfallPolicy;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * 판매 폼 수정 요청. 전체 교체(PUT)다 — 보내지 않은 필드는 null 로 지워진다.
@@ -41,11 +42,15 @@ public record SaleFormUpdateRequest(
 
 		String descriptionJson,
 
-		Boolean progressPublic
+		Boolean progressPublic,
+
+		/** 노출 순서대로의 이미지 URL. 전체 교체다 — 보내지 않으면 전부 지워진다 */
+		List<@NotBlank(message = "이미지 URL 이 비었습니다")
+			 @Size(max = 500, message = "500자를 넘을 수 없습니다") String> images
 ) {
 
 	public SaleFormUpdate toCommand() {
 		return new SaleFormUpdate(title, stockMax, targetQty, maxPerUser, opensAt, closesAt,
-				shortfallPolicy, shipStartText, minOrderAmount, descriptionJson, progressPublic);
+				shortfallPolicy, shipStartText, minOrderAmount, descriptionJson, progressPublic, images);
 	}
 }

@@ -44,6 +44,15 @@ public class Seller extends BaseTimeEntity {
 	@Column(name = "store_slug", nullable = false, length = 64)
 	private String storeSlug;
 
+	/**
+	 * 공개 상품 페이지에 표시할 상호명.
+	 *
+	 * representativeName(대표자 실명)을 여기 쓰지 않는다 — 개인정보다.
+	 * 이 컬럼이 생기기 전에 가입한 셀러는 비어 있을 수 있어 {@link #displayName()} 이 대체값을 준다.
+	 */
+	@Column(name = "store_name", length = 60)
+	private String storeName;
+
 	@Enumerated(EnumType.STRING)
 	@Column(name = "review_status", nullable = false, length = 20)
 	private ReviewStatus reviewStatus;
@@ -77,11 +86,12 @@ public class Seller extends BaseTimeEntity {
 	private LocalDateTime approvedAt;
 
 	@Builder
-	private Seller(String kakaoId, String storeSlug, int shippingFee, Integer freeShippingOver,
+	private Seller(String kakaoId, String storeSlug, String storeName, int shippingFee, Integer freeShippingOver,
 	               String businessNo, String settlementAccount,
 	               String representativeName, String phone, String email) {
 		this.kakaoId = kakaoId;
 		this.storeSlug = storeSlug;
+		this.storeName = storeName;
 		this.reviewStatus = ReviewStatus.PENDING;
 		this.shippingFee = shippingFee;
 		this.freeShippingOver = freeShippingOver;
@@ -104,6 +114,16 @@ public class Seller extends BaseTimeEntity {
 
 	public boolean isApproved() {
 		return reviewStatus == ReviewStatus.APPROVED;
+	}
+
+	/**
+	 * 공개 페이지에 내보낼 이름.
+	 *
+	 * store_name 컬럼(V3)이 생기기 전에 가입한 셀러는 값이 없다. 그때는 store_slug 로 대체한다 —
+	 * 대표자 실명으로 대체하지 않는다. 이름이 비었다고 개인정보를 공개할 이유는 없다.
+	 */
+	public String displayName() {
+		return (storeName == null || storeName.isBlank()) ? storeSlug : storeName;
 	}
 
 	/** 주문 묶음 금액 기준 배송비. 무료 기준을 넘으면 0 */

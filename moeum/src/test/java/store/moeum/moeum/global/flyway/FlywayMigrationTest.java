@@ -16,12 +16,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class FlywayMigrationTest extends IntegrationTest {
 
-	/** docs/schema.sql (v3) 의 테이블 18개 */
+	/** docs/schema.sql (v3) 의 테이블 18개 + V3 에서 추가한 sale_form_image */
 	private static final List<String> EXPECTED_TABLES = List.of(
 			"seller", "sale_form", "sale_form_history", "product", "product_option",
 			"buyer", "buyer_address", "cart", "cart_item", "order_group", "orders",
 			"order_item", "stock_hold", "payment", "payment_event", "refund",
-			"shipping", "outbox"
+			"shipping", "outbox", "sale_form_image"
 	);
 
 	/**

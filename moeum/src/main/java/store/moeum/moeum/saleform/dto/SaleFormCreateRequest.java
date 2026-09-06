@@ -61,6 +61,13 @@ public record SaleFormCreateRequest(
 
 		Boolean progressPublic,
 
+		/**
+		 * 노출 순서대로의 이미지 URL. 첫 번째가 대표 이미지다.
+		 * 업로드 인프라가 아직 없어 외부에 호스팅된 URL 을 받는다.
+		 */
+		List<@NotBlank(message = "이미지 URL 이 비었습니다")
+			 @Size(max = 500, message = "500자를 넘을 수 없습니다") String> images,
+
 		@NotEmpty(message = "상품은 1개 이상이어야 합니다")
 		@Valid
 		List<ProductRequest> products

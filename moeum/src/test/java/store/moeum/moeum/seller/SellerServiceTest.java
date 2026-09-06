@@ -130,7 +130,7 @@ class SellerServiceTest extends IntegrationTest {
 
 	private OnboardingRequest request(String storeSlug) {
 		return new OnboardingRequest(
-				storeSlug, "1234567890", "국민 123456-78-901234",
+				storeSlug, "모으미 상점", "1234567890", "국민 123456-78-901234",
 				"홍길동", "010-1234-5678", "seller@example.com",
 				3000, 50000
 		);

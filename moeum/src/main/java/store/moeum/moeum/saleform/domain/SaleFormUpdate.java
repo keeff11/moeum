@@ -1,6 +1,7 @@
 package store.moeum.moeum.saleform.domain;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * 판매 폼 수정 명령. 여기 없는 필드는 고칠 수 없다.
@@ -23,6 +24,9 @@ public record SaleFormUpdate(
 		String shipStartText,
 		int minOrderAmount,
 		String descriptionJson,
-		Boolean progressPublic
+		Boolean progressPublic,
+
+		/** 노출 순서대로의 이미지 URL 목록. 통째로 교체된다 */
+		List<String> images
 ) {
 }

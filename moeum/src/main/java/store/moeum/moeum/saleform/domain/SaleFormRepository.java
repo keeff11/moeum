@@ -23,6 +23,16 @@ public interface SaleFormRepository extends JpaRepository<SaleForm, Long> {
 	Optional<SaleForm> findDetailById(Long id);
 
 	/**
+	 * 구매자용 공개 상세 조회. 셀러까지 한 번에 끌어온다.
+	 *
+	 * 셀러 이름·배송비가 응답에 들어가는데, LAZY 로 두면 상품 하나 조회에 쿼리가 두 번 나간다.
+	 * 셀러는 ManyToOne 이라 컬렉션이 아니고, 그래서 products 와 같이 fetch 해도 문제되지 않는다.
+	 * images 는 두 번째 컬렉션이라 여기 넣지 않는다 — default_batch_fetch_size 가 한 번에 끌어온다.
+	 */
+	@Query("select f from SaleForm f join fetch f.seller left join fetch f.products where f.id = :id")
+	Optional<SaleForm> findPublicDetailById(@Param("id") Long id);
+
+	/**
 	 * 재고 확보. <b>조건부 UPDATE 한 방이다.</b> 영향 행 0이면 품절 또는 마감이다.
 	 *
 	 * SELECT 로 남은 재고를 읽고 애플리케이션에서 판단한 뒤 UPDATE 하면 안 된다.
@@ -66,4 +76,26 @@ public interface SaleFormRepository extends JpaRepository<SaleForm, Long> {
 			   AND held >= :qty
 			""", nativeQuery = true)
 	int commitHold(@Param("formId") Long formId, @Param("qty") int qty);
+
+	/**
+	 * 마감 시각이 지난 판매 중인 폼을 CLOSED 로 넘긴다. 공구 마감 배치가 부른다.
+	 *
+	 * <b>shortfall_policy 는 여기서 적용하지 않는다.</b> 목표수량 미달 시 CANCEL 은
+	 * 이미 1차금이 결제된 주문을 환불한다는 뜻이고, 결제·환불이 아직 없다 (6단계).
+	 * 지금 하는 일은 상태 전이 하나뿐이다.
+	 *
+	 * 엔티티를 올리지 않고 한 문장으로 끝낸다 — 수백 건이 한꺼번에 마감돼도 부담이 없고,
+	 * held/sold 를 메모리에 들고 있다 덮어쓸 위험도 없다.
+	 *
+	 * NOW(6) 은 DB 시각이다. hold 쿼리와 같은 기준을 쓴다.
+	 */
+	@Modifying(clearAutomatically = true, flushAutomatically = true)
+	@Query(value = """
+			UPDATE sale_form
+			   SET status = 'CLOSED'
+			 WHERE status = 'SELLING'
+			   AND closes_at IS NOT NULL
+			   AND closes_at <= NOW(6)
+			""", nativeQuery = true)
+	int closeExpired();
 }

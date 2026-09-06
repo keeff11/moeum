@@ -274,7 +274,7 @@ class SaleFormServiceTest extends IntegrationTest {
 			return new SaleFormCreateRequest(
 					"겨울 공동구매", slug, saleType, stockMax, targetQty, 2,
 					null, closesAt, shortfallPolicy, "8월 20일(월) 순차발송", 10000,
-					null, true,
+					null, true, List.of("https://cdn.example.com/1.jpg"),
 					List.of(new SaleFormCreateRequest.ProductRequest("머플러", 0, options))
 			);
 		}

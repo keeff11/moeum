@@ -37,6 +37,7 @@ public class SellerService {
 		Seller seller = Seller.builder()
 				.kakaoId(kakaoId)
 				.storeSlug(request.storeSlug())
+				.storeName(request.storeName())
 				.shippingFee(request.shippingFee())
 				.freeShippingOver(request.freeShippingOver())
 				.businessNo(request.businessNo())

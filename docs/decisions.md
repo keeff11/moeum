@@ -432,3 +432,57 @@ EBS 스냅샷도 모니터링도 없는 지금, 조용히 죽어도 알아챌 �
 **혼동 주의 — 재고 Redis 와 별개다.** 세션 Redis 는 앱을 몇 대 띄우느냐로 판단하고,
 재고 Redis 는 한 상품에 몰리는 양이 DB 행 처리량 한계를 넘느냐로 판단한다 (D-008).
 재고의 병목은 `sale_form` 행 하나라 앱 대수와 무관하다.
+
+---
+
+## D-021. 공개 상품 API 는 판매 폼을 가리키고, 정적 정보와 재고를 나눠 내려준다
+
+**결정:** `GET /products/{id}` 의 `{id}` 는 `sale_form.id` 다. 재고 현황은
+`GET /products/{id}/availability` 로 분리하고 `no-store` 를 건다.
+
+**`{id}` 가 판매 폼인 이유:** 재고 · 목표수량 · 마감 · 최소주문금액이 전부 폼 단위다.
+`product` 는 폼 안에서 옵션을 묶는 층이지 구매 단위가 아니다. 경로가 `/products` 인 것은
+구매자 화면의 용어를 따른 것이고, 실체는 판매 폼이다.
+
+**정적/휘발성을 나눈 이유:** 상품 페이지는 캐시해서 빨리 띄우고 싶은데 재고는 초 단위로 바뀐다.
+한 응답에 섞으면 캐시된 재고가 화면에 남고, 그걸 보고 구매를 누르면 홀드에서 품절로 튕긴다.
+`Cache-Control: no-store` 를 응답에 직접 실어 중간 프록시까지 막는다 — 프론트 설정에만 맡기지 않는다.
+
+**api-spec 과 달라진 것**
+
+| 스펙 | 구현 | 이유 |
+|---|---|---|
+| `options[]` 평탄화 | `products[].options[]` | product 가 2개 이상이면 옵션이 뒤섞인다 |
+| `recruitDeadline` = "D-5" | `recruitDeadline`(시각) + `recruitDDay`(숫자) | 표기는 화면이 정한다. 서버는 값을 준다 |
+| `status` 저장값 | 파생값 | 아래 참고 |
+
+**status 는 저장하지 않고 파생한다.** DB 는 `DRAFT · SELLING · PAUSED · CLOSED · ENDED` 이고
+공개 응답은 `SELLING · SOLD_OUT · CLOSED · PAUSED` 다.
+
+- `DRAFT` 는 **404** 로 숨긴다. 403 이면 "그 id 에 폼이 있다"는 사실이 새어 나가
+  id 를 훑어 셀러가 준비 중인 상품을 알아낼 수 있다
+- `SOLD_OUT` 은 재고에서 파생한다 (`stock_max - held - sold <= 0`)
+- `closes_at` 이 지났으면 DB 가 아직 `SELLING` 이어도 `CLOSED` 로 내린다.
+  마감 배치가 1분마다 돌아 그 틈이 반드시 생긴다
+
+**`recruitedCount` 는 확정 주문 수량(`sold`)이다 — 홀드를 세지 않는다.**
+홀드는 15분 뒤 만료될 수 있고, 세면 모집 숫자가 뒤로 간다. 분모인 `target_qty` 가
+수량이므로 단위도 맞는다. `progress_public = false` 거나 `SOLO` 면 `null` 로 감춘다 —
+다만 재고는 감추지 않는다. 스티퍼 상한을 그릴 수 없다.
+
+**셀러 이름은 `seller.store_name` 을 새로 둔다 (V3).**
+있던 것은 `store_slug`(URL 식별자)와 `representative_name`(대표자 실명)뿐이었다.
+실명을 공개 상품 페이지에 노출할 수 없다. 이 컬럼이 없던 시절 셀러는 값이 비어 있어
+`store_slug` 로 대체한다 — 이름이 비었다고 개인정보로 대체하지 않는다.
+
+**이미지는 URL 입력이다.** 파일 업로드 인프라가 없다(S3 도 업로드 엔드포인트도 없다).
+`sale_form_image` 에 셀러가 외부 URL 을 넣는다. 업로드가 붙어도 이 컬럼을 채우는 주체만 바뀐다.
+
+**공구 마감 배치는 상태 전이만 한다.** `closes_at` 지난 `SELLING` → `CLOSED` 한 문장이다.
+`shortfall_policy`(CANCEL · EXTEND · PROCEED) 적용은 6단계다 — CANCEL 은 이미 1차금이 결제된
+주문을 환불한다는 뜻인데 결제도 환불도 없고, EXTEND 의 연장 횟수 규칙도 기획 미확정이다.
+재고 확보 쿼리가 `closes_at` 을 직접 보므로 배치가 늦어도 초과 판매는 나지 않는다.
+이 배치는 화면에 보이는 상태를 맞추는 일이다.
+
+**남은 것:** 판매 폼을 `DRAFT` 에서 `SELLING` 으로 올리는 흐름이 아직 없다.
+지금은 테스트가 직접 UPDATE 로 올린다. 판매 시작 · 일시중지 API 가 필요하다.

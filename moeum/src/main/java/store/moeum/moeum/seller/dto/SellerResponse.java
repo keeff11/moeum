@@ -12,6 +12,7 @@ import java.time.LocalDateTime;
 public record SellerResponse(
 		Long id,
 		String storeSlug,
+		String storeName,
 		ReviewStatus reviewStatus,
 		String representativeName,
 		String phone,
@@ -26,6 +27,7 @@ public record SellerResponse(
 		return new SellerResponse(
 				seller.getId(),
 				seller.getStoreSlug(),
+				seller.getStoreName(),
 				seller.getReviewStatus(),
 				seller.getRepresentativeName(),
 				seller.getPhone(),

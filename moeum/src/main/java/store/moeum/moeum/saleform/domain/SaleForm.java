@@ -129,6 +129,17 @@ public class SaleForm extends BaseTimeEntity {
 	@OrderBy("sortOrder asc, id asc")
 	private final List<Product> products = new ArrayList<>();
 
+	/**
+	 * 상품 이미지. 순서가 곧 노출 순서이고 첫 번째가 대표 이미지다.
+	 *
+	 * 상품·옵션과 달리 통째로 갈아끼운다. 주문 스냅샷이 이미지를 참조하지 않아
+	 * 지난 주문과 어긋날 일이 없기 때문이다.
+	 */
+	@OneToMany(mappedBy = "saleForm", fetch = FetchType.LAZY,
+			cascade = CascadeType.ALL, orphanRemoval = true)
+	@OrderBy("sortOrder asc, id asc")
+	private final List<SaleFormImage> images = new ArrayList<>();
+
 	@Builder
 	private SaleForm(Seller seller, String title, String slug, SaleType saleType, int stockMax,
 	                 Integer targetQty, Integer maxPerUser, LocalDateTime opensAt, LocalDateTime closesAt,
@@ -166,6 +177,32 @@ public class SaleForm extends BaseTimeEntity {
 		product.assignTo(null);
 	}
 
+	public List<SaleFormImage> getImages() {
+		return Collections.unmodifiableList(images);
+	}
+
+	/** 노출 순서대로의 URL 목록 */
+	public List<String> imageUrls() {
+		return images.stream().map(SaleFormImage::getUrl).toList();
+	}
+
+	/**
+	 * 이미지를 통째로 교체한다. 넘긴 순서가 그대로 노출 순서가 된다.
+	 * null 을 넘기면 전부 비운다.
+	 */
+	public void replaceImages(List<String> urls) {
+		images.forEach(image -> image.assignTo(null));
+		images.clear();
+		if (urls == null) {
+			return;
+		}
+		for (int i = 0; i < urls.size(); i++) {
+			SaleFormImage image = SaleFormImage.of(urls.get(i), i);
+			image.assignTo(this);
+			images.add(image);
+		}
+	}
+
 	/** 남은 수량. held · sold 는 DB 값이므로 조회 시점 기준이다 */
 	public int remainingStock() {
 		return stockMax - held - sold;
@@ -201,6 +238,8 @@ public class SaleForm extends BaseTimeEntity {
 		record(changes, "minOrderAmount", minOrderAmount, update.minOrderAmount());
 		record(changes, "descriptionJson", descriptionJson, update.descriptionJson());
 		record(changes, "progressPublic", progressPublic, newProgressPublic);
+		List<String> newImages = (update.images() == null) ? List.of() : update.images();
+		record(changes, "images", String.join(",", imageUrls()), String.join(",", newImages));
 
 		this.title = update.title();
 		this.stockMax = update.stockMax();
@@ -213,6 +252,7 @@ public class SaleForm extends BaseTimeEntity {
 		this.minOrderAmount = update.minOrderAmount();
 		this.descriptionJson = update.descriptionJson();
 		this.progressPublic = newProgressPublic;
+		replaceImages(newImages);
 
 		return changes;
 	}

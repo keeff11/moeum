@@ -69,6 +69,8 @@ public class SaleFormService {
 				.progressPublic(request.progressPublic())
 				.build();
 
+		form.replaceImages(request.images());
+
 		for (SaleFormCreateRequest.ProductRequest productRequest : request.products()) {
 			Product product = Product.builder()
 					.name(productRequest.name())

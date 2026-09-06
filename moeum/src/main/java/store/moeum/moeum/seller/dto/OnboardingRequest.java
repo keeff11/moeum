@@ -14,6 +14,11 @@ public record OnboardingRequest(
 		@Pattern(regexp = "^[a-z0-9][a-z0-9-]*$", message = "영소문자·숫자·하이픈만 쓸 수 있습니다")
 		String storeSlug,
 
+		/** 공개 상품 페이지에 표시되는 이름. 대표자 실명을 쓰지 않기 위해 따로 받는다 */
+		@NotBlank(message = "상호명은 필수입니다")
+		@Size(max = 60, message = "60자를 넘을 수 없습니다")
+		String storeName,
+
 		@NotBlank(message = "사업자번호는 필수입니다")
 		@Pattern(regexp = "^[0-9]{10}$", message = "숫자 10자리여야 합니다")
 		String businessNo,
