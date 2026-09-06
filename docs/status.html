@@ -384,7 +384,7 @@
       <span class="sep">/</span>
       <span>2026-09-06 기준</span>
       <span class="sep">/</span>
-      <span>main @ 77d5c32</span>
+      <span>main @ 0423f04</span>
     </div>
     <h1>도메인별 개발 현황</h1>
     <p class="lede">
@@ -457,7 +457,7 @@
         ["심사 승인 · 반려 API", "로드맵상 '일단 수동 API'", "done"],
         ["민감정보 AES 암호화 컬럼", "business_no · settlement_account", "done"],
         ["미승인 셀러 판매 폼 차단", "SELLER_NOT_APPROVED", "done"],
-        ["운영자 인증", "앱에 없다. Caddy 의 /admin/* 404 차단이 유일한 방어선", "check"],
+        ["운영자 인증", "앱에 없다. Caddy 의 /admin/* 404 가 유일한 방어선인데, 스웨거를 열어 그 API 의 존재가 문서에 드러났다", "check"],
         ["상호명(store_name)", "공개 페이지 표시용 (V3). 대표자 실명을 쓰지 않는다", "done"],
         ["테스트 8개", "SellerServiceTest", "done"]
       ]
@@ -575,6 +575,7 @@
         ["EC2 + Docker Compose + Caddy 자동 TLS", "D-016. 월 $26", "done"],
         ["GitHub Actions OIDC → ECR → SSM 배포", "AWS 액세스 키를 GitHub 에 두지 않는다", "done"],
         ["Parameter Store 시크릿", "D-017. 배포 때마다 .env 재생성", "done"],
+        ["스웨거 (프론트 연동용)", "Caddy 기본인증 뒤에 공개. 계정 moeum, 해시는 Parameter Store", "done"],
         ["api.moeum.store 도메인 이전", "D-018. SameSite=Lax 가 동작하려면 등록 도메인이 같아야 한다", "done"],
         ["EBS 스냅샷 정책", "문서에만 있다. 안 걸려 있으면 인스턴스 장애 = 데이터 전손", "check"],
         ["운영 로그인 왕복 확인", "카카오 키 등록 후 실제 성공 여부 미확인", "check"],
