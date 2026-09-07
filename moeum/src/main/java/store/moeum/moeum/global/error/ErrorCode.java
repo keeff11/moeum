@@ -64,7 +64,14 @@ public enum ErrorCode {
 	SESSION_MISMATCH(HttpStatus.BAD_REQUEST, "결제 정보가 일치하지 않습니다."),
 	PAYMENT_IN_PROGRESS(HttpStatus.CONFLICT, "결제가 진행 중입니다. 잠시 후 결과를 확인해 주세요."),
 	PAYMENT_FAILED(HttpStatus.CONFLICT, "결제에 실패했습니다. 다시 시도해 주세요."),
-	SECOND_PAYMENT_NOT_DUE(HttpStatus.CONFLICT, "아직 2차금을 결제할 수 없습니다.");
+	SECOND_PAYMENT_NOT_DUE(HttpStatus.CONFLICT, "아직 2차금을 결제할 수 없습니다."),
+
+	// --- 취소 · 환불 ---
+	REFUND_NOT_FOUND(HttpStatus.NOT_FOUND, "취소 정보를 찾을 수 없습니다."),
+	REFUND_NOT_ALLOWED(HttpStatus.CONFLICT, "취소할 수 없는 주문입니다."),
+	REFUND_IN_PROGRESS(HttpStatus.CONFLICT, "취소가 진행 중입니다. 잠시 후 결과를 확인해 주세요."),
+	REFUND_EOB_BLOCKED(HttpStatus.CONFLICT, "지금은 취소할 수 없습니다. 00:30 이후에 다시 시도해 주세요."),
+	REFUND_SETTLED(HttpStatus.CONFLICT, "정산이 완료되어 자동 취소가 어렵습니다. 판매자에게 문의해 주세요.");
 
 	private final HttpStatus status;
 	private final String message;

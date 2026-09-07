@@ -98,4 +98,19 @@ public interface SaleFormRepository extends JpaRepository<SaleForm, Long> {
 			   AND closes_at <= NOW(6)
 			""", nativeQuery = true)
 	int closeExpired();
+
+	/**
+	 * 취소된 수량을 재고로 되돌린다 (D-024).
+	 *
+	 * {@code sold >= :qty} 조건이 멱등 가드다. 같은 취소를 두 번 확정해도 sold 가 음수로 내려가지 않는다.
+	 * 되돌릴지 말지(SOLO / GROUP 마감 여부)는 호출자가 판단한다 — 여기서는 시키는 대로만 한다.
+	 */
+	@Modifying(flushAutomatically = true)
+	@Query(value = """
+			UPDATE sale_form
+			   SET sold = sold - :qty
+			 WHERE id = :formId
+			   AND sold >= :qty
+			""", nativeQuery = true)
+	int restoreSold(@Param("formId") Long formId, @Param("qty") int qty);
 }
