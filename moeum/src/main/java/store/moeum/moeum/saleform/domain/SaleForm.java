@@ -203,6 +203,66 @@ public class SaleForm extends BaseTimeEntity {
 		}
 	}
 
+	/**
+	 * 판매를 시작한다. DRAFT 에서 처음 열거나, PAUSED 를 다시 여는 두 경우다.
+	 *
+	 * <b>CLOSED · ENDED 는 다시 열지 않는다.</b> 마감된 공구에는 이미 결제가 걸려 있고,
+	 * 다시 열면 마감 이후 주문이 섞여 정산·발주 기준이 어긋난다. 새 폼을 만들어야 한다.
+	 *
+	 * @return 실제로 바뀌었으면 변경 이력, 이미 판매 중이면 null
+	 */
+	public FieldChange startSelling() {
+		if (status == SaleFormStatus.SELLING) {
+			return null;
+		}
+		if (status != SaleFormStatus.DRAFT && status != SaleFormStatus.PAUSED) {
+			throw new IllegalStateException("판매를 시작할 수 없는 상태다: " + status);
+		}
+		SaleFormStatus before = status;
+		this.status = SaleFormStatus.SELLING;
+		return new FieldChange("status", before, SaleFormStatus.SELLING);
+	}
+
+	/**
+	 * 일시중지. 구매 버튼만 막고 마감은 아니다 — 이미 잡힌 홀드와 결제는 그대로 흘러간다.
+	 *
+	 * 홀드를 여기서 풀지 않는다. 결제 중인 구매자를 중간에 끊으면
+	 * 승인은 나가고 재고는 없는 상태가 된다.
+	 */
+	public FieldChange pause() {
+		if (status == SaleFormStatus.PAUSED) {
+			return null;
+		}
+		if (status != SaleFormStatus.SELLING) {
+			throw new IllegalStateException("일시중지할 수 없는 상태다: " + status);
+		}
+		this.status = SaleFormStatus.PAUSED;
+		return new FieldChange("status", SaleFormStatus.SELLING, SaleFormStatus.PAUSED);
+	}
+
+	/**
+	 * 수동 마감. 마감 시각을 기다리지 않고 셀러가 직접 닫는다.
+	 *
+	 * 되돌릴 수 없다 — {@link #startSelling()} 이 CLOSED 를 거부한다.
+	 */
+	public FieldChange close() {
+		if (status == SaleFormStatus.CLOSED) {
+			return null;
+		}
+		if (status != SaleFormStatus.SELLING && status != SaleFormStatus.PAUSED) {
+			throw new IllegalStateException("마감할 수 없는 상태다: " + status);
+		}
+		SaleFormStatus before = status;
+		this.status = SaleFormStatus.CLOSED;
+		return new FieldChange("status", before, SaleFormStatus.CLOSED);
+	}
+
+	/** 판매를 열 수 있는 상태인가. CLOSED · ENDED 는 되돌릴 수 없다 */
+	public boolean isStartable() {
+		return status == SaleFormStatus.DRAFT || status == SaleFormStatus.PAUSED
+				|| status == SaleFormStatus.SELLING;
+	}
+
 	/** 남은 수량. held · sold 는 DB 값이므로 조회 시점 기준이다 */
 	public int remainingStock() {
 		return stockMax - held - sold;

@@ -14,6 +14,7 @@ import store.moeum.moeum.saleform.domain.FieldChange;
 import store.moeum.moeum.saleform.domain.Product;
 import store.moeum.moeum.saleform.domain.ProductOption;
 import store.moeum.moeum.saleform.domain.SaleForm;
+import store.moeum.moeum.saleform.domain.SaleFormStatus;
 import store.moeum.moeum.saleform.domain.SaleFormHistory;
 import store.moeum.moeum.saleform.domain.SaleFormHistoryRepository;
 import store.moeum.moeum.saleform.domain.SaleFormRepository;
@@ -28,6 +29,8 @@ import store.moeum.moeum.seller.domain.Seller;
 
 import java.time.LocalDateTime;
 import java.util.List;
+
+import static store.moeum.moeum.global.jpa.JpaAuditingConfig.KST;
 
 @Slf4j
 @Service
@@ -99,6 +102,87 @@ public class SaleFormService {
 			log.warn("판매 폼 슬러그 유니크 위반: sellerId={}, slug={}", seller.getId(), request.slug());
 			throw new BusinessException(ErrorCode.DUPLICATE_SALE_FORM_SLUG);
 		}
+	}
+
+	/**
+	 * 판매 시작 (DRAFT → SELLING). 일시중지된 폼을 다시 여는 데도 쓴다.
+	 *
+	 * 생성 시점에도 GROUP 규칙을 검사하지만 여기서 한 번 더 본다 —
+	 * 수정으로 마감일이 과거가 됐을 수 있고, 그 상태로 열면 마감 배치가 1분 안에 도로 닫는다.
+	 * 셀러 눈에는 "열었는데 안 열린다" 로 보인다.
+	 */
+	@Transactional
+	public SaleFormDetailResponse startSelling(String kakaoId, Long saleFormId) {
+		Seller seller = sellerService.getByKakaoId(kakaoId);
+		SaleForm form = findOwned(seller, saleFormId);
+
+		if (!form.isStartable()) {
+			throw new BusinessException(ErrorCode.INVALID_SALE_FORM,
+					"마감된 판매 폼은 다시 열 수 없습니다. 새로 만들어 주세요.");
+		}
+		if (form.getProducts().isEmpty()) {
+			throw new BusinessException(ErrorCode.INVALID_SALE_FORM, "상품이 없는 폼은 열 수 없습니다.");
+		}
+
+		LocalDateTime now = LocalDateTime.now(KST);
+		if (form.getClosesAt() != null && !form.getClosesAt().isAfter(now)) {
+			throw new BusinessException(ErrorCode.INVALID_SALE_FORM,
+					"마감일시가 이미 지났습니다. 마감일시를 먼저 수정해 주세요.");
+		}
+		if (form.getSaleType() == SaleType.GROUP && form.getTargetQty() == null) {
+			throw new BusinessException(ErrorCode.INVALID_SALE_FORM, "공동구매는 목표수량이 필요합니다.");
+		}
+
+		recordStatusChange(form, form.startSelling(), seller);
+		return SaleFormDetailResponse.of(form, seller, imageUrlsOf(form));
+	}
+
+	/**
+	 * 일시중지 (SELLING → PAUSED). 구매 버튼만 막는다.
+	 *
+	 * <b>이미 잡힌 홀드는 풀지 않는다.</b> 결제 중인 구매자를 중간에 끊으면
+	 * 승인은 나가고 재고는 없는 상태가 된다. 그 홀드들은 15분 뒤 만료 배치가 정리한다.
+	 */
+	@Transactional
+	public SaleFormDetailResponse pause(String kakaoId, Long saleFormId) {
+		Seller seller = sellerService.getByKakaoId(kakaoId);
+		SaleForm form = findOwned(seller, saleFormId);
+
+		if (form.getStatus() != SaleFormStatus.SELLING && form.getStatus() != SaleFormStatus.PAUSED) {
+			throw new BusinessException(ErrorCode.INVALID_SALE_FORM,
+					"판매 중인 폼만 일시중지할 수 있습니다.");
+		}
+
+		recordStatusChange(form, form.pause(), seller);
+		return SaleFormDetailResponse.of(form, seller, imageUrlsOf(form));
+	}
+
+	/**
+	 * 수동 마감 (SELLING · PAUSED → CLOSED). 마감 시각을 기다리지 않고 셀러가 닫는다.
+	 *
+	 * <b>되돌릴 수 없다.</b> 목표수량 미달 처리(shortfall_policy)는 여기서 하지 않는다 — 6단계다.
+	 */
+	@Transactional
+	public SaleFormDetailResponse close(String kakaoId, Long saleFormId) {
+		Seller seller = sellerService.getByKakaoId(kakaoId);
+		SaleForm form = findOwned(seller, saleFormId);
+
+		if (form.getStatus() == SaleFormStatus.DRAFT || form.getStatus() == SaleFormStatus.ENDED) {
+			throw new BusinessException(ErrorCode.INVALID_SALE_FORM,
+					"마감할 수 없는 상태입니다: " + form.getStatus());
+		}
+
+		recordStatusChange(form, form.close(), seller);
+		return SaleFormDetailResponse.of(form, seller, imageUrlsOf(form));
+	}
+
+	/** 상태 전이도 다른 필드와 같이 sale_form_history 에 남긴다 */
+	private void recordStatusChange(SaleForm form, FieldChange change, Seller seller) {
+		if (change == null) {
+			return;
+		}
+		saleFormHistoryRepository.save(SaleFormHistory.of(
+				form.getId(), change.field(), change.oldValue(), change.newValue(), seller.getId()));
 	}
 
 	@Transactional(readOnly = true)

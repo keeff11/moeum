@@ -68,6 +68,27 @@ public class SaleFormController {
 		return saleFormService.update(user.kakaoId(), saleFormId, request.toCommand());
 	}
 
+	/**
+	 * 판매 시작. 생성 직후는 DRAFT 라 이걸 불러야 구매자에게 보인다.
+	 * 일시중지한 폼을 다시 여는 데도 같은 API 를 쓴다.
+	 */
+	@PostMapping("/{saleFormId}/start")
+	public SaleFormDetailResponse start(@LoginUser SessionUser user, @PathVariable Long saleFormId) {
+		return saleFormService.startSelling(user.kakaoId(), saleFormId);
+	}
+
+	/** 일시중지. 구매 버튼만 막고 이미 잡힌 홀드·결제는 그대로 흘러간다 */
+	@PostMapping("/{saleFormId}/pause")
+	public SaleFormDetailResponse pause(@LoginUser SessionUser user, @PathVariable Long saleFormId) {
+		return saleFormService.pause(user.kakaoId(), saleFormId);
+	}
+
+	/** 수동 마감. <b>되돌릴 수 없다</b> — 다시 팔려면 새 폼을 만들어야 한다 */
+	@PostMapping("/{saleFormId}/close")
+	public SaleFormDetailResponse close(@LoginUser SessionUser user, @PathVariable Long saleFormId) {
+		return saleFormService.close(user.kakaoId(), saleFormId);
+	}
+
 	@GetMapping("/{saleFormId}/history")
 	public List<SaleFormHistoryResponse> history(@LoginUser SessionUser user, @PathVariable Long saleFormId) {
 		return saleFormService.findHistory(user.kakaoId(), saleFormId);
