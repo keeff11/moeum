@@ -99,9 +99,9 @@ WireMock으로 타임아웃 · 5xx · `processing` 응답을 재현한다.
 
 **목표:** 4단계 코드를 재사용한다. 새로 짜지 않는다.
 
-- [ ] 셀러 입고 처리 → `orders.status = ARRIVED`
-- [ ] 2차금 청구 대상 조회 (모든 폼이 `ARRIVED`인 묶음)
-- [ ] `payment(SECOND)` 생성 — `payer_id` 전달
+- [x] 셀러 입고 처리 → `orders.status = ARRIVED`
+- [x] 2차금 청구 대상 조회 (모든 폼이 `ARRIVED`인 묶음)
+- [x] `payment(SECOND)` 생성 — `payer_id` 전달
 - [ ] 구매자 2차금 결제 화면
 - [ ] 미수 추적 조회
 - [ ] 2차금 미납 배치

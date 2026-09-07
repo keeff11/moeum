@@ -89,6 +89,19 @@ public class SaleFormController {
 		return saleFormService.close(user.kakaoId(), saleFormId);
 	}
 
+	/**
+	 * 입고 처리 (5단계 시작점). 이 폼의 결제 완료 주문을 입고 상태로 넘긴다.
+	 * 묶음의 모든 폼이 입고되면 구매자에게 2차금 청구가 열린다.
+	 */
+	@PostMapping("/{saleFormId}/arrive")
+	public ArrivedResponse arrive(@LoginUser SessionUser user, @PathVariable Long saleFormId) {
+		return new ArrivedResponse(saleFormService.markArrived(user.kakaoId(), saleFormId));
+	}
+
+	/** @param arrivedOrders 이번에 입고 처리된 주문 수 */
+	public record ArrivedResponse(int arrivedOrders) {
+	}
+
 	@GetMapping("/{saleFormId}/history")
 	public List<SaleFormHistoryResponse> history(@LoginUser SessionUser user, @PathVariable Long saleFormId) {
 		return saleFormService.findHistory(user.kakaoId(), saleFormId);

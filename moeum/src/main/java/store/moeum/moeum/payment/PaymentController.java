@@ -43,7 +43,33 @@ public class PaymentController {
 	public PaymentResultResponse confirm(@LoginUser SessionUser user,
 	                                     @PathVariable String orderToken,
 	                                     @Valid @RequestBody ConfirmRequest request) {
-		return paymentService.confirm(user, orderToken, request.sessionId());
+		return paymentService.confirm(user, orderToken, request.sessionId(), request.payerId());
+	}
+
+	/**
+	 * 2차금 결제 세션. <b>모든 폼이 입고된 뒤에만 열린다.</b>
+	 *
+	 * 배송비가 묶음당 1회라 일부만 입고됐다고 청구하면 배송비를 나눌 방법이 없다.
+	 * 응답의 payerId 를 SDK 의 customerKey 로 넘기면 인증 단계가 줄어든다.
+	 */
+	@PostMapping("/orders/{orderToken}/second-payment")
+	public PaySessionResponse paySecond(@LoginUser SessionUser user, @PathVariable String orderToken) {
+		return paymentService.paySecond(user, orderToken);
+	}
+
+	/** 2차금 승인. 1차금과 같은 코드를 타고 phase 만 다르다 */
+	@PostMapping("/orders/{orderToken}/second-payment/confirm")
+	public PaymentResultResponse confirmSecond(@LoginUser SessionUser user,
+	                                           @PathVariable String orderToken,
+	                                           @Valid @RequestBody ConfirmRequest request) {
+		return paymentService.confirmSecond(user, orderToken, request.sessionId());
+	}
+
+	/** 2차금 상태 조회 */
+	@GetMapping("/orders/{orderToken}/second-payment")
+	public PaymentResultResponse secondStatus(@LoginUser SessionUser user,
+	                                          @PathVariable String orderToken) {
+		return paymentService.secondStatus(user, orderToken);
 	}
 
 	/** 상태 조회. <b>부작용이 없다</b> (D-014) — 프론트는 이것만 반복하면 된다 */

@@ -101,6 +101,36 @@ public class Order extends BaseTimeEntity {
 		this.status = OrderStatus.EXPIRED;
 	}
 
+	/** 1차금 확정. 묶음이 PAID 로 갈 때 주문들도 같이 넘어간다 */
+	void markPaid() {
+		if (status == OrderStatus.CREATED) {
+			this.status = OrderStatus.PAID;
+		}
+	}
+
+	/**
+	 * 입고 완료. 2차금 청구의 시작점이다 (5단계).
+	 *
+	 * 1차금이 확정된 주문만 넘길 수 있다 — 돈을 안 받은 주문을 입고 처리하면
+	 * 2차금 청구 대상에 섞여 잔금만 청구하게 된다.
+	 *
+	 * @return 이번 호출로 바뀌었으면 true
+	 */
+	public boolean markArrived() {
+		if (status == OrderStatus.ARRIVED) {
+			return false;
+		}
+		if (status != OrderStatus.PAID) {
+			throw new IllegalStateException("입고 처리할 수 없는 주문 상태다: " + status + " (id=" + id + ")");
+		}
+		this.status = OrderStatus.ARRIVED;
+		return true;
+	}
+
+	public boolean isArrived() {
+		return status == OrderStatus.ARRIVED;
+	}
+
 	void assignTo(OrderGroup orderGroup) {
 		this.orderGroup = orderGroup;
 	}

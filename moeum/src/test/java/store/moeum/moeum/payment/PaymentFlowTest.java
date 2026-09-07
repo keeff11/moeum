@@ -135,7 +135,7 @@ class PaymentFlowTest extends IntegrationTest {
 		stubCapture(200, """
 				{"id":"%s","status":"captured"}""".formatted(SESSION_ID));
 
-		PaymentResultResponse result = paymentService.confirm(buyer(), orderToken, SESSION_ID);
+		PaymentResultResponse result = paymentService.confirm(buyer(), orderToken, SESSION_ID, null);
 
 		assertThat(result.status()).isEqualTo(PaymentResultResponse.Status.PAID);
 		assertThat(paymentStatus()).containsExactly("CAPTURED");
@@ -154,7 +154,7 @@ class PaymentFlowTest extends IntegrationTest {
 						{"id":"%s","status":"captured"}""".formatted(SESSION_ID))
 						.withFixedDelay(2000)));
 
-		PaymentResultResponse result = paymentService.confirm(buyer(), orderToken, SESSION_ID);
+		PaymentResultResponse result = paymentService.confirm(buyer(), orderToken, SESSION_ID, null);
 
 		// 출금됐을 수 있다. 여기서 홀드를 풀면 그 재고가 남에게 팔린다
 		assertThat(result.status()).isEqualTo(PaymentResultResponse.Status.PENDING);
@@ -169,7 +169,7 @@ class PaymentFlowTest extends IntegrationTest {
 		String orderToken = startPayment();
 		stubCapture(500, "{}");
 
-		PaymentResultResponse result = paymentService.confirm(buyer(), orderToken, SESSION_ID);
+		PaymentResultResponse result = paymentService.confirm(buyer(), orderToken, SESSION_ID, null);
 
 		assertThat(result.status()).isEqualTo(PaymentResultResponse.Status.PENDING);
 		assertThat(paymentStatus()).containsExactly("CAPTURE_PENDING");
@@ -183,7 +183,7 @@ class PaymentFlowTest extends IntegrationTest {
 		stubCapture(400, """
 				{"code":"INVALID_REQUEST"}""");
 
-		PaymentResultResponse result = paymentService.confirm(buyer(), orderToken, SESSION_ID);
+		PaymentResultResponse result = paymentService.confirm(buyer(), orderToken, SESSION_ID, null);
 
 		// 4xx 는 point3 가 받아들이지 않은 것이라 승인이 일어났을 가능성이 없다
 		assertThat(result.status()).isEqualTo(PaymentResultResponse.Status.FAILED);
@@ -200,8 +200,8 @@ class PaymentFlowTest extends IntegrationTest {
 		stubCapture(200, """
 				{"id":"%s","status":"captured"}""".formatted(SESSION_ID));
 
-		paymentService.confirm(buyer(), orderToken, SESSION_ID);
-		PaymentResultResponse second = paymentService.confirm(buyer(), orderToken, SESSION_ID);
+		paymentService.confirm(buyer(), orderToken, SESSION_ID, null);
+		PaymentResultResponse second = paymentService.confirm(buyer(), orderToken, SESSION_ID, null);
 
 		assertThat(second.status()).isEqualTo(PaymentResultResponse.Status.PAID);
 		assertThat(sold()).isEqualTo(3);
@@ -215,7 +215,7 @@ class PaymentFlowTest extends IntegrationTest {
 		String orderToken = startPayment();
 		expireHolds();
 
-		assertThatThrownBy(() -> paymentService.confirm(buyer(), orderToken, SESSION_ID))
+		assertThatThrownBy(() -> paymentService.confirm(buyer(), orderToken, SESSION_ID, null))
 				.isInstanceOf(BusinessException.class)
 				.extracting(e -> ((BusinessException) e).errorCode())
 				.isEqualTo(ErrorCode.HOLD_EXPIRED);
@@ -229,7 +229,7 @@ class PaymentFlowTest extends IntegrationTest {
 	void 세션_불일치() {
 		String orderToken = startPayment();
 
-		assertThatThrownBy(() -> paymentService.confirm(buyer(), orderToken, "pymt_sess-남의것"))
+		assertThatThrownBy(() -> paymentService.confirm(buyer(), orderToken, "pymt_sess-남의것", null))
 				.isInstanceOf(BusinessException.class)
 				.extracting(e -> ((BusinessException) e).errorCode())
 				.isEqualTo(ErrorCode.SESSION_MISMATCH);
@@ -244,7 +244,7 @@ class PaymentFlowTest extends IntegrationTest {
 	void 배치가_확정한다() {
 		String orderToken = startPayment();
 		stubCapture(500, "{}");
-		paymentService.confirm(buyer(), orderToken, SESSION_ID);
+		paymentService.confirm(buyer(), orderToken, SESSION_ID, null);
 		assertThat(paymentStatus()).containsExactly("CAPTURE_PENDING");
 
 		// 실제로는 출금돼 있었다
@@ -263,7 +263,7 @@ class PaymentFlowTest extends IntegrationTest {
 	void 배치_멱등() {
 		String orderToken = startPayment();
 		stubCapture(500, "{}");
-		paymentService.confirm(buyer(), orderToken, SESSION_ID);
+		paymentService.confirm(buyer(), orderToken, SESSION_ID, null);
 
 		stubGetSession("""
 				{"id":"%s","status":"captured"}""".formatted(SESSION_ID));
@@ -280,7 +280,7 @@ class PaymentFlowTest extends IntegrationTest {
 	void 배치가_승인을_재호출한다() {
 		String orderToken = startPayment();
 		stubCapture(500, "{}");
-		paymentService.confirm(buyer(), orderToken, SESSION_ID);
+		paymentService.confirm(buyer(), orderToken, SESSION_ID, null);
 
 		// 구매자는 확정했는데 승인이 닿지 않았다
 		stubGetSession("""
@@ -299,7 +299,7 @@ class PaymentFlowTest extends IntegrationTest {
 	void 배치가_실패를_확정한다() {
 		String orderToken = startPayment();
 		stubCapture(500, "{}");
-		paymentService.confirm(buyer(), orderToken, SESSION_ID);
+		paymentService.confirm(buyer(), orderToken, SESSION_ID, null);
 
 		stubGetSession("""
 				{"id":"%s","status":"failed"}""".formatted(SESSION_ID));
@@ -316,7 +316,7 @@ class PaymentFlowTest extends IntegrationTest {
 	void 배치_조회_실패() {
 		String orderToken = startPayment();
 		stubCapture(500, "{}");
-		paymentService.confirm(buyer(), orderToken, SESSION_ID);
+		paymentService.confirm(buyer(), orderToken, SESSION_ID, null);
 
 		POINT3.stubFor(get(urlPathEqualTo("/payment/v3/session/" + SESSION_ID))
 				.willReturn(json(503, "{}")));
@@ -333,7 +333,7 @@ class PaymentFlowTest extends IntegrationTest {
 	void 갓_시작된_건은_건너뛴다() {
 		String orderToken = startPayment();
 		stubCapture(500, "{}");
-		paymentService.confirm(buyer(), orderToken, SESSION_ID);
+		paymentService.confirm(buyer(), orderToken, SESSION_ID, null);
 
 		// 실시간 confirm 이 아직 진행 중일 수 있다
 		assertThat(reconcileBatch.reconcileOnce()).isZero();
@@ -347,7 +347,7 @@ class PaymentFlowTest extends IntegrationTest {
 	void 재결제() {
 		String orderToken = startPayment();
 		stubCapture(400, "{}");
-		paymentService.confirm(buyer(), orderToken, SESSION_ID);
+		paymentService.confirm(buyer(), orderToken, SESSION_ID, null);
 		assertThat(paymentStatus()).containsExactly("FAILED");
 
 		// 홀드가 풀렸으니 주문부터 다시 만든다
@@ -367,7 +367,7 @@ class PaymentFlowTest extends IntegrationTest {
 	void 진행중이면_새_세션을_막는다() {
 		String orderToken = startPayment();
 		stubCapture(500, "{}");
-		paymentService.confirm(buyer(), orderToken, SESSION_ID);
+		paymentService.confirm(buyer(), orderToken, SESSION_ID, null);
 
 		// 여기서 새 세션을 열어주면 이중 결제가 된다
 		assertThatThrownBy(() -> paymentService.pay(buyer(), sessionToken))
@@ -381,7 +381,7 @@ class PaymentFlowTest extends IntegrationTest {
 	void 상태_조회() {
 		String orderToken = startPayment();
 		stubCapture(500, "{}");
-		paymentService.confirm(buyer(), orderToken, SESSION_ID);
+		paymentService.confirm(buyer(), orderToken, SESSION_ID, null);
 
 		PaymentResultResponse first = paymentService.status(buyer(), orderToken);
 		PaymentResultResponse second = paymentService.status(buyer(), orderToken);

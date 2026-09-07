@@ -11,6 +11,7 @@ import store.moeum.moeum.global.jpa.JpaAuditingConfig;
 import store.moeum.moeum.order.domain.Order;
 import store.moeum.moeum.order.domain.OrderGroup;
 import store.moeum.moeum.order.domain.OrderGroupRepository;
+import store.moeum.moeum.order.domain.OrderGroupStatus;
 import store.moeum.moeum.order.domain.StockHold;
 import store.moeum.moeum.order.domain.StockHoldRepository;
 import store.moeum.moeum.payment.domain.Payment;
@@ -87,7 +88,55 @@ public class PaymentWriter {
 			record(payment, before, PaymentStatus.CREATED, "재결제 시도", PaymentActor.USER);
 		}
 
-		return new Prepared(payment.getId(), group.getId(), amount, productNameOf(group));
+		return new Prepared(payment.getId(), group.getId(), amount,
+				productNameOf(group), group.getBuyer().getPayerId());
+	}
+
+	/**
+	 * 2차금 세션 생성 준비 (payment-flow 2절).
+	 *
+	 * 1차금과 다른 점은 홀드 검증이 없고 <b>모든 주문이 입고됐는지</b>를 본다는 것이다.
+	 * 배송비가 묶음당 1회라 일부만 입고됐다고 청구하면 배송비를 나눌 방법이 없다.
+	 */
+	@Transactional(propagation = Propagation.REQUIRES_NEW)
+	public Prepared prepareSecond(String kakaoId, String orderToken) {
+		OrderGroup group = orderGroupRepository.findByOrderToken(orderToken)
+				.orElseThrow(() -> new BusinessException(ErrorCode.ORDER_GROUP_NOT_FOUND));
+
+		requireOwner(group, kakaoId);
+		if (group.isSecondPaid()) {
+			throw new BusinessException(ErrorCode.PAYMENT_IN_PROGRESS, "이미 2차금 결제가 완료되었습니다.");
+		}
+		if (!group.isSecondPaymentDue() && group.getStatus() != OrderGroupStatus.SECOND_PENDING) {
+			throw new BusinessException(ErrorCode.SECOND_PAYMENT_NOT_DUE);
+		}
+
+		int amount = group.secondPaymentAmount();
+		if (amount <= 0) {
+			// 2차금이 0원인 구성이다. 청구할 것이 없다
+			throw new BusinessException(ErrorCode.SECOND_PAYMENT_NOT_DUE, "청구할 2차금이 없습니다.");
+		}
+
+		Payment payment = paymentRepository
+				.findByOrderGroupIdAndPhase(group.getId(), PaymentPhase.SECOND)
+				.orElse(null);
+
+		if (payment == null) {
+			payment = paymentRepository.saveAndFlush(
+					Payment.create(group, PaymentPhase.SECOND, amount));
+			record(payment, null, PaymentStatus.CREATED, "2차금 세션 준비", PaymentActor.USER);
+		} else if (payment.getStatus().isPending()) {
+			throw new BusinessException(ErrorCode.PAYMENT_IN_PROGRESS);
+		} else if (payment.getStatus() == PaymentStatus.CAPTURED) {
+			throw new BusinessException(ErrorCode.PAYMENT_IN_PROGRESS, "이미 2차금 결제가 완료되었습니다.");
+		} else if (payment.getStatus().isReusable()) {
+			PaymentStatus before = payment.getStatus();
+			payment.resetForRetry(amount);
+			record(payment, before, PaymentStatus.CREATED, "2차금 재결제 시도", PaymentActor.USER);
+		}
+
+		return new Prepared(payment.getId(), group.getId(), amount,
+				productNameOf(group) + " 잔금", group.getBuyer().getPayerId());
 	}
 
 	/**
@@ -102,7 +151,11 @@ public class PaymentWriter {
 				.orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_NOT_FOUND));
 
 		payment.attachSession(session.id(), session.supplyAmount(), session.vat(), session.taxFreeAmount());
-		payment.getOrderGroup().markPayPending(orderToken);
+		if (payment.isFirst()) {
+			payment.getOrderGroup().markPayPending(orderToken);
+		} else {
+			payment.getOrderGroup().markSecondPending();
+		}
 	}
 
 	/**
@@ -114,7 +167,7 @@ public class PaymentWriter {
 	 * @return 승인을 호출해야 하면 그 정보, 이미 결제가 끝났으면 {@link Pending#alreadyPaid()}
 	 */
 	@Transactional(propagation = Propagation.REQUIRES_NEW)
-	public Pending markCapturePending(String kakaoId, String orderToken, String sessionId) {
+	public Pending markCapturePending(String kakaoId, String orderToken, String sessionId, PaymentPhase phase) {
 		OrderGroup group = orderGroupRepository.findByOrderToken(orderToken)
 				.orElseThrow(() -> new BusinessException(ErrorCode.ORDER_GROUP_NOT_FOUND));
 
@@ -122,12 +175,13 @@ public class PaymentWriter {
 		requireOwner(group, kakaoId);
 
 		// ② 중복 진입 — 이미 끝난 결제를 또 승인하지 않는다
-		if (group.isPaid()) {
+		boolean settled = (phase == PaymentPhase.FIRST) ? group.isPaid() : group.isSecondPaid();
+		if (settled) {
 			return Pending.alreadyPaid(group.getId());
 		}
 
 		Payment payment = paymentRepository
-				.findByOrderGroupIdAndPhase(group.getId(), PaymentPhase.FIRST)
+				.findByOrderGroupIdAndPhase(group.getId(), phase)
 				.orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_NOT_FOUND));
 
 		// ③ 세션 대조 — sessionId 에 서명이 없어 우리가 저장한 값과 비교하는 것이 유일한 검증이다
@@ -140,8 +194,11 @@ public class PaymentWriter {
 			return Pending.alreadyPaid(group.getId());
 		}
 
-		// ④ 홀드 유효성 — 돈이 나가기 전에 막는다. 만료된 재고로 결제를 받으면 초과 판매다
-		requireHoldsAlive(group);
+		// ④ 홀드 유효성 — 돈이 나가기 전에 막는다. 만료된 재고로 결제를 받으면 초과 판매다.
+		// 2차금은 재고가 이미 확정돼 홀드 개념이 없다
+		if (phase == PaymentPhase.FIRST) {
+			requireHoldsAlive(group);
+		}
 
 		PaymentStatus before = payment.getStatus();
 		boolean changed = payment.markCapturePending();
@@ -164,6 +221,15 @@ public class PaymentWriter {
 	 */
 	@Transactional(propagation = Propagation.REQUIRES_NEW)
 	public boolean finalizeCapture(Long paymentId, PaymentActor actor) {
+		return finalizeCapture(paymentId, actor, null);
+	}
+
+	/**
+	 * @param payerId point3 가 준 결제자 식별값. 2차금 때 인증 단계를 줄이는 데 쓴다.
+	 *                받은 문자열 그대로 저장하고, 이미 값이 있으면 덮어쓰지 않는다 (point3-api 5절)
+	 */
+	@Transactional(propagation = Propagation.REQUIRES_NEW)
+	public boolean finalizeCapture(Long paymentId, PaymentActor actor, String payerId) {
 		Payment payment = paymentRepository.findByIdForUpdate(paymentId)
 				.orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_NOT_FOUND));
 
@@ -176,8 +242,15 @@ public class PaymentWriter {
 		OrderGroup group = orderGroupRepository.findByIdForUpdate(payment.getOrderGroup().getId())
 				.orElseThrow(() -> new BusinessException(ErrorCode.ORDER_GROUP_NOT_FOUND));
 
-		if (group.markPaid() && payment.isFirst()) {
-			commitHolds(group);
+		if (payment.isFirst()) {
+			if (group.markPaid()) {
+				commitHolds(group);
+			}
+			// 1차금에서만 받아 둔다. 2차금은 이 값을 쓰는 쪽이다
+			group.getBuyer().rememberPayerId(payerId);
+		} else {
+			// 2차금은 홀드 확정이 없다 — 재고는 1차금에서 이미 확정됐다
+			group.markSecondPaid();
 		}
 		return true;
 	}
@@ -203,9 +276,13 @@ public class PaymentWriter {
 		OrderGroup group = orderGroupRepository.findByIdForUpdate(payment.getOrderGroup().getId())
 				.orElseThrow(() -> new BusinessException(ErrorCode.ORDER_GROUP_NOT_FOUND));
 
-		if (group.markPaymentFailed(reason) && payment.isFirst()) {
-			releaseHolds(group);
+		if (payment.isFirst()) {
+			if (group.markPaymentFailed(reason)) {
+				releaseHolds(group);
+			}
 		}
+		// 2차금 실패는 묶음을 FAILED 로 내리지 않는다 — 1차금은 이미 받았고 상품도 나갔다.
+		// 미수로 남겨 두고 재청구한다 (미납 배치)
 	}
 
 	/**
@@ -215,13 +292,13 @@ public class PaymentWriter {
 	 * 상태를 바꾸면, 조회할 때마다 결제가 일어나는 API 가 된다.
 	 */
 	@Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true)
-	public PaymentResultResponse readStatus(String kakaoId, String orderToken) {
+	public PaymentResultResponse readStatus(String kakaoId, String orderToken, PaymentPhase phase) {
 		OrderGroup group = orderGroupRepository.findByOrderToken(orderToken)
 				.orElseThrow(() -> new BusinessException(ErrorCode.ORDER_GROUP_NOT_FOUND));
 		requireOwner(group, kakaoId);
 
 		Payment payment = paymentRepository
-				.findByOrderGroupIdAndPhase(group.getId(), PaymentPhase.FIRST)
+				.findByOrderGroupIdAndPhase(group.getId(), phase)
 				.orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_NOT_FOUND));
 
 		return switch (payment.getStatus()) {
@@ -334,8 +411,13 @@ public class PaymentWriter {
 
 	// ---------------------------------------------------------------- 반환 타입
 
-	/** 세션 생성에 필요한 값. 트랜잭션 밖으로 엔티티를 들고 나가지 않는다 */
-	public record Prepared(Long paymentId, Long orderGroupId, int amount, String productName) {
+	/**
+	 * 세션 생성에 필요한 값. 트랜잭션 밖으로 엔티티를 들고 나가지 않는다.
+	 *
+	 * @param payerId 저장해 둔 결제자 식별값. 없으면 null 이고 프론트가 ANONYMOUS 로 진행한다
+	 */
+	public record Prepared(Long paymentId, Long orderGroupId, int amount,
+	                       String productName, String payerId) {
 	}
 
 	/**

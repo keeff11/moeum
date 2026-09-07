@@ -61,8 +61,24 @@ public class Buyer {
 		this.nickname = nickname;
 	}
 
-	/** 1차금 결제에서 point3 가 준 값을 그대로 보관한다 (4단계에서 사용) */
-	public void rememberPayerId(String payerId) {
+	/**
+	 * 1차금 결제에서 point3 가 준 값을 그대로 보관한다. 2차금 때 인증 단계를 줄이는 데 쓴다.
+	 *
+	 * <b>이미 값이 있으면 덮어쓰지 않는다</b> (point3-api 5절).
+	 * point3 가 관리하는 값이라 우리가 판단해 갈아끼울 근거가 없고,
+	 * 접두사를 떼거나 대소문자를 바꾸면 인증 생략 자체가 동작하지 않는다.
+	 *
+	 * @return 이번 호출로 저장됐으면 true
+	 */
+	public boolean rememberPayerId(String payerId) {
+		if (payerId == null || payerId.isBlank() || this.payerId != null) {
+			return false;
+		}
 		this.payerId = payerId;
+		return true;
+	}
+
+	public boolean hasPayerId() {
+		return payerId != null && !payerId.isBlank();
 	}
 }

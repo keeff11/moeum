@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import store.moeum.moeum.global.auth.SessionUser;
 import store.moeum.moeum.payment.domain.PaymentActor;
+import store.moeum.moeum.payment.domain.PaymentPhase;
 import store.moeum.moeum.payment.dto.PaymentResultResponse;
 import store.moeum.moeum.payment.dto.PaySessionResponse;
 import store.moeum.moeum.payment.exception.Point3FailedException;
@@ -65,8 +66,8 @@ public class PaymentService {
 		String orderToken = newOrderToken();
 		writer.attachSession(prepared.paymentId(), session, orderToken);
 
-		return new PaySessionResponse(
-				session.id(), orderToken, prepared.amount(), point3Properties.clientId());
+		return new PaySessionResponse(session.id(), orderToken, prepared.amount(),
+				point3Properties.clientId(), prepared.payerId());
 	}
 
 	/**
@@ -77,8 +78,19 @@ public class PaymentService {
 	 *
 	 * 금액은 여기서 다시 받지 않는다 — 프론트가 보낸 값을 검증 기준으로 쓰지 않는다 (규칙 5).
 	 */
-	public PaymentResultResponse confirm(SessionUser user, String orderToken, String sessionId) {
-		PaymentWriter.Pending pending = writer.markCapturePending(user.kakaoId(), orderToken, sessionId);
+	public PaymentResultResponse confirm(SessionUser user, String orderToken, String sessionId, String payerId) {
+		return confirm(user, orderToken, sessionId, payerId, PaymentPhase.FIRST);
+	}
+
+	/**
+	 * 1차금·2차금이 같은 코드를 탄다. phase 만 다르다 (payment-flow 0절).
+	 *
+	 * 2차금은 홀드 검증과 홀드 확정이 빠질 뿐, 승인 결과를 다루는 규칙은 완전히 같다.
+	 */
+	public PaymentResultResponse confirm(SessionUser user, String orderToken, String sessionId,
+	                                     String payerId, PaymentPhase phase) {
+		PaymentWriter.Pending pending =
+				writer.markCapturePending(user.kakaoId(), orderToken, sessionId, phase);
 
 		if (pending.alreadyPaid()) {
 			// 복귀 페이지를 새로고침했거나 confirm 이 두 번 들어왔다. 승인을 또 부르지 않는다
@@ -90,7 +102,7 @@ public class PaymentService {
 			Point3Capture capture = point3Client.capture(pending.sessionId());
 
 			if (capture.isCaptured()) {
-				writer.finalizeCapture(pending.paymentId(), PaymentActor.USER);
+				writer.finalizeCapture(pending.paymentId(), PaymentActor.USER, payerId);
 				return PaymentResultResponse.paid(orderToken);
 			}
 
@@ -120,7 +132,36 @@ public class PaymentService {
 
 	/** 복귀 페이지가 반복 조회한다. <b>부작용이 없다</b> (D-014) */
 	public PaymentResultResponse status(SessionUser user, String orderToken) {
-		return writer.readStatus(user.kakaoId(), orderToken);
+		return writer.readStatus(user.kakaoId(), orderToken, PaymentPhase.FIRST);
+	}
+
+	/** 2차금 상태 조회 */
+	public PaymentResultResponse secondStatus(SessionUser user, String orderToken) {
+		return writer.readStatus(user.kakaoId(), orderToken, PaymentPhase.SECOND);
+	}
+
+	/**
+	 * 2차금 결제 세션을 만든다 (payment-flow 2절).
+	 *
+	 * 1차금과 다른 점은 둘뿐이다 — 홀드가 없고, 저장해 둔 payerId 를 프론트에 함께 내려준다.
+	 * payerId 는 세션 생성 요청에 넣는 값이 아니라 SDK 의 customerKey 로 쓰이는 값이다
+	 * (point3-api 6절). 있으면 인증 단계가 줄고, 없으면 ANONYMOUS 로 진행된다.
+	 */
+	public PaySessionResponse paySecond(SessionUser user, String orderToken) {
+		PaymentWriter.Prepared prepared = writer.prepareSecond(user.kakaoId(), orderToken);
+
+		Point3Session session = point3Client.createSession(Point3SessionRequest.general(
+				prepared.amount(), prepared.productName(), null));
+
+		writer.attachSession(prepared.paymentId(), session, orderToken);
+
+		return new PaySessionResponse(session.id(), orderToken, prepared.amount(),
+				point3Properties.clientId(), prepared.payerId());
+	}
+
+	/** 2차금 승인 확정 */
+	public PaymentResultResponse confirmSecond(SessionUser user, String orderToken, String sessionId) {
+		return confirm(user, orderToken, sessionId, null, PaymentPhase.SECOND);
 	}
 
 	private static String newOrderToken() {

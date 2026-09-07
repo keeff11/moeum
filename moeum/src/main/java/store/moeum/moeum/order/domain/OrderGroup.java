@@ -156,6 +156,7 @@ public class OrderGroup extends BaseTimeEntity {
 		}
 		this.status = OrderGroupStatus.PAID;
 		this.failReason = null;
+		markOrdersPaid();
 		return true;
 	}
 
@@ -175,5 +176,48 @@ public class OrderGroup extends BaseTimeEntity {
 
 	public boolean isPaid() {
 		return status == OrderGroupStatus.PAID;
+	}
+
+	/**
+	 * 2차금 청구 대상인가 — <b>묶음의 모든 주문이 입고돼야 한다</b> (payment-flow 2절).
+	 *
+	 * 배송비가 묶음당 1회라 일부만 입고됐다고 청구하면 배송비를 나눌 방법이 없다.
+	 * 한 폼이라도 늦어지면 그 묶음 전체가 기다린다.
+	 */
+	public boolean isSecondPaymentDue() {
+		return status == OrderGroupStatus.PAID
+				&& !orders.isEmpty()
+				&& orders.stream().allMatch(Order::isArrived);
+	}
+
+	/** 2차금 결제 세션을 만들 준비가 된 상태 */
+	public void markSecondPending() {
+		if (status != OrderGroupStatus.PAID && status != OrderGroupStatus.SECOND_PENDING) {
+			throw new IllegalStateException("2차금을 시작할 수 없는 주문 상태다: " + status + " (id=" + id + ")");
+		}
+		this.status = OrderGroupStatus.SECOND_PENDING;
+	}
+
+	/**
+	 * 2차금 확정. <b>멱등하다.</b>
+	 *
+	 * 1차금과 달리 홀드 확정이 없다 — 재고는 1차금에서 이미 확정됐다.
+	 */
+	public boolean markSecondPaid() {
+		if (status == OrderGroupStatus.SECOND_PAID) {
+			return false;
+		}
+		this.status = OrderGroupStatus.SECOND_PAID;
+		this.failReason = null;
+		return true;
+	}
+
+	public boolean isSecondPaid() {
+		return status == OrderGroupStatus.SECOND_PAID;
+	}
+
+	/** 1차금 확정 시 주문들도 같이 PAID 로 넘긴다 */
+	public void markOrdersPaid() {
+		orders.forEach(Order::markPaid);
 	}
 }

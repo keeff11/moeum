@@ -8,6 +8,8 @@ import org.springframework.transaction.annotation.Transactional;
 import store.moeum.moeum.global.error.BusinessException;
 import store.moeum.moeum.global.error.ErrorCode;
 import store.moeum.moeum.global.storage.ImageStorage;
+import store.moeum.moeum.order.domain.Order;
+import store.moeum.moeum.order.domain.OrderRepository;
 import store.moeum.moeum.saleform.dto.ImageUploadUrlResponse;
 import store.moeum.moeum.saleform.dto.ImageUploadUrlRequest;
 import store.moeum.moeum.saleform.domain.FieldChange;
@@ -38,6 +40,7 @@ import static store.moeum.moeum.global.jpa.JpaAuditingConfig.KST;
 public class SaleFormService {
 
 	private final SaleFormRepository saleFormRepository;
+	private final OrderRepository orderRepository;
 	private final ImageStorage imageStorage;
 	private final SaleFormHistoryRepository saleFormHistoryRepository;
 	private final SellerService sellerService;
@@ -174,6 +177,34 @@ public class SaleFormService {
 
 		recordStatusChange(form, form.close(), seller);
 		return SaleFormDetailResponse.of(form, seller, imageUrlsOf(form));
+	}
+
+	/**
+	 * 입고 처리 (5단계 시작점). 이 폼의 1차금 확정 주문을 ARRIVED 로 넘긴다.
+	 *
+	 * <b>여기서 2차금이 청구 가능해진다.</b> 다만 실제로 열리는 것은 묶음의 <em>모든</em> 폼이
+	 * 입고된 뒤다 — 배송비가 묶음당 1회라 일부만 입고됐다고 청구하면 배송비를 나눌 수 없다.
+	 *
+	 * @return 이번에 입고 처리된 주문 수
+	 */
+	@Transactional
+	public int markArrived(String kakaoId, Long saleFormId) {
+		Seller seller = sellerService.getByKakaoId(kakaoId);
+		SaleForm form = findOwned(seller, saleFormId);
+
+		if (form.getStatus() == SaleFormStatus.DRAFT) {
+			throw new BusinessException(ErrorCode.INVALID_SALE_FORM,
+					"판매를 시작하지 않은 폼은 입고 처리할 수 없습니다.");
+		}
+
+		int arrived = 0;
+		for (Order order : orderRepository.findPaidBySaleForm(saleFormId)) {
+			if (order.markArrived()) {
+				arrived++;
+			}
+		}
+		log.info("입고 처리: saleFormId={}, 주문 {}건", saleFormId, arrived);
+		return arrived;
 	}
 
 	/** 상태 전이도 다른 필드와 같이 sale_form_history 에 남긴다 */
