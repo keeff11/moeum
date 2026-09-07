@@ -56,7 +56,14 @@ public enum ErrorCode {
 	// --- 이미지 업로드 ---
 	UNSUPPORTED_IMAGE_TYPE(HttpStatus.BAD_REQUEST, "지원하지 않는 이미지 형식입니다."),
 	IMAGE_TOO_LARGE(HttpStatus.PAYLOAD_TOO_LARGE, "이미지 크기가 허용 범위를 넘었습니다."),
-	STORAGE_NOT_CONFIGURED(HttpStatus.SERVICE_UNAVAILABLE, "이미지 업로드를 사용할 수 없습니다.");
+	STORAGE_NOT_CONFIGURED(HttpStatus.SERVICE_UNAVAILABLE, "이미지 업로드를 사용할 수 없습니다."),
+
+	// --- 결제 ---
+	PAYMENT_NOT_FOUND(HttpStatus.NOT_FOUND, "결제 정보를 찾을 수 없습니다."),
+	HOLD_EXPIRED(HttpStatus.CONFLICT, "주문 시간이 만료되었습니다. 다시 담아 주세요."),
+	SESSION_MISMATCH(HttpStatus.BAD_REQUEST, "결제 정보가 일치하지 않습니다."),
+	PAYMENT_IN_PROGRESS(HttpStatus.CONFLICT, "결제가 진행 중입니다. 잠시 후 결과를 확인해 주세요."),
+	PAYMENT_FAILED(HttpStatus.CONFLICT, "결제에 실패했습니다. 다시 시도해 주세요.");
 
 	private final HttpStatus status;
 	private final String message;

@@ -394,12 +394,12 @@
 
     <div class="total">
       <div class="total-label">전체 진척 (로드맵 단계 비중 가중)</div>
-      <div class="total-num" id="totalNum">54<small>%</small></div>
+      <div class="total-num" id="totalNum">63<small>%</small></div>
       <div class="total-bar">
-        <div class="bar"><i style="width:54%"></i></div>
+        <div class="bar"><i style="width:63%"></i></div>
       </div>
       <div class="total-note">
-        1~3단계 완료. 남은 절반의 대부분이 <strong style="font-weight:500">4단계 결제(point3)</strong> 와 그 위에 얹히는 취소·알림이다.
+        4단계 결제의 서버 쪽이 끝났다. 남은 것은 <strong style="font-weight:500">point3 서버 토큰·운영 IP 등록</strong>(외부 대기)과 프론트 연동, 그 위의 취소·알림이다.
       </div>
     </div>
 
@@ -419,7 +419,7 @@
   <main class="rows" id="rows"></main>
 
   <footer>
-    <div><strong style="font-weight:500;color:var(--ink-2)">다음 한 걸음</strong> — ① point3 가맹점 키·운영 IP 신청(외부 대기) → ② <code>Point3Client</code> → ③ <code>/pay</code> · <code>/confirm</code></div>
+    <div><strong style="font-weight:500;color:var(--ink-2)">다음 한 걸음</strong> — ① point3 <strong style="font-weight:500">서버 API 토큰</strong>·운영 IP 신청(외부 대기. clientId 와 다른 값이다) → ② 프론트 SDK 연동 → ③ 판매 시작 흐름(DRAFT → SELLING)</div>
     <div>가중치는 로드맵 8단계의 작업량 비중으로 잡았다. 결제 22 · 주문 12 · 판매폼 10 · 취소 10 · 인증 8 · 인프라 8 · 셀러운영 8 · 셀러심사 6 · 장바구니 6 · 알림 6 · 구매자 4.</div>
   </footer>
 </div>
@@ -503,7 +503,7 @@
       ]
     },
     {
-      name: "주문 · 재고 홀드", pct: 90, weight: 12,
+      name: "주문 · 재고 홀드", pct: 95, weight: 12,
       items: [
         ["POST · GET /checkout-sessions", "B2 옵션·수량 확정 시 홀드 (D-001)", "done"],
         ["조건부 UPDATE 한 방 재고 확보", "영향 행 0이면 품절 또는 마감", "done"],
@@ -514,25 +514,27 @@
         ["동시성 · 만료 테스트 11개", "200스레드 동시 주문, 중복 회수 방지", "done"],
         ["ACTIVE_SESSION_EXISTS 이어받기", "D-015 가 정했는데 코드에 없다 — 홀드가 이중 생성된다", "check"],
         ["배송비 계산", "항상 seller.shippingFee 고정 — 무료배송 기준을 타지 않는다", "check"],
-        ["POST /checkout-sessions/{id}/pay", "4단계", "todo"]
+        ["POST /checkout-sessions/{id}/pay", "PaymentController 로 구현됨", "done"]
       ]
     },
     {
-      name: "결제 · point3", pct: 22, weight: 22, open: true,
+      name: "결제 · point3", pct: 62, weight: 22, open: true,
       items: [
         ["payment · payment_event 스키마", "테이블과 설계 문서만 있고 payment 패키지가 없다", "done"],
         ["point3 서버 API 토큰 + 운영 IP 등록", "clientId(브라우저용)는 받았다. 서버용 Bearer 토큰은 별개 값 — 아직 없다", "todo"],
         ["Point3Client (세션 생성 · 조회 · 승인)", "타임아웃 · 4xx/5xx 분리 완료. 토큰 없이도 WireMock 으로 검증된다", "done"],
         ["4xx / 5xx 예외 분리", "D-006. Point3FailedException(되돌려도 안전) / Point3UncertainException(되돌리지 않음)", "done"],
-        ["POST /checkout-sessions/{id}/pay", "홀드 유효성 확인 후 세션 생성", "todo"],
-        ["POST /orders/{token}/confirm", "검증 4종 → CAPTURE_PENDING 커밋 → 승인 호출", "todo"],
-        ["GET /orders/{token} 상태 조회", "부작용 없음 (D-014). 프론트는 조회만 반복한다", "todo"],
-        ["finalizeCapture 멱등 확정", "홀드 커밋 + 재고 확정", "todo"],
-        ["승인 대사 배치", "D-005. 다음 날 00:00 KST 를 넘기면 복구할 수 없다", "todo"],
-        ["payment_event 기록", "상태 전이 감사 로그", "todo"],
-        ["WireMock 실패 테스트", "Point3Client 14개 완료. 승인 흐름(중복 confirm 등)은 PaymentService 와 함께", "part"],
+        ["POST /checkout-sessions/{id}/pay", "홀드 유효성 · 마감 확인 후 세션 생성", "done"],
+        ["POST /orders/{token}/confirm", "검증 4종 → CAPTURE_PENDING 커밋 → 승인 호출", "done"],
+        ["GET /orders/{token} 상태 조회", "부작용 없음 (D-014). 프론트는 조회만 반복한다", "done"],
+        ["finalizeCapture 멱등 확정", "실시간과 배치가 같은 메서드를 부른다. 재고 이중 차감 방지", "done"],
+        ["승인 대사 배치", "D-005. captured 확정 · committed 재승인 · failed 홀드 해제. SKIP LOCKED", "done"],
+        ["payment_event 기록", "전이마다 한 행. 재결제해도 이력이 남는다 (D-023)", "done"],
+        ["WireMock 실패 테스트", "로드맵 필수 8종 포함 33개. 타임아웃 · 5xx · processing · 중복 confirm", "done"],
         ["uk_payment_group_phase 재결제 정책", "D-023. 실패한 행을 재사용한다. FAILED 일 때만 — CAPTURE_PENDING 은 절대 덮지 않는다", "done"],
-        ["2차금 — phase 만 바꿔 재사용", "5단계. 입고 처리 · 미수 추적 · 미납 배치", "todo"]
+        ["2차금 — phase 만 바꿔 재사용", "5단계. 입고 처리 · 미수 추적 · 미납 배치", "todo"],
+        ["프론트 SDK 연동 + 확인 중 화면", "PENDING 은 실패가 아니다. 재결제시키면 이중 결제가 된다", "todo"],
+        ["실결제 검증", "토큰 · 운영 IP 등록 후. 샌드박스 유무 확인 필요", "todo"]
       ]
     },
     {
@@ -571,7 +573,7 @@
       items: [
         ["전역 예외 핸들러 · 에러 코드 체계", "공통 응답 포맷 + 토큰 유출 방지 테스트", "done"],
         ["Flyway 마이그레이션 V1~V4", "18개 테이블 + 세션 · 공개상품 · 이미지 키. ddl-auto: validate", "done"],
-        ["테스트 137개", "Testcontainers MySQL 8.0 + point3 는 WireMock. H2 로 대체하지 않는다", "done"],
+        ["테스트 156개", "Testcontainers MySQL 8.0 + point3 는 WireMock. H2 로 대체하지 않는다", "done"],
         ["EC2 + Docker Compose + Caddy 자동 TLS", "D-016. 월 $26", "done"],
         ["GitHub Actions OIDC → ECR → SSM 배포", "AWS 액세스 키를 GitHub 에 두지 않는다", "done"],
         ["Parameter Store 시크릿", "D-017. 배포 때마다 .env 재생성", "done"],

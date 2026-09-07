@@ -19,11 +19,14 @@ import java.time.Duration;
 public record Point3Properties(
 		String baseUrl,
 		String apiToken,
+		/** 브라우저용 키. 공개돼도 되는 값이라 프론트에 그대로 내려준다 */
+		String clientId,
 		Duration connectTimeout,
 		Duration readTimeout
 ) {
 
 	public Point3Properties {
+		clientId = (clientId == null) ? "" : clientId;
 		baseUrl = (baseUrl == null || baseUrl.isBlank()) ? "https://api.point3.io" : trimSlash(baseUrl);
 		connectTimeout = (connectTimeout == null) ? Duration.ofSeconds(3) : connectTimeout;
 		readTimeout = (readTimeout == null) ? Duration.ofSeconds(10) : readTimeout;

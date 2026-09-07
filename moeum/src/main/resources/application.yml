@@ -154,6 +154,7 @@ moeum:
     # 서버 전용 비밀값. 비어 있으면 결제 호출만 막히고 앱은 정상 기동한다
     base-url: ${POINT3_BASE_URL:https://api.point3.io}
     api-token: ${POINT3_API_TOKEN:}
+    client-id: ${POINT3_CLIENT_ID:}
   oauth:
     kakao:
       # 카카오 앱 등록 정보는 전부 서버가 갖는다 (api-spec 10-8)

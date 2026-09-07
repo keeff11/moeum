@@ -250,7 +250,7 @@ class Point3ClientTest {
 	@DisplayName("토큰이_없으면_호출하지_않고_확정_실패로_끝낸다")
 	void 토큰_없음() {
 		Point3Client unconfigured = new Point3Client(new Point3Properties(
-				server.baseUrl(), "  ", Duration.ofSeconds(1), Duration.ofSeconds(1)));
+				server.baseUrl(), "  ", "client-test", Duration.ofSeconds(1), Duration.ofSeconds(1)));
 
 		assertThatThrownBy(() -> unconfigured.capture(SESSION_ID))
 				.isInstanceOf(Point3FailedException.class);
@@ -263,7 +263,7 @@ class Point3ClientTest {
 
 	private Point3Client clientWith(Duration readTimeout) {
 		return new Point3Client(new Point3Properties(
-				server.baseUrl(), TOKEN, Duration.ofSeconds(2), readTimeout));
+				server.baseUrl(), TOKEN, "client-test", Duration.ofSeconds(2), readTimeout));
 	}
 
 	private static com.github.tomakehurst.wiremock.client.ResponseDefinitionBuilder json(int status, String body) {

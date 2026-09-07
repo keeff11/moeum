@@ -123,4 +123,57 @@ public class OrderGroup extends BaseTimeEntity {
 		this.status = OrderGroupStatus.EXPIRED;
 		this.orders.forEach(Order::expire);
 	}
+
+	/** 1차금 청구액. 배송비는 묶음당 1회라 여기서 한 번만 더한다 */
+	public int firstPaymentAmount() {
+		return deposit1Total + shippingFee;
+	}
+
+	/**
+	 * 결제 세션을 만들어 결제창으로 보낼 준비가 된 상태.
+	 *
+	 * 재결제로 다시 들어올 수 있어 PAY_PENDING 에서 또 불려도 그대로 둔다 (D-023).
+	 * 복귀 페이지 주소로 쓸 orderToken 을 이때 발급한다 — 세션 토큰과 다른 값이다.
+	 */
+	public void markPayPending(String orderToken) {
+		if (status != OrderGroupStatus.CREATED && status != OrderGroupStatus.PAY_PENDING) {
+			throw new IllegalStateException("결제를 시작할 수 없는 주문 상태다: " + status + " (id=" + id + ")");
+		}
+		this.status = OrderGroupStatus.PAY_PENDING;
+		if (this.orderToken == null) {
+			this.orderToken = orderToken;
+		}
+	}
+
+	/**
+	 * 1차금 확정. <b>멱등하다</b> — 실시간 처리와 대사 배치가 같은 건을 확정할 수 있다.
+	 *
+	 * @return 이번 호출로 바뀌었으면 true. false 면 이미 확정돼 재고를 또 차감하면 안 된다
+	 */
+	public boolean markPaid() {
+		if (status == OrderGroupStatus.PAID) {
+			return false;
+		}
+		this.status = OrderGroupStatus.PAID;
+		this.failReason = null;
+		return true;
+	}
+
+	/**
+	 * 결제 실패. 홀드 해제는 호출자가 따로 한다 — 여기서 재고를 건드리지 않는다.
+	 * 이미 확정된 묶음은 실패로 내리지 않는다.
+	 */
+	public boolean markPaymentFailed(String reason) {
+		if (status == OrderGroupStatus.PAID || status == OrderGroupStatus.FAILED) {
+			return false;
+		}
+		this.status = OrderGroupStatus.FAILED;
+		this.failReason = (reason == null || reason.length() <= 100)
+				? reason : reason.substring(0, 100);
+		return true;
+	}
+
+	public boolean isPaid() {
+		return status == OrderGroupStatus.PAID;
+	}
 }
