@@ -394,9 +394,9 @@
 
     <div class="total">
       <div class="total-label">전체 진척 (로드맵 단계 비중 가중)</div>
-      <div class="total-num" id="totalNum">68<small>%</small></div>
+      <div class="total-num" id="totalNum">70<small>%</small></div>
       <div class="total-bar">
-        <div class="bar"><i style="width:68%"></i></div>
+        <div class="bar"><i style="width:70%"></i></div>
       </div>
       <div class="total-note">
         4·5단계 서버 쪽이 끝났다. 셀러 온보딩부터 2차금까지 서버에서 끊김 없이 이어진다. 남은 것은 <strong style="font-weight:500">point3 서버 토큰·운영 IP 등록</strong>(외부 대기)과 프론트 연동, 그 위의 취소·알림이다.
@@ -539,16 +539,18 @@
       ]
     },
     {
-      name: "취소 · 환불", pct: 3, weight: 10,
+      name: "취소 · 환불", pct: 25, weight: 10,
       items: [
         ["refund 스키마", "", "done"],
-        ["취소 가능 여부 판단", "정산 전 / EOB 시간대 / 이미 취소 중", "todo"],
-        ["부분 취소 세금 3종 계산", "point3 가 자동 계산하지 않는다 (D-011)", "todo"],
-        ["Point3Client.refund + 409 분기", "Idempotency-Key 는 중복 차단용이지 재시도용이 아니다", "todo"],
-        ["resume API 연동", "", "todo"],
+        ["취소 가능 여부 판단", "우리 DB·시계로 1차, point3 조회로 2차. 정산 여부는 시도해야 안다", "todo"],
+        ["부분 취소 세금 3종 계산", "원 결제 비율로 안분. 마지막 취소는 잔액을 그대로 써야 1원이 안 남는다", "todo"],
+        ["Point3Client 취소 3종 + 409 분기", "409 6종을 확정 거절 / 모름 두 부류로. 404 는 취소 이력 없음으로 처리", "done"],
+        ["resume API 연동", "취소에서 유일하게 안전한 재시도 수단. 여러 번 불러도 된다", "done"],
         ["취소 대사 배치", "", "todo"],
         ["EOB 시간대 차단", "23:30~00:30 KST 는 버튼 비활성화 + 안내", "todo"],
-        ["정산 후 환불 접수", "settled_manual", "todo"]
+        ["정산 후 환불 접수", "settled_manual. SETTLEMENT_DEADLINE_EXCEEDED 는 시도해야 안다", "todo"],
+        ["취소 시 재고 되돌림", "D-024. SOLO · GROUP 마감 전은 되돌리고, GROUP 마감 후는 두지 않는다", "todo"],
+        ["실결제 검증", "샌드박스가 없다. 소액 실결제로 결제→취소를 돌려봐야 한다", "todo"]
       ]
     },
     {
@@ -574,7 +576,7 @@
       items: [
         ["전역 예외 핸들러 · 에러 코드 체계", "공통 응답 포맷 + 토큰 유출 방지 테스트", "done"],
         ["Flyway 마이그레이션 V1~V4", "18개 테이블 + 세션 · 공개상품 · 이미지 키. ddl-auto: validate", "done"],
-        ["테스트 178개", "Testcontainers MySQL 8.0 + point3 는 WireMock. H2 로 대체하지 않는다", "done"],
+        ["테스트 195개", "Testcontainers MySQL 8.0 + point3 는 WireMock. H2 로 대체하지 않는다", "done"],
         ["EC2 + Docker Compose + Caddy 자동 TLS", "D-016. 월 $26", "done"],
         ["GitHub Actions OIDC → ECR → SSM 배포", "AWS 액세스 키를 GitHub 에 두지 않는다", "done"],
         ["Parameter Store 시크릿", "D-017. 배포 때마다 .env 재생성", "done"],

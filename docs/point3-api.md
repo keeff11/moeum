@@ -296,10 +296,90 @@ POST /refunds/v1/{sessionId}
 
 ### 취소 세션 상태
 
-`refundable` / `processing` / `partiallyRefunded` / `fullyRefunded`
-개별 항목: `completed` / `failed` / `processing`
+| 값 | 의미 |
+|---|---|
+| `refundable` | **처리 중이거나 완료된 취소가 없는** 일반 상태. "취소 가능" 이 아니라 "이력 없음" 이다 |
+| `processing` | 취소가 모두 완료되지 않은 상태 |
+| `partiallyRefunded` | 요청된 부분 취소가 완료됨 |
+| `fullyRefunded` | 원 결제 금액이 모두 취소됨 |
 
-`processing`인 활성 취소가 있으면 `POST /refunds/v1/{sessionId}/resume`으로 재개.
+개별 항목: `refunds[].status` = `completed` / `failed` / `processing`
+
+⚠️ **`status == refundable` 로 취소 가능 여부를 판단하지 말 것.** 부분 취소가 한 번이라도
+완료되면 `partiallyRefunded` 로 바뀌므로, `refundable` 만 보면 추가 취소를 막게 된다.
+판단은 아래 두 필드로 한다.
+
+### 조회 응답 (`PaymentRefundStatusResponse`)
+
+| 필드 | 용도 |
+|---|---|
+| **`canCreateRefund`** boolean | **새 취소 요청 가능 여부** — 판단의 핵심 |
+| **`refundableAmount`** integer | 현재 추가로 취소할 수 있는 금액 — 부분 취소 상한 |
+| `originalAmount` | 원 결제 총액 — 세금 안분의 분모 |
+| `refunds[]` | 개별 취소 이력. `id` · `status` · `amount` · `vat` · `fee` · **`failure`** |
+
+`refunds[].failure` 에 실패 코드가 담긴다 (예: `refundMethodDeclined`).
+
+**404 는 오류가 아닐 수 있다.** "취소 정보를 찾을 수 없음" 이라 취소한 적 없는 결제를
+조회하면 404 가 올 가능성이 있다. 그 경우 "취소 이력 없음 = 전액 취소 가능" 으로 다뤄야 한다.
+없는 세션과 구분이 안 되면 우리 DB 에 sessionId 가 있는지로 가른다.
+**토큰 발급 후 실제 응답으로 확인할 것.**
+
+### 취소 응답 (`PaymentRefundResponse`)
+
+**`status` 의 enum 값은 `completed` 하나뿐이다.** POST 가 200 을 주면 그 취소는 끝난 것이고,
+`processing` 인 채로 200 이 오지 않는다. 외부 결과가 미확정이면 200 이 아니라
+`409 REFUND_TEMPORARY_UNAVAILABLE` 로 즉시 알려준다 — 매달아두지 않는다.
+
+**`fee` — 취소 처리 수수료가 붙는다.** 예시에 5,000원 취소에 `fee: 100`.
+부분 취소를 여러 번 하면 수수료도 여러 번 붙는다. 셀러 정산에 영향이 있으므로 저장한다.
+
+### 결과 처리 (원문 표)
+
+| 응답 | 처리 |
+|---|---|
+| 200 | `paymentSessionId` 와 요청값 확인 → 항목 id · 금액 · 세금 · 시각 저장 → 완료 처리 |
+| 409 | `result.code` 로 미확정 · 중복 · 정책상 불가를 구분 |
+| **422** | **명시적 거절.** 오류 코드와 메시지 기록 |
+| 400 · 401 · 404 | 연동 오류 |
+| 500 · 503 · 네트워크 · 응답 유실 | **성공·실패를 추정하지 말고 상태 조회** |
+
+### 409 여섯 개는 두 부류다
+
+이 구분이 예외 계층의 기준이다. 4단계에서 4xx/5xx 를 나눈 것과 같은 논리가 409 안에서 반복된다.
+
+**확정 거절 — 취소가 일어나지 않았다. 되돌려도 안전**
+`REFUND_NOT_IN_REFUNDABLE_STATE` · `SETTLEMENT_DEADLINE_EXCEEDED` · `EOB_WINDOW_BLOCKED`
+
+**모름 — 조회로 확인해야 한다. 새 취소를 만들면 이중 환불**
+`REFUND_TEMPORARY_UNAVAILABLE` · `REFUND_DUPLICATE_REQUEST` · `REFUND_ACTIVE_REQUEST_EXISTS`
+
+`REFUND_TEMPORARY_UNAVAILABLE` 은 point3 판 `CAPTURE_PENDING` 이다 —
+point3 도 카드사 결과를 몰라 확답을 못 주는 상태다. 실패가 아니다.
+처리 방법에 "**응답 식별값을 보존**" 이 있어, 미확정 409 에도 환불 항목 id 가 실려 올 것으로 읽힌다.
+그러면 조회 시 `refunds[]` 에서 우리 건을 집어낼 수 있다. **실제 응답으로 확인할 것.**
+
+### resume
+
+```
+POST /refunds/v1/{sessionId}/resume
+```
+
+`processing` 인 활성 취소를 이어서 끝낸다. **새 취소를 만들지 않으므로 이중 환불이 없다** —
+취소에서 유일하게 안전한 재시도 수단이고, 취소 대사 배치의 주 수단이다.
+
+조회 후 resume 호출 전에 이미 완료됐어도 사고가 없다. 재개하지 않고 최신 상태를 200 으로 반환한다.
+즉 **여러 번 불러도 안전하다.**
+
+`processing` 이 생기는 경로는 둘뿐이다.
+① `409 REFUND_TEMPORARY_UNAVAILABLE` ② 우리가 응답을 놓침(타임아웃 · 서버 다운).
+POST 가 정상 200 을 준 경로에서는 생기지 않는다.
+
+### 테스트 환경이 없다
+
+문서 어디에도 샌드박스 · 테스트 키 언급이 없다 (`introduction` · `operations` ·
+`troubleshooting` · `api-reference` 전부 확인). **최종 검증은 소액 실결제로 해야 한다.**
+토큰과 운영 IP 등록 후, 소액 상품으로 결제 → 취소를 한 번 돌려보는 절차를 배포 전에 넣는다.
 
 ---
 
