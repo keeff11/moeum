@@ -394,9 +394,9 @@
 
     <div class="total">
       <div class="total-label">전체 진척 (로드맵 단계 비중 가중)</div>
-      <div class="total-num" id="totalNum">50<small>%</small></div>
+      <div class="total-num" id="totalNum">54<small>%</small></div>
       <div class="total-bar">
-        <div class="bar"><i style="width:50%"></i></div>
+        <div class="bar"><i style="width:54%"></i></div>
       </div>
       <div class="total-note">
         1~3단계 완료. 남은 절반의 대부분이 <strong style="font-weight:500">4단계 결제(point3)</strong> 와 그 위에 얹히는 취소·알림이다.
@@ -518,20 +518,20 @@
       ]
     },
     {
-      name: "결제 · point3", pct: 5, weight: 22, open: true,
+      name: "결제 · point3", pct: 22, weight: 22, open: true,
       items: [
         ["payment · payment_event 스키마", "테이블과 설계 문서만 있고 payment 패키지가 없다", "done"],
-        ["point3 가맹점 키 발급 + 운영 IP 등록", "외부 대기. 지금 신청해야 4단계가 안 막힌다", "todo"],
-        ["Point3Client (세션 생성 · 조회 · 승인)", "connect · read 타임아웃 필수", "todo"],
-        ["4xx / 5xx 예외 분리", "D-006. 하나로 잡으면 5xx 가 실패 처리되어 미수금이 된다", "todo"],
+        ["point3 서버 API 토큰 + 운영 IP 등록", "clientId(브라우저용)는 받았다. 서버용 Bearer 토큰은 별개 값 — 아직 없다", "todo"],
+        ["Point3Client (세션 생성 · 조회 · 승인)", "타임아웃 · 4xx/5xx 분리 완료. 토큰 없이도 WireMock 으로 검증된다", "done"],
+        ["4xx / 5xx 예외 분리", "D-006. Point3FailedException(되돌려도 안전) / Point3UncertainException(되돌리지 않음)", "done"],
         ["POST /checkout-sessions/{id}/pay", "홀드 유효성 확인 후 세션 생성", "todo"],
         ["POST /orders/{token}/confirm", "검증 4종 → CAPTURE_PENDING 커밋 → 승인 호출", "todo"],
         ["GET /orders/{token} 상태 조회", "부작용 없음 (D-014). 프론트는 조회만 반복한다", "todo"],
         ["finalizeCapture 멱등 확정", "홀드 커밋 + 재고 확정", "todo"],
         ["승인 대사 배치", "D-005. 다음 날 00:00 KST 를 넘기면 복구할 수 없다", "todo"],
         ["payment_event 기록", "상태 전이 감사 로그", "todo"],
-        ["WireMock 실패 테스트 8종", "타임아웃 · 5xx · processing · 중복 confirm", "todo"],
-        ["uk_payment_group_phase 재결제 정책", "실패 후 같은 (group, phase) 로 새 행을 못 만든다. 착수 전 결정", "check"],
+        ["WireMock 실패 테스트", "Point3Client 14개 완료. 승인 흐름(중복 confirm 등)은 PaymentService 와 함께", "part"],
+        ["uk_payment_group_phase 재결제 정책", "D-023. 실패한 행을 재사용한다. FAILED 일 때만 — CAPTURE_PENDING 은 절대 덮지 않는다", "done"],
         ["2차금 — phase 만 바꿔 재사용", "5단계. 입고 처리 · 미수 추적 · 미납 배치", "todo"]
       ]
     },
@@ -571,7 +571,7 @@
       items: [
         ["전역 예외 핸들러 · 에러 코드 체계", "공통 응답 포맷 + 토큰 유출 방지 테스트", "done"],
         ["Flyway 마이그레이션 V1~V4", "18개 테이블 + 세션 · 공개상품 · 이미지 키. ddl-auto: validate", "done"],
-        ["Testcontainers MySQL 8.0 통합 테스트 123개", "H2 로 대체하지 않는다", "done"],
+        ["테스트 137개", "Testcontainers MySQL 8.0 + point3 는 WireMock. H2 로 대체하지 않는다", "done"],
         ["EC2 + Docker Compose + Caddy 자동 TLS", "D-016. 월 $26", "done"],
         ["GitHub Actions OIDC → ECR → SSM 배포", "AWS 액세스 키를 GitHub 에 두지 않는다", "done"],
         ["Parameter Store 시크릿", "D-017. 배포 때마다 .env 재생성", "done"],

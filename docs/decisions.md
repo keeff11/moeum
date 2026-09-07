@@ -544,3 +544,39 @@ aws s3api create-bucket --bucket moeum-images --region ap-northeast-2 \
 ```
 
 Parameter Store 에 `S3_BUCKET`, `S3_PUBLIC_BASE_URL` 을 넣고 재배포하면 켜진다.
+
+---
+
+## D-023. 재결제는 실패한 payment 행을 재사용한다
+
+**결정:** 결제가 실패해 다시 시도할 때, 새 행을 만들지 않고 기존 행의
+`session_id` 와 `status` 를 갈아끼운다. `uk_payment_group_phase` 유니크는 그대로 둔다.
+
+**문제:** 스키마가 한 주문묶음의 차수당 payment 행을 하나로 제한한다.
+
+```sql
+UNIQUE KEY uk_payment_group_phase (order_group_id, phase)
+```
+
+카드 한도 초과·결제창 이탈·본인인증 실패로 첫 시도가 `FAILED` 로 끝나면 그 행이 자리를 차지해
+두 번째 시도의 행을 INSERT 할 수 없다. 재시도는 새 point3 세션을 요구하므로
+(실패한 sessionId 는 재사용 불가) 새 sessionId 를 담을 자리가 없다.
+
+재고 홀드는 15분간 살아 있다. 그 안에 다시 결제할 수 없으면 구매자는 장바구니부터 다시 해야 하고,
+마감이 있는 공동구매에서 그건 그대로 이탈이다.
+
+**왜 유니크를 완화하지 않는가:** 유니크를 풀면 "성공한 결제는 하나뿐" 이라는 보장이
+DB 제약에서 애플리케이션 코드로 내려온다. MySQL 은 부분 유니크 인덱스가 없어
+"status='CAPTURED' 인 행은 하나" 를 제약으로 표현할 수 없다. 결제 도메인에서
+중복 방지를 코드에 맡기는 건 손해다. 이력은 `payment_event` 가 상태 전이마다 행을 남기므로
+payment 테이블은 "현재 상태" 만 들고 있으면 된다.
+
+**⚠️ 재사용은 `FAILED` 일 때만 허용한다.**
+
+`CAPTURE_PENDING` 을 덮어쓰면 안 된다. 그건 승인 결과를 모르는 상태이고,
+그 기록이 사라지면 **실제로 출금됐는데 추적할 방법이 없어진다** (CLAUDE.md 규칙 3·4, D-004).
+`CREATED` · `CAPTURED` 도 덮어쓰지 않는다 — 진행 중이거나 이미 끝난 결제다.
+
+재사용 시점에 `payment_event` 로 전이를 남겨 몇 번째 시도인지 추적할 수 있게 한다.
+
+**아직 구현하지 않았다.** `PaymentService` 착수 시 이 규칙으로 만든다.

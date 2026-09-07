@@ -150,6 +150,10 @@ moeum:
     bucket: ${S3_BUCKET:}
     # 나중에 CloudFront 를 앞에 세우면 이 값만 바꾼다. 쌓인 행은 키만 갖고 있어 손대지 않는다
     public-base-url: ${S3_PUBLIC_BASE_URL:}
+  point3:
+    # 서버 전용 비밀값. 비어 있으면 결제 호출만 막히고 앱은 정상 기동한다
+    base-url: ${POINT3_BASE_URL:https://api.point3.io}
+    api-token: ${POINT3_API_TOKEN:}
   oauth:
     kakao:
       # 카카오 앱 등록 정보는 전부 서버가 갖는다 (api-spec 10-8)
