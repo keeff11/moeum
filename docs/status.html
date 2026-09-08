@@ -384,7 +384,7 @@
       <span class="sep">/</span>
       <span>2026-09-08 기준</span>
       <span class="sep">/</span>
-      <span>main @ 9c48948</span>
+      <span>main @ b1175ea</span>
     </div>
     <h1>도메인별 개발 현황</h1>
     <p class="lede">
@@ -395,12 +395,12 @@
 
     <div class="total">
       <div class="total-label">전체 진척 (로드맵 단계 비중 가중)</div>
-      <div class="total-num" id="totalNum">79<small>%</small></div>
+      <div class="total-num" id="totalNum">80<small>%</small></div>
       <div class="total-bar">
-        <div class="bar"><i style="width:79%"></i></div>
+        <div class="bar"><i style="width:80%"></i></div>
       </div>
       <div class="total-note">
-        <strong style="font-weight:500">81% 에서 내려갔다.</strong> 코드가 뒷걸음친 것이 아니라, 와이어프레임과 맞춰 보니 여태 판에 없던 셀러 어드민 화면(G1·G6·S10·G10)과 알림톡 항목이 드러나 분모가 커졌다. 구매자 쪽은 B0 부터 B8-C 취소까지 화면마다 API 가 있다. 그 뒤 G12 설정(판매공간 주소 · 문의 연락처)을 화면대로 맞췄다 (D-030). 비어 있는 쪽은 <strong style="font-weight:500">셀러 어드민 4화면</strong>과 <strong style="font-weight:500">알림톡 9종 중 5종</strong>, 그리고 여전히 <strong style="font-weight:500">point3 서버 토큰</strong>(09-09~10 예정)이다.
+        <strong style="font-weight:500">81% 에서 내려갔다.</strong> 코드가 뒷걸음친 것이 아니라, 와이어프레임과 맞춰 보니 여태 판에 없던 셀러 어드민 화면(G1·G6·S10·G10)과 알림톡 항목이 드러나 분모가 커졌다. 구매자 쪽은 B0 부터 B8-C 취소까지 화면마다 API 가 있다. 그 뒤 G12 설정을 화면대로 맞추고(D-030), 스웨거 속성 설명을 전부 채우고(D-031), <strong style="font-weight:500">무료배송 기준이 청구에 안 걸려 있던 것을 고쳤다</strong>(D-032). 비어 있는 쪽은 <strong style="font-weight:500">셀러 어드민 4화면</strong>과 <strong style="font-weight:500">알림톡 9종 중 5종</strong>, 그리고 여전히 <strong style="font-weight:500">point3 서버 토큰</strong>(09-09~10 예정)이다.
       </div>
     </div>
 
@@ -496,20 +496,20 @@
       ]
     },
     {
-      name: "장바구니", pct: 80, weight: 6,
+      name: "장바구니", pct: 87, weight: 6,
       items: [
         ["담기 · 조회 · 수량 변경 · 삭제", "", "done"],
         ["같은 셀러 검증", "배송비가 셀러 단위 · 묶음당 1회라 섞이면 나눌 수 없다", "done"],
         ["마감 · 품절 상태 표시", "", "done"],
         ["1 · 2차금 합계 계산", "", "done"],
-        ["무료배송 기준 반영", "free_shipping_over 를 응답에 내보내면서 청구액에는 쓰지 않는다", "check"],
+        ["무료배송 기준 반영", "D-032. 상품 총액(1차금+2차금) 기준으로 청구에 반영했다. 장바구니도 같은 계산을 내보낸다", "done"],
         ["주문 후 장바구니 정리", "담긴 항목이 남아 같은 것으로 홀드를 계속 만들 수 있다", "todo"],
         ["로그인 복귀 후 자동 담기", "D-015", "todo"],
         ["테스트 11개", "CartServiceTest", "done"]
       ]
     },
     {
-      name: "주문 · 재고 홀드", pct: 95, weight: 12,
+      name: "주문 · 재고 홀드", pct: 97, weight: 12,
       items: [
         ["POST · GET /checkout-sessions", "B2 옵션·수량 확정 시 홀드 (D-001)", "done"],
         ["조건부 UPDATE 한 방 재고 확보", "영향 행 0이면 품절 또는 마감", "done"],
@@ -519,7 +519,7 @@
         ["홀드 만료 배치", "FOR UPDATE SKIP LOCKED + 멱등 가드 + CAPTURE_PENDING 제외", "done"],
         ["동시성 · 만료 테스트 11개", "200스레드 동시 주문, 중복 회수 방지", "done"],
         ["ACTIVE_SESSION_EXISTS 이어받기", "D-015 가 정했는데 코드에 없다 — 홀드가 이중 생성된다", "check"],
-        ["배송비 계산", "항상 seller.shippingFee 고정 — 무료배송 기준을 타지 않는다", "check"],
+        ["배송비 계산", "D-032. 항목을 다 담은 뒤 무료배송 기준을 적용해 확정한다. 한 번 정해지면 굳는다", "done"],
         ["POST /checkout-sessions/{id}/pay", "PaymentController 로 구현됨", "done"]
       ]
     },
@@ -595,7 +595,7 @@
       items: [
         ["전역 예외 핸들러 · 에러 코드 체계", "공통 응답 포맷 + 토큰 유출 방지 테스트", "done"],
         ["Flyway 마이그레이션 V1~V9", "19개 테이블 + 세션 · 공개상품 · 미달 처리 · 알림 백오프 · 셀러 프로필 · 찜 · 문의 연락처. ddl-auto: validate", "done"],
-        ["테스트 317개", "Testcontainers MySQL 8.0 + point3 는 WireMock. 테스트 JVM 은 KST 고정 (D-028)", "done"],
+        ["테스트 328개", "Testcontainers MySQL 8.0 + point3 는 WireMock. 테스트 JVM 은 KST 고정 (D-028). 스웨거 설명 누락도 잡는다 (D-031)", "done"],
         ["EC2 + Docker Compose + Caddy 자동 TLS", "D-016. 월 $26", "done"],
         ["GitHub Actions OIDC → ECR → SSM 배포", "AWS 액세스 키를 GitHub 에 두지 않는다", "done"],
         ["Parameter Store 시크릿", "D-017. 배포 때마다 .env 재생성", "done"],
