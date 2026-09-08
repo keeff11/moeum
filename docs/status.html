@@ -384,7 +384,7 @@
       <span class="sep">/</span>
       <span>2026-09-08 기준</span>
       <span class="sep">/</span>
-      <span>main @ 48a5ec3</span>
+      <span>main @ c098e68</span>
     </div>
     <h1>도메인별 개발 현황</h1>
     <p class="lede">
@@ -463,13 +463,15 @@
       ]
     },
     {
-      name: "판매 폼 · 상품", pct: 96, weight: 10,
+      name: "판매 폼 · 상품", pct: 97, weight: 10,
       items: [
         ["판매 폼 생성 (상품 · 옵션 포함)", "", "done"],
         ["목록 · 상세 조회", "fetch join + batch fetch 로 N+1 차단", "done"],
         ["수정 + sale_form_history 기록", "필드 단위 변경 이력", "done"],
         ["슬러그 중복 검증", "", "done"],
         ["GET /products/{id} 공개 조회", "D-021. id 는 판매 폼이다. DRAFT 는 404 로 숨긴다", "done"],
+        ["GET /stores/{slug} 셀러 페이지", "D-029. 헤더 + 목록 · 검색 · 탭 · 페이지. 목록은 캐시하지 않는다", "done"],
+        ["셀러 공개 프로필", "V7. 소개 · 소셜 주소 · 프로필 이미지. 심사용 정보와 DTO 에서 갈린다", "done"],
         ["GET /products/{id}/availability", "모집 수는 확정 주문만 센다. no-store 를 응답에 직접 싣는다", "done"],
         ["공구 마감 배치", "closes_at 지난 SELLING → CLOSED. 상태 전이만 한다", "done"],
         ["상품 이미지 업로드", "D-022. presigned URL 로 브라우저가 S3 에 직접 올린다. DB 엔 키만", "done"],
@@ -481,9 +483,10 @@
       ]
     },
     {
-      name: "구매자 · 배송지", pct: 93, weight: 4,
+      name: "구매자 · 배송지", pct: 95, weight: 4,
       items: [
         ["카카오 첫 로그인 시 buyer 생성", "findOrCreate", "done"],
+        ["찜(하트)", "V8. 목록과 분리해 응답이 사용자별로 갈리지 않게 했다. 찜·해제 둘 다 멱등", "done"],
         ["GET · PUT /me/address", "", "done"],
         ["주문 시 shipping 스냅샷 복사", "배송지 스냅샷이 아직 없다", "todo"],
         ["payer_id 저장", "1차금 confirm 에서 받아 보관. 이미 있으면 덮어쓰지 않는다 (point3-api 5절)", "done"]
@@ -580,8 +583,8 @@
       name: "공통 · 인프라", pct: 90, weight: 8,
       items: [
         ["전역 예외 핸들러 · 에러 코드 체계", "공통 응답 포맷 + 토큰 유출 방지 테스트", "done"],
-        ["Flyway 마이그레이션 V1~V6", "18개 테이블 + 세션 · 공개상품 · 이미지 키 · 미달 처리 · 알림 백오프. ddl-auto: validate", "done"],
-        ["테스트 281개", "Testcontainers MySQL 8.0 + point3 는 WireMock. H2 로 대체하지 않는다", "done"],
+        ["Flyway 마이그레이션 V1~V8", "19개 테이블 + 세션 · 공개상품 · 미달 처리 · 알림 백오프 · 셀러 프로필 · 찜. ddl-auto: validate", "done"],
+        ["테스트 309개", "Testcontainers MySQL 8.0 + point3 는 WireMock. 테스트 JVM 은 KST 고정 (D-028)", "done"],
         ["EC2 + Docker Compose + Caddy 자동 TLS", "D-016. 월 $26", "done"],
         ["GitHub Actions OIDC → ECR → SSM 배포", "AWS 액세스 키를 GitHub 에 두지 않는다", "done"],
         ["Parameter Store 시크릿", "D-017. 배포 때마다 .env 재생성", "done"],
