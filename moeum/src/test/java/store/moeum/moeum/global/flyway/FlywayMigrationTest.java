@@ -16,12 +16,19 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class FlywayMigrationTest extends IntegrationTest {
 
-	/** docs/schema.sql (v3) 의 테이블 18개 + V3 에서 추가한 sale_form_image */
+	/**
+	 * docs/schema.sql (v3) 의 테이블 18개 + 이후 마이그레이션이 추가한 것들.
+	 *
+	 * <b>이 목록에 이름을 적어야 통과한다.</b> 개수만 세지 않는 이유는,
+	 * 라이브러리나 실수로 생긴 테이블을 잡아내는 것이 이 검증의 목적이기 때문이다.
+	 */
 	private static final List<String> EXPECTED_TABLES = List.of(
 			"seller", "sale_form", "sale_form_history", "product", "product_option",
 			"buyer", "buyer_address", "cart", "cart_item", "order_group", "orders",
 			"order_item", "stock_hold", "payment", "payment_event", "refund",
-			"shipping", "outbox", "sale_form_image"
+			"shipping", "outbox",
+			"sale_form_image",   // V3
+			"wishlist"           // V8
 	);
 
 	/**
