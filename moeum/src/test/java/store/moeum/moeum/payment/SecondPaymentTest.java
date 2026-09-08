@@ -131,6 +131,22 @@ class SecondPaymentTest extends IntegrationTest {
 	// ---------------------------------------------------------------- 2차금 결제
 
 	@Test
+	@DisplayName("1차금에는_배송비가_들어가지_않는다")
+	void 일차금에는_배송비가_없다() {
+		String sessionToken = orderService.place(buyer(),
+				order(setup.optionId(), 3)).sessionToken();
+		POINT3.stubFor(post(urlPathEqualTo("/payment/v3/session"))
+				.willReturn(json(200, """
+						{"id":"%s","status":"created","amount":60000,
+						 "supplyAmount":54546,"vat":5454,"taxFreeAmount":0,"currency":"KRW"}
+						""".formatted(FIRST_SESSION))));
+
+		// 배송비는 묶음당 1회이고 2차금으로 이연된다 (api-spec 6절).
+		// 여기서도 더하면 같은 배송비를 두 번 청구한다
+		assertThat(paymentService.pay(buyer(), sessionToken).amount()).isEqualTo(20000 * 3);
+	}
+
+	@Test
 	@DisplayName("모든_폼이_입고되면_2차금_세션이_열리고_payerId_가_함께_나간다")
 	void 이차금_세션() {
 		String orderToken = payFirstWithPayerId(3);

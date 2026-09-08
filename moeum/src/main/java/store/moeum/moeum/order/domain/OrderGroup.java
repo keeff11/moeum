@@ -124,9 +124,14 @@ public class OrderGroup extends BaseTimeEntity {
 		this.orders.forEach(Order::expire);
 	}
 
-	/** 1차금 청구액. 배송비는 묶음당 1회라 여기서 한 번만 더한다 */
+	/**
+	 * 1차금 청구액 — <b>배송비는 넣지 않는다</b>.
+	 *
+	 * 배송비는 묶음당 1회이고 2차금으로 이연된다 (api-spec 6절 "B5 청구액은 옵션가뿐").
+	 * 여기서도 더하면 같은 배송비를 1차금·2차금 두 번 청구하게 된다.
+	 */
 	public int firstPaymentAmount() {
-		return deposit1Total + shippingFee;
+		return deposit1Total;
 	}
 
 	/**
@@ -214,6 +219,33 @@ public class OrderGroup extends BaseTimeEntity {
 
 	public boolean isSecondPaid() {
 		return status == OrderGroupStatus.SECOND_PAID;
+	}
+
+	/**
+	 * 묶음의 주문이 <b>전부</b> 취소됐으면 묶음도 취소로 내린다.
+	 *
+	 * 폼 하나만 취소된 묶음은 그대로 둔다 — 남은 폼은 계속 배송돼야 하고,
+	 * 묶음을 CANCELED 로 내리면 2차금 청구 대상에서도 빠진다.
+	 *
+	 * @return 이번 호출로 바뀌었으면 true
+	 */
+	public boolean cancelIfAllOrdersCanceled(LocalDateTime at) {
+		if (status == OrderGroupStatus.CANCELED || orders.isEmpty()) {
+			return false;
+		}
+		if (!orders.stream().allMatch(Order::isCanceled)) {
+			return false;
+		}
+		this.status = OrderGroupStatus.CANCELED;
+		this.canceledAt = at;
+		return true;
+	}
+
+	/** 아직 살아 있는 주문. 취소 대상과 배송비 판정의 기준이다 */
+	public List<Order> activeOrders() {
+		return orders.stream()
+				.filter(o -> !o.isCanceled() && o.getStatus() != OrderStatus.EXPIRED)
+				.toList();
 	}
 
 	/** 1차금 확정 시 주문들도 같이 PAID 로 넘긴다 */
