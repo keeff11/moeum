@@ -1,5 +1,6 @@
 package store.moeum.moeum.saleform.dto;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import store.moeum.moeum.global.storage.ImageStorage;
 
 /**
@@ -15,9 +16,18 @@ import store.moeum.moeum.global.storage.ImageStorage;
  * @param expiresInSeconds  남은 유효 시간. 지나면 다시 발급받는다
  */
 public record ImageUploadUrlResponse(
+		@Schema(description = "이 주소로 브라우저가 직접 PUT 한다. 서버를 거치지 않는다")
 		String uploadUrl,
+
+		@Schema(description = "업로드 후 판매 폼·프로필에 저장할 키. 이 값을 그대로 넘긴다",
+				example = "sale-forms/1/9f3a....jpg")
 		String objectKey,
+
+		@Schema(description = "PUT 할 때 Content-Type 헤더에 그대로 넣어야 하는 값. "
+				+ "다르면 서명이 맞지 않아 거부된다", example = "image/jpeg")
 		String contentType,
+
+		@Schema(description = "이 주소가 유효한 시간(초). 지나면 다시 발급받아야 한다", example = "300")
 		long expiresInSeconds
 ) {
 

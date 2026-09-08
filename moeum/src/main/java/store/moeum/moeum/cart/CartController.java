@@ -1,5 +1,7 @@
 package store.moeum.moeum.cart;
 
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Min;
@@ -31,6 +33,13 @@ public class CartController {
 
 	private final CartService cartService;
 
+	@Operation(summary = "장바구니에 담기",
+			description = """
+					담을 때 재고를 잡지 않는다. 재고는 주문을 만드는 시점에 확보된다.
+
+					장바구니는 셀러당 하나다. 다른 셀러 상품을 담으면 그 셀러의 장바구니가 따로 생긴다 —
+					배송비가 셀러 단위라 섞을 수 없다.
+					""")
 	@PostMapping("/items")
 	public ResponseEntity<Void> add(@LoginUser SessionUser user, @Valid @RequestBody CartAddRequest request) {
 		cartService.add(user, request);
@@ -38,21 +47,32 @@ public class CartController {
 	}
 
 	/** 셀러별로 나뉜 장바구니 전부 */
+	@Operation(summary = "장바구니 조회",
+			description = """
+					담아둔 사이 마감·품절될 수 있어 항목마다 상태를 함께 준다.
+
+					★ 이 상태는 조회 시점의 참고값이다. 최종 판정은 주문을 만들 때 이뤄진다.
+					""")
 	@GetMapping
 	public List<CartResponse> list(@LoginUser SessionUser user) {
 		return cartService.findMine(user);
 	}
 
+	@Operation(summary = "수량 변경")
 	@PatchMapping("/items/{cartItemId}")
 	public ResponseEntity<Void> changeQty(@LoginUser SessionUser user,
+	                                      @Parameter(description = "장바구니 항목 id", example = "17")
 	                                      @PathVariable Long cartItemId,
+	                                      @Parameter(description = "바꿀 수량. 1 이상", example = "3")
 	                                      @RequestParam @Min(value = 1, message = "1 이상이어야 합니다") int qty) {
 		cartService.changeQty(user, cartItemId, qty);
 		return ResponseEntity.noContent().build();
 	}
 
+	@Operation(summary = "장바구니에서 빼기")
 	@DeleteMapping("/items/{cartItemId}")
-	public ResponseEntity<Void> remove(@LoginUser SessionUser user, @PathVariable Long cartItemId) {
+	public ResponseEntity<Void> remove(@LoginUser SessionUser user,
+			@Parameter(description = "장바구니 항목 id", example = "17") @PathVariable Long cartItemId) {
 		cartService.remove(user, cartItemId);
 		return ResponseEntity.noContent().build();
 	}

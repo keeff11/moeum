@@ -1,5 +1,6 @@
 package store.moeum.moeum.saleform.dto;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import store.moeum.moeum.saleform.domain.SaleForm;
 import store.moeum.moeum.saleform.domain.SaleFormStatus;
 
@@ -17,11 +18,18 @@ import java.time.LocalDateTime;
  * 그 틈에 구매 버튼이 켜져 보이면 홀드까지 시도했다가 실패한다 —
  * 재고 확보 쿼리는 closes_at 을 이미 보고 있으므로 여기서 미리 잘라 주는 편이 낫다.
  */
+@Schema(description = """
+		구매자에게 보이는 판매 상태.
+		SELLING=판매 중(구매 버튼 활성) · SOLD_OUT=재고 소진 · CLOSED=마감 · PAUSED=셀러가 일시중지""")
 public enum PublicStatus {
 
+	/** 살 수 있다. 구매 버튼을 켠다 */
 	SELLING,
+	/** 재고가 없다 */
 	SOLD_OUT,
+	/** 마감됐다. 마감 시각이 막 지난 경우도 여기로 온다 */
 	CLOSED,
+	/** 셀러가 잠시 멈췄다 */
 	PAUSED;
 
 	public static PublicStatus of(SaleForm form, LocalDateTime now) {

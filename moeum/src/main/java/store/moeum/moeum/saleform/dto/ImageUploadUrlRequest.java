@@ -1,5 +1,6 @@
 package store.moeum.moeum.saleform.dto;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 
@@ -14,9 +15,13 @@ import jakarta.validation.constraints.NotBlank;
  */
 public record ImageUploadUrlRequest(
 
+		@Schema(description = "올릴 파일의 MIME 타입. image/jpeg · image/png · image/webp 만 받는다",
+				requiredMode = Schema.RequiredMode.REQUIRED, example = "image/jpeg")
 		@NotBlank(message = "contentType 은 필수입니다")
 		String contentType,
 
+		@Schema(description = "올릴 파일의 정확한 바이트 수. 서명에 포함되므로 실제 크기와 다르면 업로드가 거부된다",
+				requiredMode = Schema.RequiredMode.REQUIRED, example = "204800")
 		@Min(value = 1, message = "1 이상이어야 합니다")
 		long contentLength
 ) {

@@ -1,5 +1,7 @@
 package store.moeum.moeum.auth;
 
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.Operation;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;
@@ -40,8 +42,18 @@ public class AuthController {
 	private final OAuthCookies cookies;
 
 	/** 1단계 — state 발급 + returnTo 저장 후 카카오 동의 화면으로 302 */
+	@Operation(summary = "카카오 로그인 시작",
+			description = """
+					카카오 인가 페이지로 302 리다이렉트한다. 브라우저 주소창으로 직접 이동시킨다 —
+					fetch 로 부르면 리다이렉트를 따라가지 못한다.
+
+					로그인 후 돌아올 주소는 returnTo 로 넘긴다. 등록된 주소가 아니면 기본값으로 간다.
+					""")
 	@GetMapping("/auth/kakao/login")
-	public ResponseEntity<Void> login(@RequestParam(required = false) String returnTo,
+	public ResponseEntity<Void> login(
+			@Parameter(description = "로그인 후 돌아올 주소. 등록된 주소가 아니면 기본값으로 간다",
+					example = "https://moeum.store/stores/moeum-store")
+			@RequestParam(required = false) String returnTo,
 	                                  HttpServletResponse response) {
 		String state = cookies.newState();
 		cookies.issue(response, state, returnTo);
@@ -56,10 +68,18 @@ public class AuthController {
 	 *
 	 * 외부 호출(토큰 교환 · 프로필 조회)은 트랜잭션 밖이다. 여기서 DB 를 건드리지 않는다.
 	 */
+	@Operation(summary = "카카오 로그인 콜백",
+			description = "카카오가 부르는 주소다. 프론트가 직접 부를 일은 없다.")
 	@GetMapping("/auth/kakao/callback")
-	public ResponseEntity<Void> callback(@RequestParam(required = false) String code,
-	                                     @RequestParam(required = false) String state,
-	                                     @RequestParam(required = false) String error,
+	public ResponseEntity<Void> callback(
+			@Parameter(description = "카카오가 넘겨주는 인가 코드. 프론트가 만들 값이 아니다")
+			@RequestParam(required = false) String code,
+
+			@Parameter(description = "로그인 시작 때 발급한 state. 위조 요청을 걸러내는 값이다")
+			@RequestParam(required = false) String state,
+
+			@Parameter(description = "카카오가 돌려준 오류 코드. 동의 거절 등이 여기로 온다")
+			@RequestParam(required = false) String error,
 	                                     HttpServletRequest request,
 	                                     HttpServletResponse response) {
 		String cookieState = cookies.read(request, OAuthCookies.STATE).orElse(null);
@@ -96,6 +116,7 @@ public class AuthController {
 				.build();
 	}
 
+	@Operation(summary = "로그아웃", description = "세션을 지운다.")
 	@PostMapping("/auth/logout")
 	public ResponseEntity<Void> logout(HttpServletRequest request) {
 		HttpSession session = request.getSession(false);
@@ -105,6 +126,8 @@ public class AuthController {
 		return ResponseEntity.noContent().build();
 	}
 
+	@Operation(summary = "내 정보",
+			description = "로그인하지 않았으면 401 이다. 로그인 여부 판단에 쓴다.")
 	@GetMapping("/me")
 	public MeResponse me(@LoginUser SessionUser user) {
 		return MeResponse.from(user);

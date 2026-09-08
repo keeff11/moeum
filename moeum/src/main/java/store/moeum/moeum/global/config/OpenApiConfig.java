@@ -14,8 +14,10 @@ import io.swagger.v3.oas.models.responses.ApiResponses;
 import io.swagger.v3.oas.models.security.SecurityRequirement;
 import io.swagger.v3.oas.models.security.SecurityScheme;
 import org.springdoc.core.customizers.OpenApiCustomizer;
+import org.springdoc.core.utils.SpringDocUtils;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import store.moeum.moeum.global.auth.LoginUser;
 import store.moeum.moeum.global.error.ErrorResponse;
 
 import java.util.List;
@@ -30,6 +32,12 @@ import java.util.Map;
  */
 @Configuration
 public class OpenApiConfig {
+
+	static {
+		// @LoginUser 는 세션에서 꺼내는 값이라 클라이언트가 보내는 값이 아니다.
+		// 지우지 않으면 인증이 필요한 모든 엔드포인트에 user 라는 가짜 쿼리 파라미터가 문서에 뜬다.
+		SpringDocUtils.getConfig().addAnnotationsToIgnore(LoginUser.class);
+	}
 
 	private static final String SESSION_SCHEME = "sessionCookie";
 	private static final String ERROR_SCHEMA_REF = "#/components/schemas/ErrorResponse";

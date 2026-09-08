@@ -1,5 +1,6 @@
 package store.moeum.moeum.payment.dto;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 /**
  * 결제 결과. confirm 응답이자 상태 조회 응답이다.
  *
@@ -8,11 +9,18 @@ package store.moeum.moeum.payment.dto;
  * 다시 결제해 이중 결제가 된다.
  */
 public record PaymentResultResponse(
+		@Schema(description = "이 주문을 가리키는 토큰")
 		String orderToken,
+
+		@Schema(description = "결제 결과. PENDING 은 실패가 아니다 — 다시 결제시키면 이중 결제가 된다")
 		Status status,
+
+		@Schema(description = "사용자에게 그대로 보여도 되는 안내 문구")
 		String message
 ) {
 
+	@Schema(description = """
+			PAID=결제 완료 · PENDING=결과 확인 중(다시 결제시키지 말고 상태 조회를 반복한다) · FAILED=실패""")
 	public enum Status {
 		/** 출금 완료. 이것만이 성공이다 */
 		PAID,

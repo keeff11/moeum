@@ -1,5 +1,6 @@
 package store.moeum.moeum.saleform.dto;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import store.moeum.moeum.saleform.domain.SaleForm;
 import store.moeum.moeum.saleform.domain.SaleType;
 
@@ -20,17 +21,23 @@ public record ProductAvailabilityResponse(
 		 *
 		 * GROUP 이 아니거나 셀러가 진행 현황을 감췄으면 null.
 		 */
+		@Schema(description = "모집 68/100 의 68. 결제가 끝난 수량만 세고 결제 중인 선점분은 빼고 준다. "
+				+ "단독 판매이거나 셀러가 진행 현황을 감췄으면 null", example = "68")
 		Integer recruitedCount,
 
 		/** 68/100 의 분모. 감췄으면 null */
+		@Schema(description = "모집 68/100 의 100(목표 수량). 감췄으면 null", example = "100")
 		Integer recruitTarget,
 
 		/** 살 수 있는 수량. stockMax - held - sold */
+		@Schema(description = "지금 살 수 있는 수량", example = "5")
 		int stock,
 
+		@Schema(description = "구매 버튼 활성 여부. SELLING 일 때만 살 수 있다")
 		PublicStatus status,
 
 		/** 이 응답을 만든 시각. 프론트가 initialDataUpdatedAt 으로 쓴다 */
+		@Schema(description = "이 응답을 만든 시각. 프론트가 데이터 신선도 판단에 쓴다")
 		LocalDateTime fetchedAt
 ) {
 

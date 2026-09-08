@@ -1,5 +1,6 @@
 package store.moeum.moeum.payment.refund.dto;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Size;
 
 /**
@@ -10,7 +11,13 @@ import jakarta.validation.constraints.Size;
  *
  * @param orderId 폼 하나만 취소하면 그 주문 id. null 이면 남은 폼 전부
  */
-public record OrderRefundRequest(Long orderId,
+public record OrderRefundRequest(
+
+		@Schema(description = "취소할 주문 id. 주문 조회 응답의 orders[].orderId 다. "
+				+ "비우면 아직 취소되지 않은 폼 전부를 취소한다", example = "44")
+		Long orderId,
+
+		@Schema(description = "취소 사유. 비우면 '구매자 요청'으로 기록된다", example = "단순 변심")
                                  @Size(max = 100, message = "취소 사유는 100자를 넘을 수 없습니다.")
                                  String reason) {
 }

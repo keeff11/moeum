@@ -1,5 +1,6 @@
 package store.moeum.moeum.payment.dto;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 
 /**
@@ -12,6 +13,8 @@ import jakarta.validation.constraints.NotBlank;
  */
 public record ConfirmRequest(
 
+		@Schema(description = "결제창에서 돌아올 때 받은 세션 id. 서버가 저장해 둔 값과 대조한다",
+				requiredMode = Schema.RequiredMode.REQUIRED)
 		@NotBlank(message = "sessionId 는 필수입니다")
 		String sessionId,
 
@@ -21,6 +24,8 @@ public record ConfirmRequest(
 		 * 다음 결제(2차금)에서 인증 단계를 줄이는 용도라, 받은 문자열을 그대로 넘긴다 —
 		 * 접두사를 떼거나 대소문자를 바꾸면 인증 생략이 동작하지 않는다 (point3-api 5절).
 		 */
+		@Schema(description = "successUrl 쿼리로 받은 결제자 식별값. 없어도 결제는 된다. "
+				+ "받은 문자열을 그대로 넘긴다 — 접두사를 떼거나 대소문자를 바꾸면 다음 결제의 인증 생략이 동작하지 않는다")
 		String payerId
 ) {
 }

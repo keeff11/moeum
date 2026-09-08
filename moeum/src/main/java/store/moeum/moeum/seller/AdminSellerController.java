@@ -1,5 +1,7 @@
 package store.moeum.moeum.seller;
 
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -21,13 +23,16 @@ public class AdminSellerController {
 
 	private final SellerService sellerService;
 
+	@Operation(summary = "셀러 승인 (운영자)",
+			description = "승인해야 판매 폼을 만들고 셀러 페이지가 공개된다.")
 	@PostMapping("/{sellerId}/approve")
-	public SellerResponse approve(@PathVariable Long sellerId) {
+	public SellerResponse approve(@Parameter(description = "셀러 id", example = "1") @PathVariable Long sellerId) {
 		return SellerResponse.from(sellerService.approve(sellerId));
 	}
 
+	@Operation(summary = "셀러 반려 (운영자)")
 	@PostMapping("/{sellerId}/reject")
-	public SellerResponse reject(@PathVariable Long sellerId) {
+	public SellerResponse reject(@Parameter(description = "셀러 id", example = "1") @PathVariable Long sellerId) {
 		return SellerResponse.from(sellerService.reject(sellerId));
 	}
 }

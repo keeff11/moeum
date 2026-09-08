@@ -1,5 +1,7 @@
 package store.moeum.moeum.global.health;
 
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.core.env.Environment;
@@ -24,6 +26,8 @@ public class HealthController {
 
 	private final Environment environment;
 
+	@Operation(summary = "헬스 체크",
+			description = "배포·모니터링이 부른다. 프론트가 쓸 일은 없다.")
 	@GetMapping
 	public HealthResponse health() {
 		return new HealthResponse(
@@ -40,6 +44,11 @@ public class HealthController {
 		return List.of(active.length > 0 ? active : environment.getDefaultProfiles());
 	}
 
-	public record HealthResponse(String status, String application, List<String> profiles, OffsetDateTime time) {
+	@Schema(description = "서버 상태. 배포·모니터링용이다")
+	public record HealthResponse(
+			@Schema(description = "서버 상태", example = "UP") String status,
+			@Schema(description = "애플리케이션 이름", example = "moeum") String application,
+			@Schema(description = "적용된 스프링 프로파일") List<String> profiles,
+			@Schema(description = "응답을 만든 시각") OffsetDateTime time) {
 	}
 }

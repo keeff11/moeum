@@ -1,5 +1,6 @@
 package store.moeum.moeum.cart.dto;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.List;
 
 /**
@@ -8,14 +9,33 @@ import java.util.List;
  * 배송비는 셀러 단위 · 묶음당 1회라 항목이 아니라 여기에 한 번만 실린다.
  */
 public record CartResponse(
+		@Schema(description = "장바구니 id", example = "3")
 		Long cartId,
+
+		@Schema(description = "셀러 id. 장바구니는 셀러당 하나다 — 배송비가 셀러 단위라 섞을 수 없다",
+				example = "1")
 		Long sellerId,
+
+		@Schema(description = "상점 이름", example = "모음 상점")
 		String sellerName,
+
+		@Schema(description = "배송비. 묶음당 1회이고 2차금에서 청구된다", example = "3000")
 		int shippingFee,
+
+		@Schema(description = "이 금액 이상이면 배송비 면제. 설정하지 않았으면 null", example = "50000")
 		Integer freeShippingOver,
+
+		@Schema(description = "1차금 합계. 주문할 때 바로 결제하는 금액이다", example = "60000")
 		int deposit1Total,
+
+		@Schema(description = "2차금 합계. 입고 후 청구될 잔금이다. 배송비는 별도다", example = "36000")
 		int deposit2Total,
+
+		@Schema(description = "지금 주문할 수 있는가. 항목이 모두 AVAILABLE 이어야 true 다",
+				example = "true")
 		boolean orderable,
+
+		@Schema(description = "담긴 항목들")
 		List<CartItemResponse> items
 ) {
 
@@ -24,22 +44,51 @@ public record CartResponse(
 	 *
 	 * ⚠️ 이 상태는 조회 시점의 참고값이다. 실제 판정은 주문 생성의 조건부 UPDATE 다.
 	 */
+	@Schema(description = "장바구니 항목 하나")
 	public record CartItemResponse(
+
+			@Schema(description = "장바구니 항목 id. 수량 변경·삭제에 쓴다", example = "17")
 			Long cartItemId,
+
+			@Schema(description = "판매 폼 id. 상품 상세로 이동할 때 쓴다", example = "12")
 			Long saleFormId,
+
+			@Schema(description = "상품명", example = "아크릴 스탠드")
 			String saleFormTitle,
+
+			@Schema(description = "상품 id", example = "5")
 			Long productId,
+
+			@Schema(description = "상품 이름", example = "아크릴 스탠드")
 			String productName,
+
+			@Schema(description = "옵션 id", example = "31")
 			Long optionId,
+
+			@Schema(description = "옵션명", example = "블루")
 			String optionName,
+
+			@Schema(description = "담은 수량", example = "2")
 			int qty,
+
+			@Schema(description = "옵션 1차금(개당)", example = "20000")
 			int deposit1Amount,
+
+			@Schema(description = "옵션 2차금(개당)", example = "12000")
 			int deposit2Amount,
+
+			@Schema(description = "조회 시점의 남은 재고. 참고값이라 주문 시점에 달라질 수 있다",
+					example = "5")
 			int remainingStock,
+
+			@Schema(description = "이 항목을 지금 주문할 수 있는지. AVAILABLE 이 아니면 주문이 막힌다")
 			ItemStatus status
 	) {
 	}
 
+	@Schema(description = """
+			AVAILABLE=주문 가능 · NOT_ENOUGH_STOCK=담은 수량이 재고보다 많음 · SOLD_OUT=품절
+			· CLOSED=마감 · MAX_PER_USER_EXCEEDED=1인당 구매 상한 초과""")
 	public enum ItemStatus {
 		/** 주문 가능 */
 		AVAILABLE,

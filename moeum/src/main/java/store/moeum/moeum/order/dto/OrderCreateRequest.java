@@ -1,5 +1,6 @@
 package store.moeum.moeum.order.dto;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotEmpty;
@@ -15,16 +16,22 @@ import java.util.List;
  */
 public record OrderCreateRequest(
 
+		@Schema(description = "주문할 옵션과 수량. 1개 이상이어야 한다",
+				requiredMode = Schema.RequiredMode.REQUIRED)
 		@NotEmpty(message = "주문 항목은 1개 이상이어야 합니다")
 		@Valid
 		List<Item> items
 ) {
 
+	@Schema(description = "주문 항목 하나")
 	public record Item(
 
+			@Schema(description = "상품 옵션 id", requiredMode = Schema.RequiredMode.REQUIRED,
+					example = "31")
 			@NotNull(message = "옵션은 필수입니다")
 			Long optionId,
 
+			@Schema(description = "수량", requiredMode = Schema.RequiredMode.REQUIRED, example = "2")
 			@Min(value = 1, message = "1 이상이어야 합니다")
 			int qty
 	) {
