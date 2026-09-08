@@ -11,4 +11,7 @@ public interface SellerRepository extends JpaRepository<Seller, Long> {
 	boolean existsByKakaoId(String kakaoId);
 
 	boolean existsByStoreSlug(String storeSlug);
+
+	/** 셀러 페이지(B0) 진입. store_slug 가 곧 공개 주소다 */
+	Optional<Seller> findByStoreSlug(String storeSlug);
 }

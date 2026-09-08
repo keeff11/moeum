@@ -57,6 +57,22 @@ public class Seller extends BaseTimeEntity {
 	@Column(name = "review_status", nullable = false, length = 20)
 	private ReviewStatus reviewStatus;
 
+	/**
+	 * 셀러 페이지 헤더에 나가는 공개 프로필 (V7).
+	 *
+	 * <b>아래 심사용 값들과 성격이 정반대다.</b> representativeName · phone · businessNo 는
+	 * 구매자에게 새어 나가면 안 되는 값이고, 이 셋은 구매자에게 보이라고 받는 값이다.
+	 */
+	@Column(name = "bio", length = 100)
+	private String bio;
+
+	@Column(name = "social_url", length = 200)
+	private String socialUrl;
+
+	/** S3 객체 키. 읽기용 주소는 ImageStorage 가 조립한다 */
+	@Column(name = "profile_image_key", length = 500)
+	private String profileImageKey;
+
 	/** 주문 묶음당 1회 부과. 배송비의 주체는 판매 폼이 아니라 셀러다 */
 	@Column(name = "shipping_fee", nullable = false)
 	private int shippingFee;
@@ -124,6 +140,17 @@ public class Seller extends BaseTimeEntity {
 	 */
 	public String displayName() {
 		return (storeName == null || storeName.isBlank()) ? storeSlug : storeName;
+	}
+
+	/**
+	 * 공개 프로필을 갈아 끼운다. null 을 주면 지운 것으로 본다 —
+	 * 소개글을 비우고 싶은 셀러가 지울 방법이 없으면 안 된다.
+	 */
+	public void updateProfile(String storeName, String bio, String socialUrl, String profileImageKey) {
+		this.storeName = storeName;
+		this.bio = bio;
+		this.socialUrl = socialUrl;
+		this.profileImageKey = profileImageKey;
 	}
 
 	/** 주문 묶음 금액 기준 배송비. 무료 기준을 넘으면 0 */

@@ -83,6 +83,20 @@ public class ImageStorage {
 	}
 
 	/**
+	 * 이 키가 그 소유자가 발급받은 것인가.
+	 *
+	 * 키는 {@code {prefix}/{ownerId}/{uuid}.{ext}} 라 접두사만 봐도 판별된다.
+	 * <b>클라이언트가 키를 그대로 보내오는 경로에서는 반드시 확인한다</b> —
+	 * 남의 키를 넣으면 남의 이미지를 자기 것으로 걸어 둘 수 있다.
+	 */
+	public boolean ownsKey(Long ownerId, String objectKey) {
+		if (objectKey == null || objectKey.isBlank()) {
+			return true;   // 지우는 것은 언제나 허용한다
+		}
+		return objectKey.startsWith("%s/%d/".formatted(properties.keyPrefix(), ownerId));
+	}
+
+	/**
 	 * 저장된 키를 읽기용 주소로 조립한다.
 	 *
 	 * 키만 저장하는 이유가 이 메서드다. 버킷을 바꾸거나 CloudFront 를 앞에 세워도

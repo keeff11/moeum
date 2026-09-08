@@ -1,5 +1,7 @@
 package store.moeum.moeum.saleform.domain;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -31,6 +33,42 @@ public interface SaleFormRepository extends JpaRepository<SaleForm, Long> {
 	 */
 	@Query("select f from SaleForm f join fetch f.seller left join fetch f.products where f.id = :id")
 	Optional<SaleForm> findPublicDetailById(@Param("id") Long id);
+
+	/**
+	 * 셀러 페이지(B0) 목록. 검색어와 판매 유형으로 거른다.
+	 *
+	 * <b>DRAFT 는 빠진다.</b> 미발행 폼은 셀러 본인 화면에만 보인다.
+	 *
+	 * 정렬은 판매 중이 먼저, 그다음 최신순이다 — 마감된 폼이 위에 쌓이면
+	 * 지금 살 수 있는 것을 찾으려고 스크롤해야 한다.
+	 *
+	 * 네이티브로 쓴 이유는 <b>선택적 필터의 null 처리</b> 때문이다. JPQL 에서
+	 * {@code :saleType is null} 을 enum 파라미터로 쓰면 타입 추론이 걸린다.
+	 * 문자열로 받아 비교하면 그 문제가 없다.
+	 *
+	 * fetch join 을 걸지 않는다 — 컬렉션을 조인하면 LIMIT 이 행 기준으로 잘려
+	 * 페이지 크기가 틀어진다. products · images 는 default_batch_fetch_size 가 끌어온다.
+	 */
+	@Query(value = """
+			SELECT f.* FROM sale_form f
+			 WHERE f.seller_id = :sellerId
+			   AND f.status <> 'DRAFT'
+			   AND (:saleType IS NULL OR f.sale_type = :saleType)
+			   AND (:keyword IS NULL OR f.title LIKE :keyword ESCAPE '!')
+			 ORDER BY (f.status = 'SELLING') DESC, f.id DESC
+			""",
+			countQuery = """
+			SELECT COUNT(*) FROM sale_form f
+			 WHERE f.seller_id = :sellerId
+			   AND f.status <> 'DRAFT'
+			   AND (:saleType IS NULL OR f.sale_type = :saleType)
+			   AND (:keyword IS NULL OR f.title LIKE :keyword ESCAPE '!')
+			""",
+			nativeQuery = true)
+	Page<SaleForm> findStorePage(@Param("sellerId") Long sellerId,
+	                             @Param("saleType") String saleType,
+	                             @Param("keyword") String keyword,
+	                             Pageable pageable);
 
 	/**
 	 * 재고 확보. <b>조건부 UPDATE 한 방이다.</b> 영향 행 0이면 품절 또는 마감이다.

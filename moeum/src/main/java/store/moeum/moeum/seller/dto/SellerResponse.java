@@ -13,6 +13,10 @@ public record SellerResponse(
 		Long id,
 		String storeSlug,
 		String storeName,
+		/** 셀러 페이지 헤더용 공개 프로필 (V7) */
+		String bio,
+		String socialUrl,
+		String profileImageUrl,
 		ReviewStatus reviewStatus,
 		String representativeName,
 		String phone,
@@ -24,10 +28,18 @@ public record SellerResponse(
 ) {
 
 	public static SellerResponse from(Seller seller) {
+		return from(seller, null);
+	}
+
+	/** @param profileImageUrl 저장된 키를 ImageStorage 가 조립한 주소. 없으면 null */
+	public static SellerResponse from(Seller seller, String profileImageUrl) {
 		return new SellerResponse(
 				seller.getId(),
 				seller.getStoreSlug(),
 				seller.getStoreName(),
+				seller.getBio(),
+				seller.getSocialUrl(),
+				profileImageUrl,
 				seller.getReviewStatus(),
 				seller.getRepresentativeName(),
 				seller.getPhone(),
