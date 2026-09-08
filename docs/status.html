@@ -394,12 +394,12 @@
 
     <div class="total">
       <div class="total-label">전체 진척 (로드맵 단계 비중 가중)</div>
-      <div class="total-num" id="totalNum">74<small>%</small></div>
+      <div class="total-num" id="totalNum">77<small>%</small></div>
       <div class="total-bar">
-        <div class="bar"><i style="width:74%"></i></div>
+        <div class="bar"><i style="width:77%"></i></div>
       </div>
       <div class="total-note">
-        4·5단계 서버 쪽이 끝났다. 셀러 온보딩부터 2차금까지 서버에서 끊김 없이 이어진다. 남은 것은 <strong style="font-weight:500">point3 서버 토큰·운영 IP 등록</strong>(외부 대기)과 프론트 연동, 그 위의 취소·알림이다.
+        4·5·6단계 서버 쪽이 끝났다. 셀러 온보딩부터 2차금 결제와 취소까지 서버에서 끊김 없이 이어진다. 남은 것은 <strong style="font-weight:500">point3 서버 토큰·운영 IP 등록</strong>(외부 대기)과 프론트 연동, 그 위의 알림·셀러 운영이다.
       </div>
     </div>
 
@@ -419,7 +419,7 @@
   <main class="rows" id="rows"></main>
 
   <footer>
-    <div><strong style="font-weight:500;color:var(--ink-2)">다음 한 걸음</strong> — ① point3 <strong style="font-weight:500">서버 API 토큰</strong>·운영 IP 신청(외부 대기. clientId 와 다른 값이다) → ② 프론트 SDK 연동 → ③ 6단계 취소·환불</div>
+    <div><strong style="font-weight:500;color:var(--ink-2)">다음 한 걸음</strong> — ① point3 <strong style="font-weight:500">서버 API 토큰</strong>·운영 IP 신청(외부 대기. clientId 와 다른 값이다) → ② 소액 실결제로 결제→취소 검증(샌드박스가 없다) → ③ 7단계 알림 · 목표수량 미달 자동 취소</div>
     <div>가중치는 로드맵 8단계의 작업량 비중으로 잡았다. 결제 22 · 주문 12 · 판매폼 10 · 취소 10 · 인증 8 · 인프라 8 · 셀러운영 8 · 셀러심사 6 · 장바구니 6 · 알림 6 · 구매자 4.</div>
   </footer>
 </div>
@@ -431,8 +431,8 @@
     { n: "3단계", t: "주문·홀드",    s: "done" },
     { n: "4단계", t: "1차금 결제",   s: "done" },
     { n: "5단계", t: "2차금",        s: "done" },
-    { n: "6단계", t: "취소·환불",    s: "next" },
-    { n: "7단계", t: "알림·대시보드", s: "" },
+    { n: "6단계", t: "취소·환불",    s: "done" },
+    { n: "7단계", t: "알림·대시보드", s: "next" },
     { n: "8단계", t: "마무리",       s: "" }
   ];
 
@@ -476,7 +476,7 @@
         ["업로드 고아 파일 정리", "폼을 저장 안 하면 버킷에 남는다. 수명주기 규칙 미설정", "check"],
         ["S3 버킷 · CORS · IAM", "moeum-images-prod. 공개 읽기는 sale-forms/* 에만, 앱 권한은 PutObject 뿐", "done"],
         ["판매 시작 · 일시중지 · 수동 마감", "DRAFT → SELLING → PAUSED ↔ SELLING → CLOSED. 마감은 되돌릴 수 없다", "done"],
-        ["목표수량 미달 자동 취소", "shortfall_policy · 6단계. 결제·환불이 있어야 한다", "todo"],
+        ["목표수량 미달 자동 취소", "shortfall_policy. 취소 엔진이 준비돼 막힌 것은 없다 — 마감 배치에 얹으면 된다", "todo"],
         ["테스트 49개", "SaleFormServiceTest · SaleFormUpdateTest · PublicProductTest · ImageUploadUrlTest · SaleFormLifecycleTest", "done"]
       ]
     },
@@ -533,20 +533,21 @@
         ["WireMock 실패 테스트", "로드맵 필수 8종 포함 33개. 타임아웃 · 5xx · processing · 중복 confirm", "done"],
         ["uk_payment_group_phase 재결제 정책", "D-023. 실패한 행을 재사용한다. FAILED 일 때만 — CAPTURE_PENDING 은 절대 덮지 않는다", "done"],
         ["2차금 — phase 만 바꿔 재사용", "5단계. 세션·승인·재결제까지 1차금 코드를 그대로 탄다", "done"],
+        ["배송비 이중 청구 수정", "1차금이 배송비를 또 더하고 있었다. 배송비는 2차금으로만 간다 (api-spec 6절)", "done"],
         ["2차금 미수 추적 · 미납 배치", "알림(7단계)이 있어야 실효가 있다. 조회만으로는 청구가 안 된다", "todo"],
         ["프론트 SDK 연동 + 확인 중 화면", "PENDING 은 실패가 아니다. 재결제시키면 이중 결제가 된다", "todo"],
         ["실결제 검증", "토큰 · 운영 IP 등록 후. 샌드박스 유무 확인 필요", "todo"]
       ]
     },
     {
-      name: "취소 · 환불", pct: 68, weight: 10,
+      name: "취소 · 환불", pct: 91, weight: 10,
       items: [
         ["refund 스키마", "", "done"],
         ["취소 가능 여부 판단", "EOB 는 우리 시계로 사전 차단. 잔액·진행중은 point3 조회로", "done"],
         ["부분 취소 세금 3종 계산", "원 결제 비율 안분. 마지막 취소는 잔액을 그대로 써 1원이 남지 않는다", "done"],
         ["Point3Client 취소 3종 + 409 분기", "409 6종을 확정 거절 / 모름 두 부류로. 404 는 취소 이력 없음으로 처리", "done"],
         ["resume API 연동", "취소에서 유일하게 안전한 재시도 수단. 여러 번 불러도 된다", "done"],
-        ["구매자 취소 API · 폼 단위 부분 취소", "실행 엔진은 됐고 정책 층(소유권·배송비·차수)이 남았다", "todo"],
+        ["구매자 취소 API · 폼 단위 부분 취소", "D-025. 공구는 마감까지, 단독은 발송 전까지. 취소 한 번이 1·2차금 두 건이 된다", "done"],
         ["취소 대사 배치", "조회 → resume 만 한다. 새 취소를 만들면 이중 환불이다. EOB 엔 쉰다", "done"],
         ["EOB 시간대 차단", "23:30~00:30 KST. Clock 주입으로 테스트 가능하게 했다", "done"],
         ["정산 후 환불 접수", "settled_manual 로 표시하고 셀러 직접 환불로 넘긴다", "done"],
@@ -577,7 +578,7 @@
       items: [
         ["전역 예외 핸들러 · 에러 코드 체계", "공통 응답 포맷 + 토큰 유출 방지 테스트", "done"],
         ["Flyway 마이그레이션 V1~V4", "18개 테이블 + 세션 · 공개상품 · 이미지 키. ddl-auto: validate", "done"],
-        ["테스트 227개", "Testcontainers MySQL 8.0 + point3 는 WireMock. H2 로 대체하지 않는다", "done"],
+        ["테스트 250개", "Testcontainers MySQL 8.0 + point3 는 WireMock. H2 로 대체하지 않는다", "done"],
         ["EC2 + Docker Compose + Caddy 자동 TLS", "D-016. 월 $26", "done"],
         ["GitHub Actions OIDC → ECR → SSM 배포", "AWS 액세스 키를 GitHub 에 두지 않는다", "done"],
         ["Parameter Store 시크릿", "D-017. 배포 때마다 .env 재생성", "done"],

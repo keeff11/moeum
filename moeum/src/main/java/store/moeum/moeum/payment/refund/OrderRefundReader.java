@@ -1,0 +1,143 @@
+package store.moeum.moeum.payment.refund;
+
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
+import store.moeum.moeum.global.error.BusinessException;
+import store.moeum.moeum.global.error.ErrorCode;
+import store.moeum.moeum.order.domain.Order;
+import store.moeum.moeum.order.domain.OrderGroup;
+import store.moeum.moeum.order.domain.OrderGroupRepository;
+import store.moeum.moeum.payment.domain.Payment;
+import store.moeum.moeum.payment.domain.PaymentPhase;
+import store.moeum.moeum.payment.domain.PaymentRepository;
+import store.moeum.moeum.payment.domain.PaymentStatus;
+import store.moeum.moeum.payment.refund.dto.RefundableResponse;
+
+import java.util.List;
+import java.util.Optional;
+
+/**
+ * 취소의 읽기 전용 판정. <b>여기서 쓰기도 point3 호출도 하지 않는다.</b>
+ *
+ * {@link OrderRefundService} 가 트랜잭션 밖에서 오케스트레이션하므로 읽기는 이 컴포넌트를 거친다 —
+ * 같은 빈 안에서 부르면 프록시를 타지 않아 {@code @Transactional} 이 걸리지 않는다.
+ */
+@Component
+@RequiredArgsConstructor
+public class OrderRefundReader {
+
+	private final OrderGroupRepository orderGroupRepository;
+	private final PaymentRepository paymentRepository;
+
+	/**
+	 * 취소 계획을 세운다. 여기서 통과하지 못하면 point3 로 아무것도 나가지 않는다.
+	 *
+	 * @param orderId 폼 하나만 취소하면 그 주문 id, 남은 폼 전부면 null
+	 */
+	@Transactional(readOnly = true)
+	public RefundPlan plan(String kakaoId, String orderToken, Long orderId) {
+		OrderGroup group = requireOwnedGroup(kakaoId, orderToken);
+
+		List<Order> active = group.activeOrders();
+		if (active.isEmpty()) {
+			throw new BusinessException(ErrorCode.REFUND_NOT_ALLOWED, "취소할 주문이 남아 있지 않습니다.");
+		}
+
+		List<Order> targets = targets(active, orderId);
+		for (Order order : targets) {
+			String reason = RefundPolicy.blockReason(order);
+			if (reason != null) {
+				throw new BusinessException(ErrorCode.REFUND_NOT_ALLOWED, reason);
+			}
+		}
+
+		// 남은 폼을 전부 취소하는가 — 배송비 환불 여부가 이 한 줄에 달렸다
+		boolean fullGroup = targets.size() == active.size();
+
+		Payment first = capturedPayment(group.getId(), PaymentPhase.FIRST)
+				.orElseThrow(() -> new BusinessException(ErrorCode.REFUND_NOT_ALLOWED,
+						"결제가 완료된 주문만 취소할 수 있습니다."));
+		int firstAmount = targets.stream().mapToInt(Order::getDeposit1Sum).sum();
+
+		Payment second = capturedPayment(group.getId(), PaymentPhase.SECOND).orElse(null);
+		int secondAmount = second == null ? 0 : secondAmountOf(targets, group, fullGroup);
+
+		if (firstAmount == 0 && secondAmount == 0) {
+			throw new BusinessException(ErrorCode.REFUND_NOT_ALLOWED, "취소할 금액이 없습니다.");
+		}
+
+		return new RefundPlan(group.getId(), orderId, fullGroup,
+				first.getId(), firstAmount,
+				second == null ? null : second.getId(), secondAmount);
+	}
+
+	/** 취소 화면용 조회. EOB 는 서비스가 시계를 보고 덧붙인다 */
+	@Transactional(readOnly = true)
+	public RefundableResponse view(String kakaoId, String orderToken) {
+		OrderGroup group = requireOwnedGroup(kakaoId, orderToken);
+
+		boolean secondCaptured = capturedPayment(group.getId(), PaymentPhase.SECOND).isPresent();
+		List<Order> active = group.activeOrders();
+
+		List<RefundableResponse.Item> items = active.stream()
+				.map(order -> item(order, secondCaptured))
+				.toList();
+
+		boolean allCancelable = !items.isEmpty() && items.stream().allMatch(RefundableResponse.Item::refundable);
+		boolean anyCancelable = items.stream().anyMatch(RefundableResponse.Item::refundable);
+
+		return new RefundableResponse(orderToken, anyCancelable,
+				anyCancelable ? null : "취소할 수 있는 주문이 없습니다.",
+				null,
+				group.getShippingFee(),
+				// 배송비는 남은 폼을 전부 취소할 때만 함께 돌아간다
+				allCancelable && secondCaptured && group.getShippingFee() > 0,
+				items);
+	}
+
+	// ---------------------------------------------------------------- 내부
+
+	private static RefundableResponse.Item item(Order order, boolean secondCaptured) {
+		String blocked = RefundPolicy.blockReason(order);
+		int second = secondCaptured ? order.getDeposit2Sum() : 0;
+
+		return new RefundableResponse.Item(order.getId(), order.getSaleForm().getTitle(), order.getQty(),
+				blocked == null, blocked,
+				order.getDeposit1Sum(), second, order.getDeposit1Sum() + second);
+	}
+
+	private static int secondAmountOf(List<Order> targets, OrderGroup group, boolean fullGroup) {
+		int balance = targets.stream().mapToInt(Order::getDeposit2Sum).sum();
+		// 배송비는 묶음당 1회다. 폼 하나만 빠져도 나머지는 그대로 배송되므로 돌려주지 않는다
+		return fullGroup ? balance + group.getShippingFee() : balance;
+	}
+
+	private static List<Order> targets(List<Order> active, Long orderId) {
+		if (orderId == null) {
+			return active;
+		}
+		List<Order> picked = active.stream().filter(o -> orderId.equals(o.getId())).toList();
+		if (picked.isEmpty()) {
+			// 남의 주문 id 를 넣어도 여기서 걸린다 — 묶음 소유권은 이미 확인했다
+			throw new BusinessException(ErrorCode.ORDER_GROUP_NOT_FOUND);
+		}
+		return picked;
+	}
+
+	private Optional<Payment> capturedPayment(Long groupId, PaymentPhase phase) {
+		return paymentRepository.findByOrderGroupIdAndPhase(groupId, phase)
+				.filter(payment -> payment.getStatus() == PaymentStatus.CAPTURED);
+	}
+
+	private OrderGroup requireOwnedGroup(String kakaoId, String orderToken) {
+		OrderGroup group = orderGroupRepository.findByOrderToken(orderToken)
+				.orElseThrow(() -> new BusinessException(ErrorCode.ORDER_GROUP_NOT_FOUND));
+
+		if (!group.getBuyer().getKakaoId().equals(kakaoId)) {
+			// 토큰을 알아도 남의 주문은 취소할 수 없다
+			throw new BusinessException(ErrorCode.FORBIDDEN);
+		}
+		return group;
+	}
+}

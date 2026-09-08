@@ -8,10 +8,10 @@ import org.springframework.transaction.annotation.Transactional;
 import store.moeum.moeum.global.error.BusinessException;
 import store.moeum.moeum.global.error.ErrorCode;
 import store.moeum.moeum.order.domain.Order;
-import store.moeum.moeum.order.domain.OrderGroup;
 import store.moeum.moeum.order.domain.OrderRepository;
 import store.moeum.moeum.payment.domain.Payment;
 import store.moeum.moeum.payment.domain.PaymentRepository;
+import store.moeum.moeum.payment.domain.PaymentPhase;
 import store.moeum.moeum.payment.domain.PaymentStatus;
 import store.moeum.moeum.saleform.domain.SaleForm;
 import store.moeum.moeum.saleform.domain.SaleFormRepository;
@@ -19,6 +19,7 @@ import store.moeum.moeum.saleform.domain.SaleFormStatus;
 import store.moeum.moeum.saleform.domain.SaleType;
 
 import java.security.SecureRandom;
+import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.Base64;
 import java.util.List;
@@ -41,6 +42,7 @@ public class RefundWriter {
 	private final PaymentRepository paymentRepository;
 	private final OrderRepository orderRepository;
 	private final SaleFormRepository saleFormRepository;
+	private final Clock clock;
 
 	/**
 	 * 취소 요청을 준비한다 — 금액·세금 계산 + refund 행 생성 + 키 발급.
@@ -91,7 +93,20 @@ public class RefundWriter {
 		if (!refund.markCompleted(point3RefundId)) {
 			return false;
 		}
-		restoreStock(refund);
+
+		Payment payment = paymentRepository.findById(refund.getPaymentId())
+				.orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_NOT_FOUND));
+		if (payment.getPhase() == PaymentPhase.SECOND) {
+			// 하나의 주문 취소가 1차금·2차금 두 건의 환불로 나간다. 여기서 또 정리하면
+			// 재고가 두 번 돌아간다 — 재고와 주문 상태는 1차금 쪽에서만 건드린다
+			return true;
+		}
+
+		List<Order> targets = targetsOf(refund, payment);
+		LocalDateTime now = LocalDateTime.now(clock);
+		targets.forEach(this::restoreOne);
+		targets.forEach(order -> order.cancel(now));
+		payment.getOrderGroup().cancelIfAllOrdersCanceled(now);
 		return true;
 	}
 
@@ -141,7 +156,7 @@ public class RefundWriter {
 	// ---------------------------------------------------------------- 재고
 
 	/**
-	 * 취소된 수량의 재고를 되돌린다 (D-024).
+	 * 이번 취소로 되돌아갈 주문들. 재고 되돌림과 주문 취소 표시가 여기에 걸린다 (D-024).
 	 *
 	 * <pre>
 	 *   SOLO              → 되돌린다. 창고에 실물이 돌아온다
@@ -151,20 +166,15 @@ public class RefundWriter {
 	 *
 	 * 기준은 판매 유형이 아니라 <b>발주가 나갔는가</b> 이고, GROUP 에서는 그게 마감 시점과 같다.
 	 */
-	private void restoreStock(Refund refund) {
+	private List<Order> targetsOf(Refund refund, Payment payment) {
 		if (refund.getOrderId() == null) {
-			// 전액 취소 — 묶음의 모든 주문이 대상이다
-			restoreAll(refund.getPaymentId());
-			return;
+			// 전액 취소 — 아직 살아 있는 주문 전부가 대상이다
+			return payment.getOrderGroup().activeOrders();
 		}
-		orderRepository.findById(refund.getOrderId()).ifPresent(this::restoreOne);
-	}
-
-	private void restoreAll(Long paymentId) {
-		paymentRepository.findById(paymentId)
-				.map(Payment::getOrderGroup)
-				.map(OrderGroup::getOrders)
-				.ifPresent(orders -> orders.forEach(this::restoreOne));
+		return orderRepository.findById(refund.getOrderId())
+				.filter(order -> !order.isCanceled())
+				.map(List::of)
+				.orElseGet(List::of);
 	}
 
 	private void restoreOne(Order order) {

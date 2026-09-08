@@ -131,6 +131,27 @@ public class Order extends BaseTimeEntity {
 		return status == OrderStatus.ARRIVED;
 	}
 
+	/**
+	 * 취소 확정. <b>멱등하다</b> — 실시간 취소와 대사 배치가 같은 건을 확정할 수 있다.
+	 *
+	 * 환불이 끝난 뒤에만 부른다. 요청만 받고 미리 바꾸면 취소가 거절됐을 때
+	 * 돈은 그대로인데 주문만 사라진다.
+	 *
+	 * @return 이번 호출로 바뀌었으면 true
+	 */
+	public boolean cancel(LocalDateTime at) {
+		if (status == OrderStatus.CANCELED) {
+			return false;
+		}
+		this.status = OrderStatus.CANCELED;
+		this.canceledAt = at;
+		return true;
+	}
+
+	public boolean isCanceled() {
+		return status == OrderStatus.CANCELED;
+	}
+
 	void assignTo(OrderGroup orderGroup) {
 		this.orderGroup = orderGroup;
 	}

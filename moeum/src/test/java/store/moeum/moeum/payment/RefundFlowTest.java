@@ -69,7 +69,9 @@ class RefundFlowTest extends IntegrationTest {
 	static void point3(DynamicPropertyRegistry registry) {
 		registry.add("moeum.point3.base-url", POINT3::baseUrl);
 		registry.add("moeum.point3.api-token", () -> "test-token");
-		registry.add("moeum.point3.read-timeout", () -> "500ms");
+		// 타임아웃 분기를 보려고 짧게 잡되, 너무 짧으면 안 된다 —
+		// JVM 이 찬 상태에서 첫 요청은 클래스 로딩만으로 500ms 를 넘어 엉뚱한 테스트가 깨진다
+		registry.add("moeum.point3.read-timeout", () -> "2s");
 	}
 
 	@Autowired
@@ -145,7 +147,7 @@ class RefundFlowTest extends IntegrationTest {
 		stubInspect("refundable", 99000, true);
 		POINT3.stubFor(post(urlPathEqualTo("/refunds/v1/" + SESSION))
 				.willReturn(json(200, """
-						{"id":"ref-1","status":"completed","amount":30000}""").withFixedDelay(2000)));
+						{"id":"ref-1","status":"completed","amount":30000}""").withFixedDelay(5000)));
 
 		RefundService.RefundResult result = refundService.refund(
 				paymentId, null, 30000, "고객 요청", RefundRequester.BUYER);
@@ -457,8 +459,16 @@ class RefundFlowTest extends IntegrationTest {
 				.withBody(body);
 	}
 
+	/**
+	 * 배치가 집어갈 만큼 오래된 건으로 만든다.
+	 *
+	 * <b>DB 의 NOW() 를 쓰면 안 된다.</b> 배치는 고정된 테스트 시계(12:00)를 보는데
+	 * NOW() 는 실제 시각이라, 낮 12시가 지난 뒤에 돌리면 갓 만들어진 건으로 보여 아무것도 안 집는다.
+	 * 시계를 고정했으면 시각을 만드는 쪽도 같은 시계를 따라야 한다.
+	 */
 	private void agePending() {
-		jdbcTemplate.update("UPDATE refund SET updated_at = DATE_SUB(NOW(6), INTERVAL 5 MINUTE)");
+		jdbcTemplate.update("UPDATE refund SET updated_at = ?",
+				java.sql.Timestamp.valueOf(java.time.LocalDateTime.of(2026, 9, 8, 11, 55)));
 	}
 
 	private static SessionUser buyer() {
