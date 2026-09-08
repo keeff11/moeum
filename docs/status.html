@@ -594,7 +594,7 @@
     }
   ];
 
-  const LABEL = { done: "완료", check: "점검 필요", todo: "진행 전" };
+  const LABEL = { done: "완료", part: "부분 진행", check: "점검 필요", todo: "진행 전" };
 
   const el = (tag, cls, html) => {
     const n = document.createElement(tag);
@@ -620,6 +620,7 @@
     const done = dom.items.filter((i) => i[2] === "done").length;
     const check = dom.items.filter((i) => i[2] === "check").length;
     const todo = dom.items.filter((i) => i[2] === "todo").length;
+    const part = dom.items.filter((i) => i[2] === "part").length;
     const zero = dom.pct === 0 ? "1" : "0";
 
     const details = el("details", "row");
@@ -629,7 +630,7 @@
     summary.innerHTML =
       '<svg class="chev" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>' +
       '<span class="name-cell"><span class="name">' + esc(dom.name) + '</span>' +
-      '<span class="counts">완료 ' + done + ' · 점검 ' + check + ' · 남음 ' + todo + '</span></span>' +
+      '<span class="counts">완료 ' + done + (part ? ' · 부분 ' + part : '') + ' · 점검 ' + check + ' · 남음 ' + todo + '</span></span>' +
       '<span class="bar" data-zero="' + zero + '"><i style="width:' + dom.pct + '%"></i></span>' +
       '<span class="pct" data-zero="' + zero + '">' + dom.pct + '<small>%</small></span>';
     details.appendChild(summary);
