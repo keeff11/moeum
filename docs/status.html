@@ -394,12 +394,12 @@
 
     <div class="total">
       <div class="total-label">전체 진척 (로드맵 단계 비중 가중)</div>
-      <div class="total-num" id="totalNum">77<small>%</small></div>
+      <div class="total-num" id="totalNum">81<small>%</small></div>
       <div class="total-bar">
-        <div class="bar"><i style="width:77%"></i></div>
+        <div class="bar"><i style="width:81%"></i></div>
       </div>
       <div class="total-note">
-        4·5·6단계 서버 쪽이 끝났다. 셀러 온보딩부터 2차금 결제와 취소까지 서버에서 끊김 없이 이어진다. 남은 것은 <strong style="font-weight:500">point3 서버 토큰·운영 IP 등록</strong>(외부 대기)과 프론트 연동, 그 위의 알림·셀러 운영이다.
+        4·5·6단계 서버 쪽이 끝났다. 셀러 온보딩부터 2차금 결제와 취소까지 서버에서 끊김 없이 이어진다. 남은 것은 <strong style="font-weight:500">point3 서버 토큰</strong>(09-09~10 예정)과 프론트 연동, 그리고 알림톡 계정이다. Outbox 배관은 깔렸고 발송기만 비어 있다.
       </div>
     </div>
 
@@ -419,7 +419,7 @@
   <main class="rows" id="rows"></main>
 
   <footer>
-    <div><strong style="font-weight:500;color:var(--ink-2)">다음 한 걸음</strong> — ① point3 <strong style="font-weight:500">서버 API 토큰</strong> 수령(09-09~10 예정. clientId 와 다른 값이다) → ② 소액 실결제로 결제→취소 검증(샌드박스가 없다) → ③ 7단계 알림 · Outbox (2차금 청구가 알림 없이는 굴러가지 않는다)</div>
+    <div><strong style="font-weight:500;color:var(--ink-2)">다음 한 걸음</strong> — ① point3 <strong style="font-weight:500">서버 API 토큰</strong> 수령(09-09~10 예정. clientId 와 다른 값이다) → ② 소액 실결제로 결제→취소 검증(샌드박스가 없다) → ③ 카카오 알림톡 계정·템플릿 심사(발송기만 갈아 끼우면 된다) → ④ 셀러 대시보드·발주서</div>
     <div>가중치는 로드맵 8단계의 작업량 비중으로 잡았다. 결제 22 · 주문 12 · 판매폼 10 · 취소 10 · 인증 8 · 인프라 8 · 셀러운영 8 · 셀러심사 6 · 장바구니 6 · 알림 6 · 구매자 4.</div>
   </footer>
 </div>
@@ -557,12 +557,14 @@
       ]
     },
     {
-      name: "알림 · Outbox", pct: 3, weight: 6,
+      name: "알림 · Outbox", pct: 62, weight: 6,
       items: [
         ["outbox 스키마", "", "done"],
-        ["Outbox 릴레이 배치", "대사 배치 · 만료 배치 다음 순위 (D-012)", "todo"],
-        ["카카오 알림톡 연동", "2차금 청구 · 상태 변경. 알림이 곧 결제 요청이다", "todo"],
-        ["재시도 상한 + DEAD 처리", "", "todo"]
+        ["Outbox 릴레이 배치", "D-027. next_attempt_at 하나가 백오프와 임대를 겸한다. SKIP LOCKED 로 분산", "done"],
+        ["카카오 알림톡 연동", "발송기 인터페이스는 준비됐다. moeum.notify.provider 로 갈아 끼운다 — 계정·템플릿 심사가 남았다", "todo"],
+        ["재시도 상한 + DEAD 처리", "8회 실패하면 DEAD + ERROR 로그. 알림이 곧 결제 요청이라 조용히 버리지 않는다", "done"],
+        ["알림 적재 지점", "결제 확정 · 전 폼 입고 · 취소 완료. 전부 멱등 가드 안쪽이라 대사 배치가 다시 훑어도 안 쌓인다", "done"],
+        ["발송기", "지금은 로그만 찍는다. 이걸 쓰는 동안 구매자에게는 아무것도 가지 않는다", "part"]
       ]
     },
     {
@@ -578,8 +580,8 @@
       name: "공통 · 인프라", pct: 90, weight: 8,
       items: [
         ["전역 예외 핸들러 · 에러 코드 체계", "공통 응답 포맷 + 토큰 유출 방지 테스트", "done"],
-        ["Flyway 마이그레이션 V1~V5", "18개 테이블 + 세션 · 공개상품 · 이미지 키 · 미달 처리 표시. ddl-auto: validate", "done"],
-        ["테스트 263개", "Testcontainers MySQL 8.0 + point3 는 WireMock. H2 로 대체하지 않는다", "done"],
+        ["Flyway 마이그레이션 V1~V6", "18개 테이블 + 세션 · 공개상품 · 이미지 키 · 미달 처리 · 알림 백오프. ddl-auto: validate", "done"],
+        ["테스트 281개", "Testcontainers MySQL 8.0 + point3 는 WireMock. H2 로 대체하지 않는다", "done"],
         ["EC2 + Docker Compose + Caddy 자동 TLS", "D-016. 월 $26", "done"],
         ["GitHub Actions OIDC → ECR → SSM 배포", "AWS 액세스 키를 GitHub 에 두지 않는다", "done"],
         ["Parameter Store 시크릿", "D-017. 배포 때마다 .env 재생성", "done"],

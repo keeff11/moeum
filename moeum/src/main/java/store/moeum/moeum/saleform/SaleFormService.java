@@ -9,7 +9,11 @@ import store.moeum.moeum.global.error.BusinessException;
 import store.moeum.moeum.global.error.ErrorCode;
 import store.moeum.moeum.global.storage.ImageStorage;
 import store.moeum.moeum.order.domain.Order;
+import store.moeum.moeum.order.domain.OrderGroup;
 import store.moeum.moeum.order.domain.OrderRepository;
+import store.moeum.moeum.outbox.OutboxRecorder;
+import store.moeum.moeum.outbox.domain.OutboxAggregate;
+import store.moeum.moeum.outbox.domain.OutboxEventType;
 import store.moeum.moeum.saleform.dto.ImageUploadUrlResponse;
 import store.moeum.moeum.saleform.dto.ImageUploadUrlRequest;
 import store.moeum.moeum.saleform.domain.FieldChange;
@@ -41,6 +45,7 @@ public class SaleFormService {
 
 	private final SaleFormRepository saleFormRepository;
 	private final OrderRepository orderRepository;
+	private final OutboxRecorder outboxRecorder;
 	private final ImageStorage imageStorage;
 	private final SaleFormHistoryRepository saleFormHistoryRepository;
 	private final SellerService sellerService;
@@ -199,12 +204,37 @@ public class SaleFormService {
 
 		int arrived = 0;
 		for (Order order : orderRepository.findPaidBySaleForm(saleFormId)) {
-			if (order.markArrived()) {
-				arrived++;
+			if (!order.markArrived()) {
+				continue;
 			}
+			arrived++;
+			// 묶음의 마지막 폼이 들어오는 순간에만 청구가 열린다 (payment-flow 2절).
+			// 여기서 알리지 않으면 구매자는 잔금을 낼 때가 됐다는 걸 알 방법이 없다
+			notifySecondDue(order.getOrderGroup());
 		}
 		log.info("입고 처리: saleFormId={}, 주문 {}건", saleFormId, arrived);
 		return arrived;
+	}
+
+	/**
+	 * 2차금 청구 알림을 적재한다 (D-012).
+	 *
+	 * <b>이 알림이 곧 결제 요청이다.</b> 유실되면 구매자는 잔금을 낼 줄 모르고
+	 * 셀러는 미수로 남은 이유를 알 수 없다.
+	 *
+	 * 입고 전이가 실제로 일어난 경우에만 불린다 — 같은 폼을 다시 입고 처리해도
+	 * {@code markArrived} 가 false 를 주므로 알림이 쌓이지 않는다.
+	 */
+	private void notifySecondDue(OrderGroup group) {
+		if (!group.isSecondPaymentDue()) {
+			return;
+		}
+		outboxRecorder.record(OutboxAggregate.ORDER_GROUP, group.getId(),
+				OutboxEventType.SECOND_PAYMENT_DUE,
+				java.util.Map.of(
+						"orderToken", group.getOrderToken(),
+						"buyerId", group.getBuyer().getId(),
+						"amount", group.secondPaymentAmount()));
 	}
 
 	/** 상태 전이도 다른 필드와 같이 sale_form_history 에 남긴다 */

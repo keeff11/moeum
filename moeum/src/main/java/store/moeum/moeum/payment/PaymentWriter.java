@@ -10,6 +10,9 @@ import store.moeum.moeum.global.error.ErrorCode;
 import store.moeum.moeum.global.jpa.JpaAuditingConfig;
 import store.moeum.moeum.order.domain.Order;
 import store.moeum.moeum.order.domain.OrderGroup;
+import store.moeum.moeum.outbox.OutboxRecorder;
+import store.moeum.moeum.outbox.domain.OutboxAggregate;
+import store.moeum.moeum.outbox.domain.OutboxEventType;
 import store.moeum.moeum.order.domain.OrderGroupRepository;
 import store.moeum.moeum.order.domain.OrderGroupStatus;
 import store.moeum.moeum.order.domain.StockHold;
@@ -46,6 +49,7 @@ public class PaymentWriter {
 
 	private final PaymentRepository paymentRepository;
 	private final PaymentEventRepository paymentEventRepository;
+	private final OutboxRecorder outboxRecorder;
 	private final OrderGroupRepository orderGroupRepository;
 	private final StockHoldRepository stockHoldRepository;
 	private final SaleFormRepository saleFormRepository;
@@ -248,11 +252,28 @@ public class PaymentWriter {
 			}
 			// 1차금에서만 받아 둔다. 2차금은 이 값을 쓰는 쪽이다
 			group.getBuyer().rememberPayerId(payerId);
+			notify(group, OutboxEventType.ORDER_PAID, payment.getAmount());
 		} else {
 			// 2차금은 홀드 확정이 없다 — 재고는 1차금에서 이미 확정됐다
 			group.markSecondPaid();
+			notify(group, OutboxEventType.SECOND_PAID, payment.getAmount());
 		}
 		return true;
+	}
+
+	/**
+	 * 알림을 적재한다. <b>이 트랜잭션에서 같이 커밋된다</b> (D-012) —
+	 * 결제가 롤백되면 알림도 없던 일이 된다.
+	 *
+	 * 이 메서드는 {@link #finalizeCapture} 의 멱등 가드 안쪽에서만 불린다.
+	 * 밖으로 빼면 대사 배치가 확정된 결제를 다시 훑을 때마다 알림이 쌓인다.
+	 */
+	private void notify(OrderGroup group, OutboxEventType eventType, int amount) {
+		outboxRecorder.record(OutboxAggregate.ORDER_GROUP, group.getId(), eventType,
+				java.util.Map.of(
+						"orderToken", group.getOrderToken(),
+						"buyerId", group.getBuyer().getId(),
+						"amount", amount));
 	}
 
 	/**

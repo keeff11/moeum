@@ -7,6 +7,10 @@ spring:
     locations: classpath:db/migration
 
 moeum:
+  # 릴레이는 1초마다 도는데, 그대로 두면 테스트가 PENDING 을 확인하기 전에 SENT 로 넘어간다.
+  # 테스트는 relayOnce() 를 직접 부른다
+  batch:
+    outbox-delay: 3600000
   auth:
     cookie-secure: false
   crypto:

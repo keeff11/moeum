@@ -9,6 +9,9 @@ import store.moeum.moeum.global.error.BusinessException;
 import store.moeum.moeum.global.error.ErrorCode;
 import store.moeum.moeum.order.domain.Order;
 import store.moeum.moeum.order.domain.OrderRepository;
+import store.moeum.moeum.outbox.OutboxRecorder;
+import store.moeum.moeum.outbox.domain.OutboxAggregate;
+import store.moeum.moeum.outbox.domain.OutboxEventType;
 import store.moeum.moeum.payment.domain.Payment;
 import store.moeum.moeum.payment.domain.PaymentRepository;
 import store.moeum.moeum.payment.domain.PaymentPhase;
@@ -42,6 +45,7 @@ public class RefundWriter {
 	private final PaymentRepository paymentRepository;
 	private final OrderRepository orderRepository;
 	private final SaleFormRepository saleFormRepository;
+	private final OutboxRecorder outboxRecorder;
 	private final Clock clock;
 
 	/**
@@ -107,6 +111,14 @@ public class RefundWriter {
 		targets.forEach(this::restoreOne);
 		targets.forEach(order -> order.cancel(now));
 		payment.getOrderGroup().cancelIfAllOrdersCanceled(now);
+
+		// 멱등 가드 안쪽이다. 밖으로 빼면 대사 배치가 확정된 취소를 다시 훑을 때마다 알림이 쌓인다
+		outboxRecorder.record(OutboxAggregate.ORDER_GROUP, payment.getOrderGroup().getId(),
+				OutboxEventType.REFUND_COMPLETED,
+				java.util.Map.of(
+						"orderToken", payment.getOrderGroup().getOrderToken(),
+						"buyerId", payment.getOrderGroup().getBuyer().getId(),
+						"amount", refund.getAmount()));
 		return true;
 	}
 
