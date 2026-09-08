@@ -54,6 +54,13 @@ dependencies {
 
 tasks.named('test') {
 	useJUnitPlatform()
+
+	// 운영 컨테이너가 TZ=Asia/Seoul · -Duser.timezone=Asia/Seoul 로 고정돼 있다.
+	// 테스트도 같은 조건이어야 한다 — GitHub Actions 러너는 UTC 라 그대로 두면
+	// hibernate.jdbc.time_zone(Asia/Seoul)이 JVM 기본 타임존 기준으로 변환하면서
+	// Hibernate 가 쓴 값과 JDBC 로 읽은 값이 9시간 어긋난다.
+	// 개발자마다 로컬 타임존이 달라도 같은 결과가 나오게 하는 목적도 있다.
+	systemProperty 'user.timezone', 'Asia/Seoul'
 }
 
 tasks.withType(JavaCompile).configureEach {
