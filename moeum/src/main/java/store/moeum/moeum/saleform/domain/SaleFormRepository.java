@@ -100,6 +100,24 @@ public interface SaleFormRepository extends JpaRepository<SaleForm, Long> {
 	int closeExpired();
 
 	/**
+	 * 목표수량 미달 처리를 아직 안 훑은 마감 폼 (D-026).
+	 *
+	 * <b>SKIP LOCKED 로 인스턴스 간 분산한다.</b> 미달 취소는 이미 결제된 돈을 돌려주는 일이라
+	 * 두 인스턴스가 같은 폼을 집으면 같은 주문에 취소를 두 번 보내게 된다.
+	 *
+	 * CLOSED 만 본다 — SELLING 중에는 아직 미달인지 판단할 수 없고, 마감 배치가 먼저 CLOSED 로 넘긴다.
+	 */
+	@Query(value = """
+			SELECT * FROM sale_form
+			 WHERE status = 'CLOSED'
+			   AND shortfall_done_at IS NULL
+			 ORDER BY id
+			 LIMIT :limit
+			 FOR UPDATE SKIP LOCKED
+			""", nativeQuery = true)
+	List<SaleForm> findClosedForShortfall(@Param("limit") int limit);
+
+	/**
 	 * 취소된 수량을 재고로 되돌린다 (D-024).
 	 *
 	 * {@code sold >= :qty} 조건이 멱등 가드다. 같은 취소를 두 번 확정해도 sold 가 음수로 내려가지 않는다.

@@ -10,7 +10,7 @@ package store.moeum.moeum.payment.refund;
  * @param orderId     폼 하나만 취소하면 그 주문 id, 묶음 전체면 null
  * @param fullGroup   묶음이 통째로 취소되는가. <b>배송비 환불 여부가 여기에 달렸다</b>
  */
-public record RefundPlan(Long groupId, Long orderId, boolean fullGroup,
+public record RefundPlan(Long groupId, String orderToken, Long orderId, boolean fullGroup,
                          Long firstPaymentId, int firstAmount,
                          Long secondPaymentId, int secondAmount) {
 

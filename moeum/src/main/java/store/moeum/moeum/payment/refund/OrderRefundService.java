@@ -9,6 +9,7 @@ import store.moeum.moeum.payment.refund.dto.RefundableResponse;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * 주문 취소의 정책 층 — 구매자가 보는 "취소" 를 결제 취소 1~2건으로 번역한다.
@@ -50,27 +51,47 @@ public class OrderRefundService {
 	 */
 	public OrderRefundResponse refund(SessionUser user, String orderToken, Long orderId, String reason) {
 		RefundPlan plan = reader.plan(user.kakaoId(), orderToken, orderId);
-		String note = (reason == null || reason.isBlank()) ? "구매자 요청" : reason;
+		return execute(plan, note(reason, "구매자 요청"), RefundRequester.BUYER);
+	}
+
+	/**
+	 * 시스템이 거는 주문 취소 — 목표수량 미달 등 (D-026).
+	 *
+	 * <b>소유권도 취소 구간도 보지 않는다.</b> 구매자 잘못이 아니라 폼이 성립하지 않은 것이다.
+	 * 취소할 것이 없으면 비어 있는 값을 준다 — 배치가 주문 하나 때문에 멈추면 안 된다.
+	 */
+	public Optional<OrderRefundResponse> cancelByOrder(Long orderId, String reason) {
+		return reader.systemPlan(orderId)
+				.map(plan -> execute(plan, note(reason, "판매자 사정으로 취소"), RefundRequester.SYSTEM));
+	}
+
+	// ---------------------------------------------------------------- 실행
+
+	private OrderRefundResponse execute(RefundPlan plan, String note, RefundRequester requester) {
 		List<OrderRefundResponse.Detail> details = new ArrayList<>(2);
 
 		if (plan.hasFirst()) {
 			RefundService.RefundResult first = refundService.refund(
-					plan.firstPaymentId(), plan.orderId(), plan.firstAmount(), note, RefundRequester.BUYER);
+					plan.firstPaymentId(), plan.orderId(), plan.firstAmount(), note, requester);
 			details.add(detail("FIRST", first, plan.firstAmount()));
 
 			if (first.status() == RefundService.RefundResult.Status.FAILED) {
-				log.info("1차금 취소가 거절돼 2차금은 보내지 않는다: orderToken={}", orderToken);
-				return compose(orderToken, details);
+				log.info("1차금 취소가 거절돼 2차금은 보내지 않는다: orderToken={}", plan.orderToken());
+				return compose(plan.orderToken(), details);
 			}
 		}
 
 		if (plan.hasSecond()) {
 			RefundService.RefundResult second = refundService.refund(
-					plan.secondPaymentId(), plan.orderId(), plan.secondAmount(), note, RefundRequester.BUYER);
+					plan.secondPaymentId(), plan.orderId(), plan.secondAmount(), note, requester);
 			details.add(detail("SECOND", second, plan.secondAmount()));
 		}
 
-		return compose(orderToken, details);
+		return compose(plan.orderToken(), details);
+	}
+
+	private static String note(String reason, String fallback) {
+		return (reason == null || reason.isBlank()) ? fallback : reason;
 	}
 
 	// ---------------------------------------------------------------- 합성

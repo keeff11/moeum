@@ -105,6 +105,10 @@ public class SaleForm extends BaseTimeEntity {
 	@Column(name = "shortfall_policy", length = 10)
 	private ShortfallPolicy shortfallPolicy;
 
+	/** 목표수량 미달 처리를 끝낸 시각. null 이면 아직 안 훑었다 (V5) */
+	@Column(name = "shortfall_done_at")
+	private LocalDateTime shortfallDoneAt;
+
 	/** 발송 시작 안내 문구. 서버가 포맷해 내려준다 */
 	@Column(name = "ship_start_text", length = 100)
 	private String shipStartText;
@@ -261,6 +265,26 @@ public class SaleForm extends BaseTimeEntity {
 	public boolean isStartable() {
 		return status == SaleFormStatus.DRAFT || status == SaleFormStatus.PAUSED
 				|| status == SaleFormStatus.SELLING;
+	}
+
+	// ---------------------------------------------------------------- 목표수량 미달
+
+	/**
+	 * 목표수량에 못 미친 채 마감됐는가.
+	 *
+	 * <b>기준은 {@code sold} 다.</b> 마감 전 취소는 {@code sold} 에서 빠지므로
+	 * 마감 시점의 {@code sold} 가 곧 실제 결제자 수다 (D-024). {@code held} 는 세지 않는다 —
+	 * 결제되지 않은 홀드는 곧 만료된다.
+	 *
+	 * SOLO 와 목표수량이 없는 폼은 미달이라는 개념 자체가 없다.
+	 */
+	public boolean isShortfall() {
+		return saleType == SaleType.GROUP && targetQty != null && sold < targetQty;
+	}
+
+	/** 이 폼의 미달 처리를 끝냈다고 표시한다. 정책과 무관하게 한 번 훑으면 찍는다 */
+	public void markShortfallDone(LocalDateTime at) {
+		this.shortfallDoneAt = at;
 	}
 
 	/** 남은 수량. held · sold 는 DB 값이므로 조회 시점 기준이다 */

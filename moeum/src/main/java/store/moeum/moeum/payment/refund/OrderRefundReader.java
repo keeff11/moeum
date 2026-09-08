@@ -8,6 +8,7 @@ import store.moeum.moeum.global.error.ErrorCode;
 import store.moeum.moeum.order.domain.Order;
 import store.moeum.moeum.order.domain.OrderGroup;
 import store.moeum.moeum.order.domain.OrderGroupRepository;
+import store.moeum.moeum.order.domain.OrderRepository;
 import store.moeum.moeum.payment.domain.Payment;
 import store.moeum.moeum.payment.domain.PaymentPhase;
 import store.moeum.moeum.payment.domain.PaymentRepository;
@@ -28,6 +29,7 @@ import java.util.Optional;
 public class OrderRefundReader {
 
 	private final OrderGroupRepository orderGroupRepository;
+	private final OrderRepository orderRepository;
 	private final PaymentRepository paymentRepository;
 
 	/**
@@ -51,7 +53,34 @@ public class OrderRefundReader {
 				throw new BusinessException(ErrorCode.REFUND_NOT_ALLOWED, reason);
 			}
 		}
+		return build(group, active, targets, orderId);
+	}
 
+	/**
+	 * 시스템이 거는 취소의 계획 — 목표수량 미달 등 (D-026).
+	 *
+	 * <b>소유권도 취소 구간도 보지 않는다.</b> 구매자 잘못이 아니라 폼이 성립하지 않은 것이라
+	 * 발주가 나갔든 아니든 돌려줘야 한다.
+	 *
+	 * 계획을 세울 수 없으면 비어 있는 값을 준다 — 배치가 폼 하나 때문에 멈추면 안 된다.
+	 */
+	@Transactional(readOnly = true)
+	public Optional<RefundPlan> systemPlan(Long orderId) {
+		Order order = orderRepository.findById(orderId).orElse(null);
+		if (order == null || order.isCanceled()) {
+			return Optional.empty();
+		}
+		OrderGroup group = order.getOrderGroup();
+		try {
+			return Optional.of(build(group, group.activeOrders(), List.of(order), orderId));
+		} catch (BusinessException e) {
+			return Optional.empty();
+		}
+	}
+
+	// ---------------------------------------------------------------- 계획 조립
+
+	private RefundPlan build(OrderGroup group, List<Order> active, List<Order> targets, Long orderId) {
 		// 남은 폼을 전부 취소하는가 — 배송비 환불 여부가 이 한 줄에 달렸다
 		boolean fullGroup = targets.size() == active.size();
 
@@ -67,7 +96,7 @@ public class OrderRefundReader {
 			throw new BusinessException(ErrorCode.REFUND_NOT_ALLOWED, "취소할 금액이 없습니다.");
 		}
 
-		return new RefundPlan(group.getId(), orderId, fullGroup,
+		return new RefundPlan(group.getId(), group.getOrderToken(), orderId, fullGroup,
 				first.getId(), firstAmount,
 				second == null ? null : second.getId(), secondAmount);
 	}

@@ -10,11 +10,12 @@ import store.moeum.moeum.saleform.domain.SaleFormRepository;
 /**
  * 마감 시각이 지난 공구를 CLOSED 로 넘긴다. 1분마다 돈다 (payment-flow 7절).
  *
- * <b>지금은 상태 전이만 한다.</b> 목표수량 미달 시 shortfall_policy(CANCEL · EXTEND · PROCEED)
- * 적용은 6단계다 — CANCEL 은 이미 1차금이 결제된 주문을 환불한다는 뜻인데 결제도 환불도 아직 없다.
- * EXTEND 의 연장 횟수 규칙도 기획 미확정이다 (domain.md).
+ * <b>여기서는 상태 전이만 한다.</b> 목표수량 미달 시 shortfall_policy 적용은
+ * {@code ShortfallCancelBatch} 가 CLOSED 가 된 폼을 다시 훑어 처리한다 (D-026) —
+ * 미달 취소는 point3 를 부르므로 이 배치의 트랜잭션 안에서 할 수 없다.
+ * EXTEND 의 연장 횟수 규칙은 여전히 기획 미확정이다 (domain.md).
  *
- * 그럼에도 지금 필요한 이유는 조회 때문이다. 이게 없으면 마감 시각이 지나도 status 가
+ * 상태 전이만으로도 이 배치는 필요하다. 이게 없으면 마감 시각이 지나도 status 가
  * SELLING 으로 남아 구매자 화면에 구매 버튼이 계속 켜진다.
  *
  * 재고 확보 쿼리는 closes_at 을 직접 보므로 이 배치가 늦어도 초과 판매는 나지 않는다.

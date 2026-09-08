@@ -21,4 +21,21 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
 			   and o.status = store.moeum.moeum.order.domain.OrderStatus.PAID
 			""")
 	List<Order> findPaidBySaleForm(@Param("saleFormId") Long saleFormId);
+
+	/**
+	 * 목표수량 미달로 취소해야 할 주문 (D-026).
+	 *
+	 * 결제 전(CREATED)은 넣지 않는다 — 돌려줄 돈이 없고 홀드는 만료 배치가 푼다.
+	 * 이미 CANCELED · EXPIRED 인 것도 뺀다.
+	 */
+	@Query("""
+			select o.id from Order o
+			 where o.saleForm.id = :saleFormId
+			   and o.status not in (
+			         store.moeum.moeum.order.domain.OrderStatus.CREATED,
+			         store.moeum.moeum.order.domain.OrderStatus.CANCELED,
+			         store.moeum.moeum.order.domain.OrderStatus.EXPIRED)
+			 order by o.id
+			""")
+	List<Long> findCancelableIdsBySaleForm(@Param("saleFormId") Long saleFormId);
 }

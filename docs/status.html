@@ -419,7 +419,7 @@
   <main class="rows" id="rows"></main>
 
   <footer>
-    <div><strong style="font-weight:500;color:var(--ink-2)">다음 한 걸음</strong> — ① point3 <strong style="font-weight:500">서버 API 토큰</strong>·운영 IP 신청(외부 대기. clientId 와 다른 값이다) → ② 소액 실결제로 결제→취소 검증(샌드박스가 없다) → ③ 7단계 알림 · 목표수량 미달 자동 취소</div>
+    <div><strong style="font-weight:500;color:var(--ink-2)">다음 한 걸음</strong> — ① point3 <strong style="font-weight:500">서버 API 토큰</strong>·운영 IP 신청(외부 대기. clientId 와 다른 값이다) → ② 소액 실결제로 결제→취소 검증(샌드박스가 없다) → ③ 7단계 알림 · Outbox (2차금 청구가 알림 없이는 굴러가지 않는다)</div>
     <div>가중치는 로드맵 8단계의 작업량 비중으로 잡았다. 결제 22 · 주문 12 · 판매폼 10 · 취소 10 · 인증 8 · 인프라 8 · 셀러운영 8 · 셀러심사 6 · 장바구니 6 · 알림 6 · 구매자 4.</div>
   </footer>
 </div>
@@ -463,7 +463,7 @@
       ]
     },
     {
-      name: "판매 폼 · 상품", pct: 92, weight: 10,
+      name: "판매 폼 · 상품", pct: 96, weight: 10,
       items: [
         ["판매 폼 생성 (상품 · 옵션 포함)", "", "done"],
         ["목록 · 상세 조회", "fetch join + batch fetch 로 N+1 차단", "done"],
@@ -476,7 +476,7 @@
         ["업로드 고아 파일 정리", "폼을 저장 안 하면 버킷에 남는다. 수명주기 규칙 미설정", "check"],
         ["S3 버킷 · CORS · IAM", "moeum-images-prod. 공개 읽기는 sale-forms/* 에만, 앱 권한은 PutObject 뿐", "done"],
         ["판매 시작 · 일시중지 · 수동 마감", "DRAFT → SELLING → PAUSED ↔ SELLING → CLOSED. 마감은 되돌릴 수 없다", "done"],
-        ["목표수량 미달 자동 취소", "shortfall_policy. 취소 엔진이 준비돼 막힌 것은 없다 — 마감 배치에 얹으면 된다", "todo"],
+        ["목표수량 미달 자동 취소", "D-026. CANCEL·PROCEED 는 됐다. EXTEND 는 연장 규칙이 기획 미확정이라 보류", "part"],
         ["테스트 49개", "SaleFormServiceTest · SaleFormUpdateTest · PublicProductTest · ImageUploadUrlTest · SaleFormLifecycleTest", "done"]
       ]
     },
@@ -540,7 +540,7 @@
       ]
     },
     {
-      name: "취소 · 환불", pct: 91, weight: 10,
+      name: "취소 · 환불", pct: 92, weight: 10,
       items: [
         ["refund 스키마", "", "done"],
         ["취소 가능 여부 판단", "EOB 는 우리 시계로 사전 차단. 잔액·진행중은 point3 조회로", "done"],
@@ -552,6 +552,7 @@
         ["EOB 시간대 차단", "23:30~00:30 KST. Clock 주입으로 테스트 가능하게 했다", "done"],
         ["정산 후 환불 접수", "settled_manual 로 표시하고 셀러 직접 환불로 넘긴다", "done"],
         ["취소 시 재고 되돌림", "D-024. SOLO · GROUP 마감 전은 되돌리고, GROUP 마감 후는 두지 않는다", "done"],
+        ["목표수량 미달 자동 취소", "D-026. 마감 배치와 분리했다. shortfall_done_at 으로 재실행을 막는다", "done"],
         ["실결제 검증", "샌드박스가 없다. 소액 실결제로 결제→취소를 돌려봐야 한다", "todo"]
       ]
     },
@@ -577,8 +578,8 @@
       name: "공통 · 인프라", pct: 90, weight: 8,
       items: [
         ["전역 예외 핸들러 · 에러 코드 체계", "공통 응답 포맷 + 토큰 유출 방지 테스트", "done"],
-        ["Flyway 마이그레이션 V1~V4", "18개 테이블 + 세션 · 공개상품 · 이미지 키. ddl-auto: validate", "done"],
-        ["테스트 250개", "Testcontainers MySQL 8.0 + point3 는 WireMock. H2 로 대체하지 않는다", "done"],
+        ["Flyway 마이그레이션 V1~V5", "18개 테이블 + 세션 · 공개상품 · 이미지 키 · 미달 처리 표시. ddl-auto: validate", "done"],
+        ["테스트 263개", "Testcontainers MySQL 8.0 + point3 는 WireMock. H2 로 대체하지 않는다", "done"],
         ["EC2 + Docker Compose + Caddy 자동 TLS", "D-016. 월 $26", "done"],
         ["GitHub Actions OIDC → ECR → SSM 배포", "AWS 액세스 키를 GitHub 에 두지 않는다", "done"],
         ["Parameter Store 시크릿", "D-017. 배포 때마다 .env 재생성", "done"],
