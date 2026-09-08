@@ -66,6 +66,7 @@ public class OrderCreator {
 		// 판매 폼별로 묶는다. 재고 단위가 폼이라 같은 폼의 여러 옵션은 한 번에 확보해야 한다
 		Map<SaleForm, List<ProductOption>> byForm = groupByForm(options);
 
+		// 배송비는 일단 기본값으로 두고 항목을 다 담은 뒤 무료배송 기준을 적용한다
 		OrderGroup group = OrderGroup.create(newSessionToken(), buyer, seller, seller.getShippingFee());
 		LocalDateTime expiresAt = LocalDateTime.now(KST).plusMinutes(HOLD_MINUTES);
 
@@ -87,6 +88,10 @@ public class OrderCreator {
 			}
 			group.addOrder(order);
 		}
+
+		// 배송비는 여기서야 확정된다. 무료배송 기준이 상품 총액을 보는데 그 합계는
+		// 위 반복문이 끝나야 나온다 — 생성 시점에는 0 원이라 늘 기준 미달로 판정됐을 것이다
+		group.applyShippingFee(seller.shippingFeeFor(group.productTotal()));
 
 		validateMinOrderAmount(forms, group);
 		orderGroupRepository.saveAndFlush(group);

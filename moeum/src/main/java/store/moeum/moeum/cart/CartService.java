@@ -115,9 +115,13 @@ public class CartService {
 		boolean orderable = !items.isEmpty() && items.stream()
 				.allMatch(item -> item.status() == CartResponse.ItemStatus.AVAILABLE);
 
+		// 주문 생성이 쓰는 것과 같은 기준이다. 여기서 다르게 계산하면 화면에 "무료배송" 이라
+		// 떠 놓고 2차금에서 배송비가 붙는다
+		int estimatedShippingFee = seller.shippingFeeFor(deposit1Total + deposit2Total);
+
 		return new CartResponse(
 				cart.getId(), seller.getId(), seller.getStoreSlug(),
-				seller.getShippingFee(), seller.getFreeShippingOver(),
+				seller.getShippingFee(), seller.getFreeShippingOver(), estimatedShippingFee,
 				deposit1Total, deposit2Total, orderable, items);
 	}
 

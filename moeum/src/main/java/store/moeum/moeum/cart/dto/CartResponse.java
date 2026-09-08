@@ -19,11 +19,17 @@ public record CartResponse(
 		@Schema(description = "상점 이름", example = "모음 상점")
 		String sellerName,
 
-		@Schema(description = "배송비. 묶음당 1회이고 2차금에서 청구된다", example = "3000")
+		@Schema(description = "셀러가 정한 기본 배송비. 무료배송 기준을 적용하기 전 값이다",
+				example = "3000")
 		int shippingFee,
 
 		@Schema(description = "이 금액 이상이면 배송비 면제. 설정하지 않았으면 null", example = "50000")
 		Integer freeShippingOver,
+
+		@Schema(description = "지금 담긴 것으로 주문하면 실제로 붙는 배송비. "
+				+ "무료배송 기준을 적용한 결과라 면제되면 0 이다. 화면에는 이 값을 쓴다",
+				example = "0")
+		int estimatedShippingFee,
 
 		@Schema(description = "1차금 합계. 주문할 때 바로 결제하는 금액이다", example = "60000")
 		int deposit1Total,

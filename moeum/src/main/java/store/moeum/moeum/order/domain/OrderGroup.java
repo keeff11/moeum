@@ -114,6 +114,31 @@ public class OrderGroup extends BaseTimeEntity {
 		this.deposit2Total += order.getDeposit2Sum();
 	}
 
+	/**
+	 * 상품 총액 = 1차금 + 2차금. <b>배송비는 빼고 센다.</b>
+	 *
+	 * 무료배송 기준이 보는 값이다 — 배송비를 포함하면 배송비 덕분에 배송비가 면제되는
+	 * 순환이 된다. api-spec 이 옵션가를 deposit1 + deposit2 로 정의하고 배송비를
+	 * 거기서 빼는 것과 같은 기준이다.
+	 */
+	public int productTotal() {
+		return deposit1Total + deposit2Total;
+	}
+
+	/**
+	 * 배송비를 확정한다. <b>주문 항목을 다 담은 뒤에 부른다.</b>
+	 *
+	 * 생성자에서 정할 수 없다 — 무료배송 기준은 상품 총액을 보는데,
+	 * 그 합계는 addOrder 가 끝나야 나온다.
+	 *
+	 * 한 번 정해지면 그대로 굳는다. 나중에 폼 하나를 취소해서 총액이 기준 아래로
+	 * 떨어져도 소급해서 배송비를 물리지 않는다 — 취소했더니 없던 배송비가 생기는 것은
+	 * 구매자가 납득할 수 없다.
+	 */
+	public void applyShippingFee(int fee) {
+		this.shippingFee = fee;
+	}
+
 	/** 2차금 청구액. 배송비는 묶음당 1회라 여기서 한 번만 더한다 */
 	public int secondPaymentAmount() {
 		return deposit2Total + shippingFee;
