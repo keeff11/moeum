@@ -395,12 +395,12 @@
 
     <div class="total">
       <div class="total-label">전체 진척 (로드맵 단계 비중 가중)</div>
-      <div class="total-num" id="totalNum">78<small>%</small></div>
+      <div class="total-num" id="totalNum">79<small>%</small></div>
       <div class="total-bar">
-        <div class="bar"><i style="width:78%"></i></div>
+        <div class="bar"><i style="width:79%"></i></div>
       </div>
       <div class="total-note">
-        <strong style="font-weight:500">81% 에서 내려갔다.</strong> 코드가 뒷걸음친 것이 아니라, 와이어프레임과 맞춰 보니 여태 판에 없던 셀러 어드민 화면(G1·G6·S10·G10)과 알림톡 항목이 드러나 분모가 커졌다. 구매자 쪽은 B0 부터 B8-C 취소까지 화면마다 API 가 있다. 비어 있는 쪽은 <strong style="font-weight:500">셀러 어드민 4화면</strong>과 <strong style="font-weight:500">알림톡 9종 중 5종</strong>, 그리고 여전히 <strong style="font-weight:500">point3 서버 토큰</strong>(09-09~10 예정)이다.
+        <strong style="font-weight:500">81% 에서 내려갔다.</strong> 코드가 뒷걸음친 것이 아니라, 와이어프레임과 맞춰 보니 여태 판에 없던 셀러 어드민 화면(G1·G6·S10·G10)과 알림톡 항목이 드러나 분모가 커졌다. 구매자 쪽은 B0 부터 B8-C 취소까지 화면마다 API 가 있다. 그 뒤 G12 설정(판매공간 주소 · 문의 연락처)을 화면대로 맞췄다 (D-030). 비어 있는 쪽은 <strong style="font-weight:500">셀러 어드민 4화면</strong>과 <strong style="font-weight:500">알림톡 9종 중 5종</strong>, 그리고 여전히 <strong style="font-weight:500">point3 서버 토큰</strong>(09-09~10 예정)이다.
       </div>
     </div>
 
@@ -452,7 +452,7 @@
       ]
     },
     {
-      name: "셀러 · 심사", pct: 82, weight: 6,
+      name: "셀러 · 심사", pct: 93, weight: 6,
       items: [
         ["온보딩 제출 → PENDING", "와이어프레임 ONB-121~125", "done"],
         ["심사 승인 · 반려 API", "로드맵상 '일단 수동 API'", "done"],
@@ -462,7 +462,7 @@
         ["상호명(store_name)", "공개 페이지 표시용 (V3). 대표자 실명을 쓰지 않는다", "done"],
         ["G12 설정 — 판매공간 주소 변경(SALE-105)", "화면대로 바꿀 수 있게 했다. 중복은 409, 이전 주소 링크는 죽으므로 변경 로그를 남긴다 (D-030)", "done"],
         ["G12 설정 — 구매자 문의 연락처", "V9. public_contact 를 따로 뒀다. 심사용 phone 은 공개 응답에 절대 담기지 않는다 (D-030)", "done"],
-        ["테스트 8개", "SellerServiceTest", "done"]
+        ["테스트 16개", "SellerServiceTest · SellerProfileTest", "done"]
       ]
     },
     {
@@ -594,7 +594,7 @@
       name: "공통 · 인프라", pct: 90, weight: 8,
       items: [
         ["전역 예외 핸들러 · 에러 코드 체계", "공통 응답 포맷 + 토큰 유출 방지 테스트", "done"],
-        ["Flyway 마이그레이션 V1~V8", "19개 테이블 + 세션 · 공개상품 · 미달 처리 · 알림 백오프 · 셀러 프로필 · 찜. ddl-auto: validate", "done"],
+        ["Flyway 마이그레이션 V1~V9", "19개 테이블 + 세션 · 공개상품 · 미달 처리 · 알림 백오프 · 셀러 프로필 · 찜 · 문의 연락처. ddl-auto: validate", "done"],
         ["테스트 317개", "Testcontainers MySQL 8.0 + point3 는 WireMock. 테스트 JVM 은 KST 고정 (D-028)", "done"],
         ["EC2 + Docker Compose + Caddy 자동 TLS", "D-016. 월 $26", "done"],
         ["GitHub Actions OIDC → ECR → SSM 배포", "AWS 액세스 키를 GitHub 에 두지 않는다", "done"],
@@ -609,7 +609,7 @@
       ]
     },
     {
-      name: "와이어프레임 대조 (화면 ID ↔ API)", pct: 63, weight: 0, open: true,
+      name: "와이어프레임 대조 (화면 ID ↔ API)", pct: 69, weight: 0, open: true,
       items: [
         ["B0 셀러 페이지", "GET /stores/{storeSlug} + /me/wishlist. 헤더 · 목록 · 검색 · 탭 · 하트까지 화면 그대로 (D-029)", "done"],
         ["B1–B7 구매자 결제", "checkout-sessions · pay · confirm. B6-2 결제 실패의 '재시도(같은 주문 유지)'는 D-023 재결제가 받는다", "done"],
