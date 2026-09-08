@@ -75,9 +75,39 @@ public class SellerService {
 			throw new BusinessException(ErrorCode.FORBIDDEN);
 		}
 
+		changeSlugIfNeeded(seller, request.storeSlug());
+
 		seller.updateProfile(request.storeName(), blankToNull(request.bio()),
-				blankToNull(request.socialUrl()), imageKey);
+				blankToNull(request.socialUrl()), imageKey, blankToNull(request.publicContact()));
+
+		try {
+			sellerRepository.flush();
+		} catch (DataIntegrityViolationException e) {
+			// uk_seller_slug. 미리 확인해도 두 요청이 동시에 통과할 수 있다
+			log.warn("판매공간 주소 유니크 위반: storeSlug={}", request.storeSlug());
+			throw new BusinessException(ErrorCode.DUPLICATE_STORE_SLUG);
+		}
 		return seller;
+	}
+
+	/**
+	 * 판매공간 주소 변경 (와이어프레임 G12 · SALE-105).
+	 *
+	 * <b>이미 뿌린 링크가 죽는다.</b> 예전 주소로 들어오던 구매자는 404 를 본다.
+	 * 화면이 이 기능을 요구하므로 막지 않되, 무슨 일이 일어났는지 알 수 있게 로그를 남긴다 —
+	 * "어제까지 되던 링크가 안 된다"는 문의가 오면 이 로그가 유일한 단서다.
+	 */
+	private void changeSlugIfNeeded(Seller seller, String newSlug) {
+		String before = seller.getStoreSlug();
+		if (newSlug == null || newSlug.equals(before)) {
+			return;
+		}
+		if (sellerRepository.existsByStoreSlug(newSlug)) {
+			throw new BusinessException(ErrorCode.DUPLICATE_STORE_SLUG);
+		}
+		seller.changeStoreSlug(newSlug);
+		log.info("판매공간 주소 변경: sellerId={}, {} → {} (이전 주소 링크는 더 이상 열리지 않는다)",
+				seller.getId(), before, newSlug);
 	}
 
 	/** 빈 문자열과 null 을 같게 다룬다 — 프론트가 지울 때 어느 쪽을 보낼지 정하게 두지 않는다 */

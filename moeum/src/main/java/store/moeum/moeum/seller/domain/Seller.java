@@ -73,6 +73,15 @@ public class Seller extends BaseTimeEntity {
 	@Column(name = "profile_image_key", length = 500)
 	private String profileImageKey;
 
+	/**
+	 * 구매자 문의 연락처 (V9). <b>아래 {@code phone} 과 다른 값이다.</b>
+	 *
+	 * phone 은 심사·정산 담당자가 연락하는 번호라 대표자 개인 번호일 수 있다.
+	 * 이쪽은 셀러가 공개하겠다고 적는 값이라 구매자에게 나간다.
+	 */
+	@Column(name = "public_contact", length = 100)
+	private String publicContact;
+
 	/** 주문 묶음당 1회 부과. 배송비의 주체는 판매 폼이 아니라 셀러다 */
 	@Column(name = "shipping_fee", nullable = false)
 	private int shippingFee;
@@ -146,11 +155,30 @@ public class Seller extends BaseTimeEntity {
 	 * 공개 프로필을 갈아 끼운다. null 을 주면 지운 것으로 본다 —
 	 * 소개글을 비우고 싶은 셀러가 지울 방법이 없으면 안 된다.
 	 */
-	public void updateProfile(String storeName, String bio, String socialUrl, String profileImageKey) {
+	public void updateProfile(String storeName, String bio, String socialUrl,
+	                          String profileImageKey, String publicContact) {
 		this.storeName = storeName;
 		this.bio = bio;
 		this.socialUrl = socialUrl;
 		this.profileImageKey = profileImageKey;
+		this.publicContact = publicContact;
+	}
+
+	/**
+	 * 판매공간 주소를 바꾼다 (와이어프레임 G12 · SALE-105).
+	 *
+	 * <b>이미 뿌린 링크는 죽는다.</b> storeSlug 가 곧 공개 주소라, 바꾸는 순간
+	 * 예전 주소로 들어오던 구매자는 404 를 본다. 화면이 이 기능을 요구하므로 막지 않되,
+	 * 되돌릴 수 없는 변경이라는 것은 호출자가 알고 있어야 한다.
+	 *
+	 * @return 실제로 바뀌었으면 true. 같은 값이면 아무 일도 하지 않는다
+	 */
+	public boolean changeStoreSlug(String newSlug) {
+		if (newSlug == null || newSlug.equals(this.storeSlug)) {
+			return false;
+		}
+		this.storeSlug = newSlug;
+		return true;
 	}
 
 	/** 주문 묶음 금액 기준 배송비. 무료 기준을 넘으면 0 */

@@ -68,7 +68,8 @@ class StorePageTest extends IntegrationTest {
 				.email("seller@moeum.store")
 				.build());
 		seller.approve();
-		seller.updateProfile("모음 상점", "굿즈 선주문 전문", "https://instagram.com/moeum", null);
+		seller.updateProfile("모음 상점", "굿즈 선주문 전문", "https://instagram.com/moeum",
+				null, "010-9999-0000");
 		sellerRepository.saveAndFlush(seller);
 	}
 
@@ -83,6 +84,8 @@ class StorePageTest extends IntegrationTest {
 		assertThat(header.name()).isEqualTo("모음 상점");
 		assertThat(header.bio()).isEqualTo("굿즈 선주문 전문");
 		assertThat(header.socialUrl()).isEqualTo("https://instagram.com/moeum");
+		// 심사용 phone 이 아니라 셀러가 공개하겠다고 적은 값이다 (V9)
+		assertThat(header.publicContact()).isEqualTo("010-9999-0000");
 		assertThat(header.shippingFee()).isEqualTo(3000);
 		assertThat(header.freeShippingOver()).isEqualTo(50000);
 	}

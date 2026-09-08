@@ -33,6 +33,8 @@ public record StorePageResponse(StoreSeller seller, List<StoreItem> items, PageI
 			String bio,
 			String socialUrl,
 			String profileImageUrl,
+			/** 구매자 문의 연락처. 심사용 phone 이 아니다 — 그쪽은 대표자 개인 번호일 수 있다 */
+			String publicContact,
 			int shippingFee,
 			Integer freeShippingOver
 	) {
@@ -79,6 +81,7 @@ public record StorePageResponse(StoreSeller seller, List<StoreItem> items, PageI
 				seller.getBio(),
 				seller.getSocialUrl(),
 				profileImageUrl,
+				seller.getPublicContact(),
 				seller.getShippingFee(),
 				seller.getFreeShippingOver()
 		);

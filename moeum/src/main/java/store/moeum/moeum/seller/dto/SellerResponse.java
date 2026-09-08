@@ -17,6 +17,8 @@ public record SellerResponse(
 		String bio,
 		String socialUrl,
 		String profileImageUrl,
+		/** 구매자에게 공개되는 문의처. 아래 phone 은 심사·정산용이라 별개다 */
+		String publicContact,
 		ReviewStatus reviewStatus,
 		String representativeName,
 		String phone,
@@ -40,6 +42,7 @@ public record SellerResponse(
 				seller.getBio(),
 				seller.getSocialUrl(),
 				profileImageUrl,
+				seller.getPublicContact(),
 				seller.getReviewStatus(),
 				seller.getRepresentativeName(),
 				seller.getPhone(),
