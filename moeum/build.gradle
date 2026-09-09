@@ -61,6 +61,12 @@ tasks.named('test') {
 	// Hibernate 가 쓴 값과 JDBC 로 읽은 값이 9시간 어긋난다.
 	// 개발자마다 로컬 타임존이 달라도 같은 결과가 나오게 하는 목적도 있다.
 	systemProperty 'user.timezone', 'Asia/Seoul'
+
+	// FlywayMigrationTest 가 이 문서를 읽어 실제 스키마와 대조한다.
+	// 선언하지 않으면 문서만 고쳤을 때 Gradle 이 test 를 UP-TO-DATE 로 건너뛴다.
+	inputs.file(file("$rootDir/../docs/schema.sql"))
+			.withPropertyName('schemaDoc')
+			.withPathSensitivity(PathSensitivity.RELATIVE)
 }
 
 tasks.withType(JavaCompile).configureEach {

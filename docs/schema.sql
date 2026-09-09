@@ -1,5 +1,11 @@
 -- =====================================================================
--- 공동구매 · 단독 판매 플랫폼 스키마 v3 (MySQL 8.0)
+-- 공동구매 · 단독 판매 플랫폼 스키마 v4 (MySQL 8.0)
+--
+-- 이 파일은 읽으라고 있는 스냅샷이지 실행하는 파일이 아니다.
+-- 스키마의 원본은 moeum/src/main/resources/db/migration/ 의 Flyway 파일들이고,
+-- 여기는 V1~V10 을 전부 적용한 결과를 한 곳에 모아 둔 것이다.
+-- 스키마를 바꿀 때는 새 마이그레이션 파일을 만들고 이 파일을 같이 고친다 —
+-- 둘이 어긋나면 FlywayMigrationTest 가 깨진다.
 --
 -- v2 대비 변경점 (프론트 API 계약 반영)
 --   · 금액 구조 변경 — 옵션이 deposit1/deposit2 를 절대값으로 갖는다
@@ -9,17 +15,33 @@
 --   · buyer_address 분리 — /me/address 로 재사용되는 단일 배송지
 --   · order_group.status 에 CONFIRMING 추가 (프론트 계약)
 --   · checkout_session = order_group (CREATED 상태). 별도 테이블 아님
+--
+-- v3(=V1) 이후 마이그레이션이 더한 것
+--   · V2  SPRING_SESSION · SPRING_SESSION_ATTRIBUTES — 세션 저장소를 DB 로 (D-020)
+--   · V3  seller.store_name, sale_form_image — 공개 상품 API
+--   · V4  sale_form_image.url → object_key — 전체 URL 대신 S3 객체 키
+--   · V5  sale_form.shortfall_done_at — 목표수량 미달 처리 멱등 가드
+--   · V6  outbox.next_attempt_at — 재시도 백오프 겸 처리 중 임대
+--   · V7  seller.bio · social_url · profile_image_key — 셀러 페이지(B0) 헤더
+--   · V8  wishlist — 찜
+--   · V9  seller.public_contact — 구매자 문의 연락처 (G12)
+--   · V10 order_group.order_no — 사람이 읽는 주문번호 (G6)
 -- =====================================================================
 
 SET NAMES utf8mb4;
 
 -- ---------------------------------------------------------------------
 -- 셀러 — 배송비의 주체
+--
+-- 심사·정산용 값(representative_name · phone · business_no_enc · settlement_acct_enc)과
+-- 구매자에게 보이라고 받는 공개 값(store_name · bio · social_url · profile_image_key ·
+-- public_contact)이 한 테이블에 있다. 응답 DTO 에서 갈린다 — 심사용은 나가면 안 된다.
 -- ---------------------------------------------------------------------
 CREATE TABLE seller (
     id                  BIGINT       NOT NULL AUTO_INCREMENT,
     kakao_id            VARCHAR(64)  NOT NULL,
     store_slug          VARCHAR(64)  NOT NULL COMMENT '판매공간 URL 식별자',
+    store_name          VARCHAR(60)      NULL COMMENT '공개 표시용 상호명. 비면 store_slug 로 대체',
     review_status       VARCHAR(20)  NOT NULL DEFAULT 'PENDING'
                         COMMENT 'PENDING, APPROVED, REJECTED',
 
@@ -29,12 +51,19 @@ CREATE TABLE seller (
     business_no_enc     VARBINARY(255)   NULL COMMENT '사업자번호(암호화)',
     settlement_acct_enc VARBINARY(255)   NULL COMMENT '정산계좌(암호화)',
     representative_name VARCHAR(50)      NULL,
-    phone               VARCHAR(20)      NULL,
+    phone               VARCHAR(20)      NULL COMMENT '심사·정산 담당자 연락처. 공개하지 않는다',
     email               VARCHAR(120)     NULL,
     approved_at         DATETIME(6)      NULL,
     created_at          DATETIME(6)  NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
     updated_at          DATETIME(6)  NOT NULL DEFAULT CURRENT_TIMESTAMP(6)
                         ON UPDATE CURRENT_TIMESTAMP(6),
+
+    -- 셀러 페이지(B0) 헤더에 노출되는 공개 프로필 (V7, V9)
+    bio                 VARCHAR(100)     NULL COMMENT '한 줄 소개. 셀러 페이지 헤더에 노출된다',
+    social_url          VARCHAR(200)     NULL COMMENT '인스타 등 소셜 주소. 헤더 버튼에 걸린다',
+    profile_image_key   VARCHAR(500)     NULL COMMENT 'S3 객체 키. 전체 URL 을 저장하지 않는다',
+    public_contact      VARCHAR(100)     NULL COMMENT '구매자 문의 연락처. 심사용 phone 과 별개로 공개된다',
+
     PRIMARY KEY (id),
     UNIQUE KEY uk_seller_kakao (kakao_id),
     UNIQUE KEY uk_seller_slug  (store_slug)
@@ -72,9 +101,15 @@ CREATE TABLE sale_form (
     created_at       DATETIME(6)  NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
     updated_at       DATETIME(6)  NOT NULL DEFAULT CURRENT_TIMESTAMP(6)
                      ON UPDATE CURRENT_TIMESTAMP(6),
+
+    shortfall_done_at DATETIME(6)     NULL
+                     COMMENT '목표수량 미달 처리를 끝낸 시각. NULL 이면 아직 안 훑었다',
+
     PRIMARY KEY (id),
     UNIQUE KEY uk_sale_form_slug (seller_id, slug),
     KEY idx_sale_form_status (status, closes_at),
+    -- 미달 처리 배치가 매분 도는 조회. CLOSED 이면서 아직 안 훑은 폼만 집는다
+    KEY idx_sale_form_shortfall (status, shortfall_done_at),
     CONSTRAINT fk_sale_form_seller FOREIGN KEY (seller_id) REFERENCES seller (id),
     CONSTRAINT ck_sale_form_qty CHECK (held >= 0 AND sold >= 0)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -91,6 +126,28 @@ CREATE TABLE sale_form_history (
     PRIMARY KEY (id),
     KEY idx_history_form (sale_form_id, created_at),
     CONSTRAINT fk_history_form FOREIGN KEY (sale_form_id) REFERENCES sale_form (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+
+-- ---------------------------------------------------------------------
+-- 상품 이미지 — 순서가 곧 노출 순서이고 images[0] 이 대표 이미지다
+--
+-- 전체 URL 이 아니라 S3 객체 키를 담는다. 버킷을 바꾸거나 CloudFront 를 앞에
+-- 세울 때 쌓인 행을 전부 고치지 않고 응답 조립 코드 한 곳만 바꾸면 된다.
+--
+-- 폼이 지워지면 이미지도 같이 지운다 — 이미지만 남아 있을 이유가 없다.
+-- ---------------------------------------------------------------------
+CREATE TABLE sale_form_image (
+    id           BIGINT       NOT NULL AUTO_INCREMENT,
+    sale_form_id BIGINT       NOT NULL,
+    object_key   VARCHAR(500) NOT NULL
+                 COMMENT 'S3 객체 키 (예: sale-forms/12/9f3a....jpg). 전체 URL 을 저장하지 않는다',
+    sort_order   INT          NOT NULL DEFAULT 0,
+    created_at   DATETIME(6)  NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    PRIMARY KEY (id),
+    KEY idx_sale_form_image_form (sale_form_id, sort_order),
+    CONSTRAINT fk_sale_form_image_form FOREIGN KEY (sale_form_id)
+        REFERENCES sale_form (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 
@@ -162,6 +219,33 @@ CREATE TABLE buyer_address (
 
 
 -- ---------------------------------------------------------------------
+-- 찜(하트) — 셀러 페이지 카드와 상품 상세에서 누른다
+--
+-- 판매 폼 단위다. 재고 · 마감 · 목표수량이 전부 폼 단위라 구매자가 보는
+-- '상품'의 실체가 폼이고, 찜도 같은 단위여야 한다 (D-021 과 같은 이유).
+--
+-- 셀러 페이지 목록 응답에는 이 값이 들어가지 않는다. 넣는 순간 그 응답이
+-- 사용자별로 갈려 모두에게 같은 응답을 줄 수 없게 된다 (D-029) —
+-- 프론트가 /me/wishlist 로 id 목록만 따로 받아 합친다.
+--
+-- uk_wishlist 가 중복 방지의 전부다. 두 요청이 동시에 통과할 수 있으므로
+-- 최종 판정은 DB 에 맡긴다.
+-- ---------------------------------------------------------------------
+CREATE TABLE wishlist (
+    id           BIGINT      NOT NULL AUTO_INCREMENT,
+    buyer_id     BIGINT      NOT NULL,
+    sale_form_id BIGINT      NOT NULL,
+    created_at   DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_wishlist (buyer_id, sale_form_id),
+    -- 폼이 마감될 때 찜한 사람에게 알리려면 폼 기준 조회가 필요하다
+    KEY idx_wishlist_form (sale_form_id),
+    CONSTRAINT fk_wishlist_buyer FOREIGN KEY (buyer_id)     REFERENCES buyer (id),
+    CONSTRAINT fk_wishlist_form  FOREIGN KEY (sale_form_id) REFERENCES sale_form (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='찜한 판매 폼';
+
+
+-- ---------------------------------------------------------------------
 -- 장바구니 — 셀러당 1개. 재고를 잡지 않는다
 -- ---------------------------------------------------------------------
 CREATE TABLE cart (
@@ -220,15 +304,27 @@ CREATE TABLE order_group (
     created_at     DATETIME(6)  NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
     updated_at     DATETIME(6)  NOT NULL DEFAULT CURRENT_TIMESTAMP(6)
                    ON UPDATE CURRENT_TIMESTAMP(6),
+
+    order_no       VARCHAR(20)      NULL
+                   COMMENT '사람이 읽는 주문번호 ORD-YYMMDD-{id}. /pay 에서 발급, 그 전에는 NULL',
+
     PRIMARY KEY (id),
-    UNIQUE KEY uk_group_session (session_token),
-    UNIQUE KEY uk_group_order   (order_token),
+    UNIQUE KEY uk_group_session  (session_token),
+    UNIQUE KEY uk_group_order    (order_token),
+    UNIQUE KEY uk_group_order_no (order_no),
     KEY idx_group_buyer  (buyer_id, created_at),
     KEY idx_group_seller (seller_id, status),
+    -- 셀러 주문 목록(G6) 전용. idx_group_seller 는 상태를 IN 으로 거르고
+    -- 최신순으로 정렬하는 그 화면의 쿼리에서 정렬을 태우지 못한다
+    KEY idx_group_seller_created (seller_id, created_at),
     KEY idx_group_status_updated (status, updated_at),
     CONSTRAINT fk_group_buyer  FOREIGN KEY (buyer_id)  REFERENCES buyer (id),
     CONSTRAINT fk_group_seller FOREIGN KEY (seller_id) REFERENCES seller (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- order_no 는 그날의 순번을 쓰지 않는다 — 순번을 매기려면 카운터 행을 잠가야 하고,
+-- 결제 시작 경로에 락을 하나 더 놓을 값이 아니다. id 가 이미 유일하다.
+-- 결제 전 체크아웃 세션(CREATED)에는 번호를 붙이지 않는다. 15분 뒤 사라질 자리다.
 
 -- 2차 결제 청구액 = deposit2_total + shipping_fee
 
@@ -394,22 +490,76 @@ CREATE TABLE shipping (
 
 -- ---------------------------------------------------------------------
 -- Outbox
+--
+-- next_attempt_at 이 두 가지를 겸한다.
+--   ① 실패 후 백오프 — 실패할 때마다 뒤로 민다. created_at(적재 시각)으로는
+--      계산할 수 없어 실패가 쌓여도 간격이 벌어지지 않는다
+--   ② 처리 중 임대   — 집어갈 때도 앞으로 민다. 릴레이가 발송하는 동안 다른
+--      인스턴스가 같은 행을 집으면 알림톡이 두 번 나간다.
+--      프로세스가 죽으면 임대가 만료돼 자동으로 다시 잡힌다
 -- ---------------------------------------------------------------------
 CREATE TABLE outbox (
-    id             BIGINT       NOT NULL AUTO_INCREMENT,
-    aggregate_type VARCHAR(30)  NOT NULL COMMENT 'ORDER_GROUP, ORDER, SALE_FORM, PAYMENT',
-    aggregate_id   BIGINT       NOT NULL,
-    event_type     VARCHAR(50)  NOT NULL,
-    payload        JSON         NOT NULL,
-    status         VARCHAR(20)  NOT NULL DEFAULT 'PENDING'
-                   COMMENT 'PENDING, SENT, DEAD',
-    retry_count    INT          NOT NULL DEFAULT 0,
-    last_error     VARCHAR(500)     NULL,
-    created_at     DATETIME(6)  NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-    sent_at        DATETIME(6)      NULL,
+    id              BIGINT       NOT NULL AUTO_INCREMENT,
+    aggregate_type  VARCHAR(30)  NOT NULL COMMENT 'ORDER_GROUP, ORDER, SALE_FORM, PAYMENT',
+    aggregate_id    BIGINT       NOT NULL,
+    event_type      VARCHAR(50)  NOT NULL,
+    payload         JSON         NOT NULL,
+    status          VARCHAR(20)  NOT NULL DEFAULT 'PENDING'
+                    COMMENT 'PENDING, SENT, DEAD',
+    retry_count     INT          NOT NULL DEFAULT 0,
+    last_error      VARCHAR(500)     NULL,
+    created_at      DATETIME(6)  NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    sent_at         DATETIME(6)      NULL,
+    next_attempt_at DATETIME(6)  NOT NULL DEFAULT CURRENT_TIMESTAMP(6)
+                    COMMENT '이 시각 전에는 집지 않는다. 실패 백오프와 처리 중 임대를 겸한다',
     PRIMARY KEY (id),
-    KEY idx_outbox_pending (status, created_at)
+    KEY idx_outbox_pending (status, next_attempt_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+
+-- =====================================================================
+-- 인프라 테이블 — 도메인이 아니지만 같은 스키마에 산다
+-- =====================================================================
+
+-- ---------------------------------------------------------------------
+-- 세션 저장소 (V2, D-020). 톰캣 인메모리 대신 DB 에 담는다.
+--
+-- Spring Session 3.5.x 의 공식 스키마 그대로다. 손대지 않는다 —
+-- 라이브러리가 이 컬럼명 · 타입을 그대로 쿼리한다.
+-- 스키마는 Flyway 가 소유한다 (spring.session.jdbc.initialize-schema=never).
+--
+-- 시각은 전부 epoch millis(BIGINT) 다. 만료 정리 스케줄러가 EXPIRY_TIME 으로
+-- 훑으므로 IX2 가 그 인덱스다.
+-- ATTRIBUTE_BYTES 는 자바 직렬화 바이트라 사람이 읽을 수 있는 형태가 아니다.
+-- 그래서 카카오 access token 은 여기 넣지 않는다 (D-020).
+-- ---------------------------------------------------------------------
+CREATE TABLE SPRING_SESSION (
+    PRIMARY_ID            CHAR(36)     NOT NULL,
+    SESSION_ID            CHAR(36)     NOT NULL,
+    CREATION_TIME         BIGINT       NOT NULL,
+    LAST_ACCESS_TIME      BIGINT       NOT NULL,
+    MAX_INACTIVE_INTERVAL INT          NOT NULL
+                          COMMENT '초 단위. server.servlet.session.timeout 이 들어온다',
+    EXPIRY_TIME           BIGINT       NOT NULL,
+    PRINCIPAL_NAME        VARCHAR(100)     NULL,
+    CONSTRAINT SPRING_SESSION_PK PRIMARY KEY (PRIMARY_ID)
+) ENGINE=InnoDB ROW_FORMAT=DYNAMIC;
+
+CREATE UNIQUE INDEX SPRING_SESSION_IX1 ON SPRING_SESSION (SESSION_ID);
+CREATE INDEX SPRING_SESSION_IX2 ON SPRING_SESSION (EXPIRY_TIME);
+CREATE INDEX SPRING_SESSION_IX3 ON SPRING_SESSION (PRINCIPAL_NAME);
+
+-- 세션이 지워지면 속성도 같이 지워진다 (ON DELETE CASCADE)
+CREATE TABLE SPRING_SESSION_ATTRIBUTES (
+    SESSION_PRIMARY_ID CHAR(36)     NOT NULL,
+    ATTRIBUTE_NAME     VARCHAR(200) NOT NULL,
+    ATTRIBUTE_BYTES    BLOB         NOT NULL,
+    CONSTRAINT SPRING_SESSION_ATTRIBUTES_PK PRIMARY KEY (SESSION_PRIMARY_ID, ATTRIBUTE_NAME),
+    CONSTRAINT SPRING_SESSION_ATTRIBUTES_FK FOREIGN KEY (SESSION_PRIMARY_ID)
+        REFERENCES SPRING_SESSION (PRIMARY_ID) ON DELETE CASCADE
+) ENGINE=InnoDB ROW_FORMAT=DYNAMIC;
+
+-- flyway_schema_history 는 여기 없다. Flyway 가 스스로 만든다.
 
 
 -- =====================================================================
