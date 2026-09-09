@@ -384,7 +384,7 @@
       <span class="sep">/</span>
       <span>2026-09-08 기준</span>
       <span class="sep">/</span>
-      <span>main @ b1175ea</span>
+      <span>main @ 0719ddb</span>
     </div>
     <h1>도메인별 개발 현황</h1>
     <p class="lede">
@@ -395,9 +395,9 @@
 
     <div class="total">
       <div class="total-label">전체 진척 (로드맵 단계 비중 가중)</div>
-      <div class="total-num" id="totalNum">80<small>%</small></div>
+      <div class="total-num" id="totalNum">81<small>%</small></div>
       <div class="total-bar">
-        <div class="bar"><i style="width:80%"></i></div>
+        <div class="bar"><i style="width:81%"></i></div>
       </div>
       <div class="total-note">
         <strong style="font-weight:500">81% 에서 내려갔다.</strong> 코드가 뒷걸음친 것이 아니라, 와이어프레임과 맞춰 보니 여태 판에 없던 셀러 어드민 화면(G1·G6·S10·G10)과 알림톡 항목이 드러나 분모가 커졌다. 구매자 쪽은 B0 부터 B8-C 취소까지 화면마다 API 가 있다. 그 뒤 G12 설정을 화면대로 맞추고(D-030), 스웨거 속성 설명을 전부 채우고(D-031), <strong style="font-weight:500">무료배송 기준이 청구에 안 걸려 있던 것을 고쳤다</strong>(D-032). 비어 있는 쪽은 <strong style="font-weight:500">셀러 어드민 4화면</strong>과 <strong style="font-weight:500">알림톡 9종 중 5종</strong>, 그리고 여전히 <strong style="font-weight:500">point3 서버 토큰</strong>(09-09~10 예정)이다.
@@ -420,7 +420,7 @@
   <main class="rows" id="rows"></main>
 
   <footer>
-    <div><strong style="font-weight:500;color:var(--ink-2)">다음 한 걸음</strong> — ① point3 <strong style="font-weight:500">서버 API 토큰</strong> 수령(09-09~10 예정. clientId 와 다른 값이다) → ② 소액 실결제로 결제→취소 검증(샌드박스가 없다) → ③ 카카오 알림톡 계정·템플릿 심사(항목 9종이 8/26 에 확정됐다. 발송기만 갈아 끼우면 된다) → ④ 셀러 어드민 <strong style="font-weight:500">G6 주문 목록</strong>부터 — G1 대시보드도 S10 청구도 이 조회 위에 얹힌다</div>
+    <div><strong style="font-weight:500;color:var(--ink-2)">다음 한 걸음</strong> — ① point3 <strong style="font-weight:500">서버 API 토큰</strong> 수령(09-09~10 예정. clientId 와 다른 값이다) → ② 소액 실결제로 결제→취소 검증(샌드박스가 없다) → ③ 카카오 알림톡 계정·템플릿 심사(항목 9종이 8/26 에 확정됐다. 발송기만 갈아 끼우면 된다) → ④ G6 위에 <strong style="font-weight:500">S10 일괄 청구</strong>와 <strong style="font-weight:500">G1 대시보드</strong> — 청구 대상 집계는 G6 의 2차금 미납 탭이 그대로 쓰인다</div>
     <div>가중치는 로드맵 8단계의 작업량 비중으로 잡았다. 결제 22 · 주문 12 · 판매폼 10 · 취소 10 · 인증 8 · 인프라 8 · 셀러운영 8 · 셀러심사 6 · 장바구니 6 · 알림 6 · 구매자 4. 맨 아래 <strong style="font-weight:500">와이어프레임 대조</strong> 행은 같은 사실을 화면 쪽에서 다시 센 것이라 가중치가 없다 — 전체 진척에 두 번 들어가지 않는다.</div>
   </footer>
 </div>
@@ -486,12 +486,12 @@
       ]
     },
     {
-      name: "구매자 · 배송지", pct: 95, weight: 4,
+      name: "구매자 · 배송지", pct: 100, weight: 4,
       items: [
         ["카카오 첫 로그인 시 buyer 생성", "findOrCreate", "done"],
         ["찜(하트)", "V8. 목록과 분리해 응답이 사용자별로 갈리지 않게 했다. 찜·해제 둘 다 멱등", "done"],
         ["GET · PUT /me/address", "", "done"],
-        ["주문 시 shipping 스냅샷 복사", "배송지 스냅샷이 아직 없다", "todo"],
+        ["주문 시 shipping 스냅샷 복사", "D-033. /pay 에서 buyer_address 를 떠 온다. 구매자가 이사해도 발송한 주문의 주소가 흔들리지 않는다. 배송지가 없으면 결제가 400 이다", "done"],
         ["payer_id 저장", "1차금 confirm 에서 받아 보관. 이미 있으면 덮어쓰지 않는다 (point3-api 5절)", "done"]
       ]
     },
@@ -579,11 +579,11 @@
       ]
     },
     {
-      name: "셀러 운영 (G1 · G6 · S10 · G10)", pct: 14, weight: 8,
+      name: "셀러 운영 (G1 · G6 · S10 · G10)", pct: 30, weight: 8,
       items: [
         ["입고 처리 → orders.status = ARRIVED", "폼 단위로 처리. 묶음의 모든 폼이 입고돼야 2차금이 열린다", "done"],
         ["G1 셀러 홈 — 대시보드 집계", "화면이 요구하는 것: 처리할 주문(2차금 미납 N건 · 발송 대기 N건, DUE-110) · 판매 카드의 모집 68/100 과 D-5 · 최근 주문. 이걸 한 번에 주는 API 가 없다. 진행 판매 0건이면 빈 상태", "todo"],
-        ["G6 주문 목록", "검색 · 필터 · 상태 탭 5종 · 상세 드로어(결제/상품/구매자/상태). 지금 주문 조회는 구매자의 orderToken 기준뿐이라 셀러가 자기 주문을 훑을 길이 없다", "todo"],
+        ["G6 주문 목록", "GET /seller/orders — 상태 탭 5종 · 검색 4종 · 판매별 필터 · 상세 드로어. 2차금 미납 탭은 전 폼이 입고된 건만 센다 (D-033). 발송 완료 탭은 송장 등록이 없어 아직 0건이다", "done"],
         ["S10 2차금 일괄 청구", "셀러가 대상 주문을 모아 '청구하기'를 누르는 화면. 코드는 전 폼 입고 시점에 SECOND_PAYMENT_DUE 를 자동 적재만 하고, 청구 액션과 대상·금액 집계가 없다. 자동출금은 없고 구매자 승인이 필요하다", "todo"],
         ["G10 결제 내역", "구분 필터 · 상태 탭 6종 · 상세 드로어(8필드+취소 여부). 셀러용 결제 조회 API 가 없다", "todo"],
         ["발주서 다운로드", "옵션별 수량 집계 → CSV. 와이어프레임에는 아직 화면이 없다", "todo"],
@@ -594,8 +594,8 @@
       name: "공통 · 인프라", pct: 90, weight: 8,
       items: [
         ["전역 예외 핸들러 · 에러 코드 체계", "공통 응답 포맷 + 토큰 유출 방지 테스트", "done"],
-        ["Flyway 마이그레이션 V1~V9", "19개 테이블 + 세션 · 공개상품 · 미달 처리 · 알림 백오프 · 셀러 프로필 · 찜 · 문의 연락처. ddl-auto: validate", "done"],
-        ["테스트 328개", "Testcontainers MySQL 8.0 + point3 는 WireMock. 테스트 JVM 은 KST 고정 (D-028). 스웨거 설명 누락도 잡는다 (D-031)", "done"],
+        ["Flyway 마이그레이션 V1~V10", "19개 테이블 + 세션 · 공개상품 · 미달 처리 · 알림 백오프 · 셀러 프로필 · 찜 · 문의 연락처 · 주문번호. ddl-auto: validate", "done"],
+        ["테스트 353개", "Testcontainers MySQL 8.0 + point3 는 WireMock. 테스트 JVM 은 KST 고정 (D-028). 스웨거 설명 누락도 잡는다 (D-031)", "done"],
         ["EC2 + Docker Compose + Caddy 자동 TLS", "D-016. 월 $26", "done"],
         ["GitHub Actions OIDC → ECR → SSM 배포", "AWS 액세스 키를 GitHub 에 두지 않는다", "done"],
         ["Parameter Store 시크릿", "D-017. 배포 때마다 .env 재생성", "done"],
@@ -609,7 +609,7 @@
       ]
     },
     {
-      name: "와이어프레임 대조 (화면 ID ↔ API)", pct: 69, weight: 0, open: true,
+      name: "와이어프레임 대조 (화면 ID ↔ API)", pct: 70, weight: 0, open: true,
       items: [
         ["B0 셀러 페이지", "GET /stores/{storeSlug} + /me/wishlist. 헤더 · 목록 · 검색 · 탭 · 하트까지 화면 그대로 (D-029)", "done"],
         ["B1–B7 구매자 결제", "checkout-sessions · pay · confirm. B6-2 결제 실패의 '재시도(같은 주문 유지)'는 D-023 재결제가 받는다", "done"],
@@ -623,7 +623,7 @@
         ["G12 설정", "프로필 · 판매공간 주소 · 문의 연락처까지 화면 그대로 (D-030)", "done"],
         ["I 알림톡 발송 항목", "채택 9종 중 4종. 셀러향 2종은 수신자 구분부터 없다 — 알림 행 참고", "part"],
         ["G1 셀러 홈 대시보드", "API 없음", "todo"],
-        ["G6 주문 목록", "API 없음", "todo"],
+        ["G6 주문 목록", "GET /seller/orders. 판매별 목록(G5-O)도 saleFormId 만 붙여 같은 것을 쓴다", "done"],
         ["S10 2차금 일괄 청구", "API 없음", "todo"],
         ["G10 결제 내역", "API 없음", "todo"],
         ["대조 범위", "G1 · G6 · S10 · G10 · G12 와 알림톡 항목은 주석 카드를 열어 문장 단위로 읽었다. 셀러 1·3·4 와 구매자 B1~B13 은 화면 단위로만 맞춰 봤고 필드 단위 대조는 아직이다", "check"]
