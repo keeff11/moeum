@@ -215,6 +215,29 @@ put LEGACY_DOMAIN "shop1.cloud"
 `SELLER_CRYPTO_KEY` 는 **한 번 정하면 못 바꾼다.** 이 키로 암호화된 사업자번호·정산계좌를
 복호화할 수 없게 된다. 별도로 안전한 곳에 백업해 둔다.
 
+### point3 키 두 개 (2026-09-09 수령)
+
+point3 가 주는 값은 **성격이 정반대인 두 개**다. 같이 다루면 안 된다.
+
+```bash
+# 연동키 = 서버 API 토큰. Authorization: Bearer 로만 나간다.
+# 히스토리에 남지 않게 셸에 직접 치지 않는다
+read -rs P3_TOKEN && put POINT3_API_TOKEN "$P3_TOKEN" && unset P3_TOKEN
+
+# client id. 결제창을 띄우려고 브라우저에 그대로 내려가는 공개값이다
+aws ssm put-parameter --region ap-northeast-2 \
+    --name /moeum/prod/POINT3_CLIENT_ID --value "client-..." --type String --overwrite
+```
+
+`POINT3_BASE_URL` 은 등록하지 않는다. 기본값(`https://api.point3.io`)이 운영 주소와 같다.
+
+어느 값이 어느 쪽인지 헷갈리면 **형식으로 가른다** — client id 는 `client-` + UUID 다
+(`point3-api.md` 10절). 연동키가 `client-` 로 시작하면 두 값이 뒤바뀐 것이다.
+
+**둘이 컨테이너까지 가려면 `docker-compose.prod.yml` 의 `environment` 에도 이름이 있어야 한다.**
+Parameter Store 에만 넣으면 `.env` 에는 들어가지만 앱은 못 본다 — 토큰이 없던 동안에는
+드러나지 않던 구멍이라 키를 받은 날 같이 고쳤다.
+
 **`KAKAO_CLIENT_SECRET` 은 등록하지 않았다.** Parameter Store 는 빈 값을 저장할 수 없고
 (최소 1자), 카카오 Client Secret 은 선택 기능이라 안 쓰는 구성이 정상이기 때문이다.
 `deploy.sh` 가 파라미터가 없으면 빈 값으로 채워 주므로 앱은 정상 기동한다.

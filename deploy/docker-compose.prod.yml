@@ -58,6 +58,10 @@ services:
       KAKAO_CLIENT_ID: ${KAKAO_CLIENT_ID}
       KAKAO_CLIENT_SECRET: ${KAKAO_CLIENT_SECRET}
       KAKAO_REDIRECT_URI: ${KAKAO_REDIRECT_URI}
+      # point3. 아직 없으면 빈 값으로 뜨고 결제 호출만 막힌다 (Point3Properties.isConfigured)
+      # BASE_URL 은 기본값이 운영 주소와 같아서 넣지 않는다
+      POINT3_CLIENT_ID: ${POINT3_CLIENT_ID:-}
+      POINT3_API_TOKEN: ${POINT3_API_TOKEN:-}
     expose:
       - "8080"
     healthcheck:
