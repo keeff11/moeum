@@ -30,6 +30,7 @@ import store.moeum.moeum.payment.domain.PaymentRepository;
 import store.moeum.moeum.payment.domain.PaymentStatus;
 import store.moeum.moeum.payment.dto.PaymentResultResponse;
 import store.moeum.moeum.payment.infra.Point3Session;
+import store.moeum.moeum.payment.refund.RefundRepository;
 import store.moeum.moeum.saleform.domain.SaleFormRepository;
 
 import java.time.LocalDateTime;
@@ -57,6 +58,7 @@ public class PaymentWriter {
 	private final OrderGroupRepository orderGroupRepository;
 	private final StockHoldRepository stockHoldRepository;
 	private final SaleFormRepository saleFormRepository;
+	private final RefundRepository refundRepository;
 	private final ShippingRepository shippingRepository;
 	private final BuyerAddressRepository buyerAddressRepository;
 
@@ -360,12 +362,23 @@ public class PaymentWriter {
 				.findByOrderGroupIdAndPhase(group.getId(), phase)
 				.orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_NOT_FOUND));
 
-		return switch (payment.getStatus()) {
+		PaymentResultResponse result = switch (payment.getStatus()) {
 			case CAPTURED -> PaymentResultResponse.paid(orderToken);
 			case FAILED -> PaymentResultResponse.failed(orderToken, "결제가 완료되지 않았습니다.");
 			// CREATED 도 PENDING 으로 답한다 — 결제창에 들어가기 전이거나 진행 중이다
 			case CREATED, CAPTURE_PENDING -> PaymentResultResponse.pending(orderToken);
 		};
+
+		// 취소는 payment.status 를 바꾸지 않는다 — 결제는 실제로 일어났고 그 뒤에 환불된 것이다.
+		// 이걸 얹지 않으면 전액 환불된 주문도 영원히 PAID 로 보인다 (D-036)
+		//
+		// payment.refundedAmount 를 쓰지 않는다. 그 컬럼은 0 으로 만들어진 뒤 아무도 갱신하지 않는다 —
+		// 실제 기준은 COMPLETED 인 refund 행들의 합이고, 세금 안분도 그걸 쓴다 (RefundWriter)
+		long refunded = refundRepository.sumCompleted(payment.getId()).amount();
+
+		return result.withRefund(
+				group.getStatus() == OrderGroupStatus.CANCELED,
+				Math.toIntExact(refunded));
 	}
 
 	/**

@@ -18,6 +18,7 @@ import store.moeum.moeum.global.error.ErrorCode;
 import store.moeum.moeum.order.OrderService;
 import store.moeum.moeum.order.dto.OrderCreateRequest;
 import store.moeum.moeum.payment.refund.OrderRefundService;
+import store.moeum.moeum.payment.dto.PaymentResultResponse;
 import store.moeum.moeum.payment.refund.dto.OrderRefundResponse;
 import store.moeum.moeum.payment.refund.dto.RefundableResponse;
 import store.moeum.moeum.saleform.SaleFormService;
@@ -152,6 +153,41 @@ class OrderRefundApiTest extends IntegrationTest {
 
 		assertThat(response.status()).isEqualTo(OrderRefundResponse.Status.COMPLETED);
 		assertThat(refundAmounts()).containsExactlyInAnyOrder(DEPOSIT1 * 3, DEPOSIT2 * 3 + SHIPPING);
+	}
+
+	// ---------------------------------------------------------------- 취소 뒤 상태 조회
+
+	@Test
+	@DisplayName("전부_취소하면_상태_조회가_취소를_알려준다")
+	void 취소_뒤_상태() {
+		paySecond();
+		stubRefundable();
+		stubRefundOk();
+		orderRefundService.refund(buyer(), orderToken, null, "단순 변심");
+
+		PaymentResultResponse status = paymentService.status(buyer(), orderToken);
+
+		// 취소해도 결제 자체는 CAPTURED 라 status 는 PAID 그대로다. 이걸 안 실어 주면
+		// 구매자 화면(B8-C)이 전액 환불된 주문을 결제 완료로 그린다 (D-036)
+		assertThat(status.status()).isEqualTo(PaymentResultResponse.Status.PAID);
+		assertThat(status.canceled()).isTrue();
+		assertThat(status.refundedAmount()).isEqualTo(DEPOSIT1 * 3);
+		assertThat(status.message()).contains("취소");
+	}
+
+	@Test
+	@DisplayName("한_폼만_취소하면_취소됨이_아니라_환불액만_올라간다")
+	void 부분_취소_뒤_상태() {
+		paySecond();
+		stubRefundable();
+		stubRefundOk();
+		orderRefundService.refund(buyer(), orderToken, orderIdOf(formA), "단순 변심");
+
+		PaymentResultResponse status = paymentService.status(buyer(), orderToken);
+
+		// 남은 폼은 살아 있다. canceled 로 접으면 아직 받을 상품이 있는 주문을 취소로 그린다
+		assertThat(status.canceled()).isFalse();
+		assertThat(status.refundedAmount()).isEqualTo(DEPOSIT1 * 2);
 	}
 
 	@Test
