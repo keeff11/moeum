@@ -111,7 +111,7 @@ class SellerOrderListTest extends IntegrationTest {
 	@BeforeEach
 	void setUp() {
 		for (String table : new String[]{
-				"payment_event", "refund", "payment", "outbox",
+				"second_charge", "payment_event", "refund", "payment", "outbox",
 				"stock_hold", "order_item", "orders", "shipping", "order_group",
 				"cart_item", "cart", "wishlist", "buyer_address", "buyer",
 				"sale_form_history", "sale_form_image", "product_option", "product", "sale_form", "seller"}) {

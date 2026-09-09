@@ -43,6 +43,8 @@ BFF 계층은 두지 않는다. CORS·SameSite는 브라우저 발 호출(CSR)�
 | 14 | `POST /auth/logout` | 세션 폐기 | 어디서든 | 필요 |
 | **15** 🆕 | `GET /seller/orders` | 셀러 주문 목록 + 탭 건수 | **G6** · G5-O(판매별) | 필요 (셀러) |
 | **16** 🆕 | `GET /seller/orders/{orderNo}` | 주문 상세 드로어 | **G6** | 필요 (셀러) |
+| **17** 🆕 | `GET /seller/orders/second-charge` | 2차금 청구 대상 · 금액 미리보기 | **S10** | 필요 (셀러) |
+| **18** 🆕 | `POST /seller/orders/second-charge` | 2차금 일괄 청구(알림 재발송) | **S10** | 필요 (셀러) |
 
 > 🆕 **#8이 없으면 결제가 완료되지 않는다.**
 > point3는 웹훅을 주지 않는다. 가맹점 서버가 `POST /capture/v2/{sessionId}`를 **직접 호출**해야 출금이 일어난다.

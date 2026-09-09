@@ -52,6 +52,11 @@ public interface OrderGroupRepository extends JpaRepository<OrderGroup, Long> {
 	 * {@code findStorePage} 가 네이티브인 것은 enum 파라미터의 null 비교 때문이었고,
 	 * 여기 탭은 문자열이라 그 문제가 없다. EXISTS 가 여럿이라 JPQL 쪽이 읽기도 낫다.
 	 *
+	 * <b>SECOND_UNPAID 는 살아 있는 주문이 하나라도 있어야 한다.</b> 취소를 제외하고
+	 * "입고 안 된 것이 없다" 만 보면 <b>전부 취소된 묶음도 통과한다</b> — 받을 잔금이 없는데
+	 * 청구 대상에 섞인다. {@code OrderGroup.isSecondPaymentDue()} 의 {@code !alive.isEmpty()}
+	 * 와 같은 조건이다 (D-035).
+	 *
 	 * @param tab {@code SellerOrderTab} 의 이름. null 이나 ALL 이면 상태로 거르지 않는다
 	 */
 	@Query("""
@@ -65,6 +70,9 @@ public interface OrderGroupRepository extends JpaRepository<OrderGroup, Long> {
 			        or (:tab = 'SECOND_UNPAID'
 			            and g.status in (store.moeum.moeum.order.domain.OrderGroupStatus.PAID,
 			                             store.moeum.moeum.order.domain.OrderGroupStatus.SECOND_PENDING)
+			            and exists (select 1 from Order a
+			                         where a.orderGroup = g
+			                           and a.status = store.moeum.moeum.order.domain.OrderStatus.ARRIVED)
 			            and not exists (select 1 from Order n
 			                             where n.orderGroup = g
 			                               and n.status not in (store.moeum.moeum.order.domain.OrderStatus.CANCELED,
@@ -109,6 +117,9 @@ public interface OrderGroupRepository extends JpaRepository<OrderGroup, Long> {
 			                  then 1 end),
 			       count(case when g.status in (store.moeum.moeum.order.domain.OrderGroupStatus.PAID,
 			                                    store.moeum.moeum.order.domain.OrderGroupStatus.SECOND_PENDING)
+			                   and exists (select 1 from Order a
+			                                where a.orderGroup = g
+			                                  and a.status = store.moeum.moeum.order.domain.OrderStatus.ARRIVED)
 			                   and not exists (select 1 from Order n
 			                                    where n.orderGroup = g
 			                                      and n.status not in (store.moeum.moeum.order.domain.OrderStatus.CANCELED,

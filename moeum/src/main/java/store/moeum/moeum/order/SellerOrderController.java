@@ -8,6 +8,7 @@ import org.springframework.http.CacheControl;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -15,6 +16,7 @@ import store.moeum.moeum.global.auth.LoginUser;
 import store.moeum.moeum.global.auth.SessionUser;
 import store.moeum.moeum.order.domain.SellerOrderTab;
 import store.moeum.moeum.order.dto.SellerOrderDetailResponse;
+import store.moeum.moeum.order.dto.SecondChargeResponse;
 import store.moeum.moeum.order.dto.SellerOrderPageResponse;
 
 /**
@@ -30,6 +32,7 @@ import store.moeum.moeum.order.dto.SellerOrderPageResponse;
 public class SellerOrderController {
 
 	private final SellerOrderService sellerOrderService;
+	private final SecondChargeService secondChargeService;
 
 	/**
 	 * 목록. <b>캐시하지 않는다</b> — 카드마다 결제·입고 상태가 실려 있어 D-029 와 이유가 같다.
@@ -68,6 +71,51 @@ public class SellerOrderController {
 		return ResponseEntity.ok()
 				.cacheControl(CacheControl.noStore())
 				.body(sellerOrderService.list(user.kakaoId(), tab, saleFormId, q, page, size));
+	}
+
+	/**
+	 * 청구 버튼을 누르기 전에 보여 줄 값.
+	 *
+	 * <b>이 경로가 {@code /{orderNo}} 보다 먼저 잡힌다</b> — 스프링은 변수 자리보다
+	 * 글자 그대로 일치하는 경로를 우선한다. 주문번호는 ORD- 로 시작해서 실제로 겹치지도 않는다.
+	 */
+	@Operation(summary = "2차금 청구 대상 미리보기",
+			description = """
+					지금 2차금을 청구할 수 있는 주문 수와 금액 합계를 준다.
+					대상은 주문 목록의 '2차금 미납' 탭과 같은 기준이다 — 전 폼이 입고된 묶음만이다.
+
+					★ 최근 24시간 안에 이미 청구한 건은 chargeableCount 에서 빠진다.
+					★ 금액에는 취소된 폼의 잔금이 들어 있지 않다.
+					""")
+	@GetMapping("/second-charge")
+	public ResponseEntity<SecondChargeResponse.Preview> secondChargePreview(
+			@LoginUser SessionUser user,
+
+			@Parameter(description = "이 판매 건만 청구 대상으로 본다. 비우면 내 주문 전체", example = "12")
+			@RequestParam(required = false) Long saleFormId) {
+
+		return ResponseEntity.ok()
+				.cacheControl(CacheControl.noStore())
+				.body(secondChargeService.preview(user.kakaoId(), saleFormId));
+	}
+
+	/** 알림을 다시 내보내고 이력을 남긴다. 주문 상태는 바뀌지 않는다 */
+	@Operation(summary = "2차금 일괄 청구",
+			description = """
+					대상 주문마다 2차금 청구 알림을 다시 내보내고 청구 이력을 남긴다.
+
+					★ 출금이 아니다. 자동출금이 없어서 실제 결제는 구매자가 링크로 들어와 승인해야 한다.
+					★ 주문 상태는 바뀌지 않는다. 구매자가 결제를 마쳐야 넘어간다.
+					★ 최근 24시간 안에 이미 청구한 건은 건너뛰고 skippedCount 로 센다.
+					""")
+	@PostMapping("/second-charge")
+	public SecondChargeResponse.Result secondCharge(
+			@LoginUser SessionUser user,
+
+			@Parameter(description = "이 판매 건만 청구한다. 비우면 대상 전체", example = "12")
+			@RequestParam(required = false) Long saleFormId) {
+
+		return secondChargeService.charge(user.kakaoId(), saleFormId);
 	}
 
 	/** 카드를 누르면 열리는 드로어. 배송지 본문은 담기지 않는다 */

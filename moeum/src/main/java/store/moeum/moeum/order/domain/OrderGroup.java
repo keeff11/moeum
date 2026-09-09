@@ -151,9 +151,22 @@ public class OrderGroup extends BaseTimeEntity {
 		this.shippingFee = fee;
 	}
 
-	/** 2차금 청구액. 배송비는 묶음당 1회라 여기서 한 번만 더한다 */
+	/**
+	 * 2차금 청구액. 배송비는 묶음당 1회라 여기서 한 번만 더한다.
+	 *
+	 * <b>취소된 폼의 잔금은 빼고 센다</b> (D-035). {@code deposit2Total} 은 주문을 담을 때
+	 * 누적된 스냅샷이라 폼 하나를 취소해도 줄지 않는다 — 그대로 쓰면 이미 환불한 상품의
+	 * 잔금까지 청구하게 된다.
+	 *
+	 * <b>배송비는 굳힌 값을 그대로 쓴다.</b> 취소로 총액이 줄었다고 무료배송이 풀려
+	 * 배송비가 되살아나면 안 된다 ({@link #applyShippingFee} 와 D-032 가 같은 이유다).
+	 */
 	public int secondPaymentAmount() {
-		return deposit2Total + shippingFee;
+		int deposit2 = activeOrders().stream()
+				.mapToInt(Order::getDeposit2Sum)
+				.sum();
+
+		return deposit2 + shippingFee;
 	}
 
 	public void expire() {
@@ -241,11 +254,17 @@ public class OrderGroup extends BaseTimeEntity {
 	 *
 	 * 배송비가 묶음당 1회라 일부만 입고됐다고 청구하면 배송비를 나눌 방법이 없다.
 	 * 한 폼이라도 늦어지면 그 묶음 전체가 기다린다.
+	 *
+	 * <b>기준은 살아 있는 주문이다</b> (D-035). 취소된 폼까지 입고를 요구하면 그 폼은
+	 * 영원히 CANCELED 라 조건이 영영 참이 되지 않는다 — 부분 취소된 묶음의 잔금을
+	 * 영영 못 받는다. 셀러 목록의 '2차금 미납' 판정도 같은 기준을 쓴다.
 	 */
 	public boolean isSecondPaymentDue() {
+		List<Order> alive = activeOrders();
+
 		return status == OrderGroupStatus.PAID
-				&& !orders.isEmpty()
-				&& orders.stream().allMatch(Order::isArrived);
+				&& !alive.isEmpty()
+				&& alive.stream().allMatch(Order::isArrived);
 	}
 
 	/** 2차금 결제 세션을 만들 준비가 된 상태 */
