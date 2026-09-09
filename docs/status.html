@@ -384,7 +384,7 @@
       <span class="sep">/</span>
       <span>2026-09-09 기준</span>
       <span class="sep">/</span>
-      <span>main @ 8f9fe56</span>
+      <span>main @ 303a870</span>
     </div>
     <h1>도메인별 개발 현황</h1>
     <p class="lede">
@@ -595,8 +595,8 @@
       items: [
         ["전역 예외 핸들러 · 에러 코드 체계", "공통 응답 포맷 + 토큰 유출 방지 테스트", "done"],
         ["Flyway 마이그레이션 V1~V10", "19개 테이블 + 세션 · 공개상품 · 미달 처리 · 알림 백오프 · 셀러 프로필 · 찜 · 문의 연락처 · 주문번호. ddl-auto: validate", "done"],
-        ["docs/schema.sql 이 실제 스키마와 일치", "D-034. V1 이후 갱신이 멈춰 wishlist · public_contact · order_no 가 문서에 없었다. V2~V10 을 반영하고, FlywayMigrationTest 가 문서의 테이블 · 컬럼을 실제 스키마와 대조한다", "done"],
-        ["테스트 353개", "Testcontainers MySQL 8.0 + point3 는 WireMock. 테스트 JVM 은 KST 고정 (D-028). 스웨거 설명 누락도 잡는다 (D-031). 스키마 문서가 늙는 것도 잡는다 (D-034)", "done"],
+        ["schema.sql · erd.dbml 이 실제 스키마와 일치", "D-034. schema.sql 은 V1 이후, ERD 는 그보다도 전인 v2 시절에 멈춰 있었다. 둘 다 맞추고 FlywayMigrationTest 가 테이블 · 컬럼을, ERD 는 외래키 29개까지 대조한다", "done"],
+        ["테스트 354개", "Testcontainers MySQL 8.0 + point3 는 WireMock. 테스트 JVM 은 KST 고정 (D-028). 스웨거 설명 누락도 잡는다 (D-031). 스키마 문서가 늙는 것도 잡는다 (D-034)", "done"],
         ["EC2 + Docker Compose + Caddy 자동 TLS", "D-016. 월 $26", "done"],
         ["GitHub Actions OIDC → ECR → SSM 배포", "AWS 액세스 키를 GitHub 에 두지 않는다", "done"],
         ["Parameter Store 시크릿", "D-017. 배포 때마다 .env 재생성", "done"],
