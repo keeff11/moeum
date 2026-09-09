@@ -100,6 +100,7 @@ class OutboxEventTest extends IntegrationTest {
 	void setUp() {
 		POINT3.resetAll();
 		fixture.clean();
+		fixture.buyerWithAddress("kakao-outbox-buyer", "알림수령");
 		jdbcTemplate.execute("DELETE FROM outbox");
 		formA = fixture.saleForm(10, null);
 		formB = fixture.saleFormOfSameSeller(formA, 10);

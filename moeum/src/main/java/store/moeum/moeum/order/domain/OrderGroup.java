@@ -23,6 +23,7 @@ import store.moeum.moeum.global.jpa.BaseTimeEntity;
 import store.moeum.moeum.seller.domain.Seller;
 
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -40,6 +41,8 @@ import java.util.List;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class OrderGroup extends BaseTimeEntity {
 
+	private static final DateTimeFormatter ORDER_NO_DATE = DateTimeFormatter.ofPattern("yyMMdd");
+
 	@Id
 	@GeneratedValue(strategy = GenerationType.IDENTITY)
 	@Column(name = "id")
@@ -52,6 +55,15 @@ public class OrderGroup extends BaseTimeEntity {
 	/** ord_xxx — /pay 시점에 발급 */
 	@Column(name = "order_token", length = 40)
 	private String orderToken;
+
+	/**
+	 * ORD-YYMMDD-{id} — 사람이 읽고 부르는 주문번호. order_token 과 같이 /pay 에서 발급한다.
+	 *
+	 * 토큰과 나누는 이유는 쓰임이 반대라서다. order_token 은 주소창에 실려 나가므로
+	 * 추측할 수 없어야 하고, 이 값은 셀러와 구매자가 전화로 주고받아야 하므로 읽을 수 있어야 한다.
+	 */
+	@Column(name = "order_no", length = 20)
+	private String orderNo;
 
 	@ManyToOne(fetch = FetchType.LAZY, optional = false)
 	@JoinColumn(name = "buyer_id", nullable = false, updatable = false,
@@ -163,7 +175,10 @@ public class OrderGroup extends BaseTimeEntity {
 	 * 결제 세션을 만들어 결제창으로 보낼 준비가 된 상태.
 	 *
 	 * 재결제로 다시 들어올 수 있어 PAY_PENDING 에서 또 불려도 그대로 둔다 (D-023).
-	 * 복귀 페이지 주소로 쓸 orderToken 을 이때 발급한다 — 세션 토큰과 다른 값이다.
+	 * 복귀 페이지 주소로 쓸 orderToken 과 셀러·구매자가 부를 orderNo 를 이때 발급한다.
+	 *
+	 * <b>재결제에서 번호가 바뀌지 않는다.</b> 실패해서 다시 결제한 것은 같은 주문이라,
+	 * 번호가 갈리면 셀러와 구매자가 서로 다른 번호를 들고 이야기하게 된다.
 	 */
 	public void markPayPending(String orderToken) {
 		if (status != OrderGroupStatus.CREATED && status != OrderGroupStatus.PAY_PENDING) {
@@ -173,6 +188,19 @@ public class OrderGroup extends BaseTimeEntity {
 		if (this.orderToken == null) {
 			this.orderToken = orderToken;
 		}
+		if (this.orderNo == null) {
+			this.orderNo = issueOrderNo();
+		}
+	}
+
+	/**
+	 * ORD-{yyMMdd}-{id}.
+	 *
+	 * 그날의 순번을 쓰지 않는다 — 순번을 매기려면 카운터를 잠가야 하고, 결제 시작 경로에
+	 * 락을 하나 더 놓을 값이 아니다. id 가 이미 유일하므로 날짜와 붙이면 그대로 유일하다.
+	 */
+	private String issueOrderNo() {
+		return "ORD-" + getCreatedAt().format(ORDER_NO_DATE) + "-" + id;
 	}
 
 	/**

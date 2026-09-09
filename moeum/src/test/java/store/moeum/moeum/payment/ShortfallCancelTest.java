@@ -92,6 +92,8 @@ class ShortfallCancelTest extends IntegrationTest {
 	void setUp() {
 		POINT3.resetAll();
 		fixture.clean();
+		fixture.buyerWithAddress("kakao-shortfall-a", "미달가");
+		fixture.buyerWithAddress("kakao-shortfall-b", "미달나");
 		setup = fixture.saleForm(100, null);
 	}
 

@@ -4,6 +4,10 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.boot.test.context.TestComponent;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
+import store.moeum.moeum.buyer.domain.Buyer;
+import store.moeum.moeum.buyer.domain.BuyerAddress;
+import store.moeum.moeum.buyer.domain.BuyerAddressRepository;
+import store.moeum.moeum.buyer.domain.BuyerRepository;
 import store.moeum.moeum.saleform.domain.Product;
 import store.moeum.moeum.saleform.domain.ProductOption;
 import store.moeum.moeum.saleform.domain.SaleForm;
@@ -20,6 +24,8 @@ public class OrderFixture {
 
 	private final SellerRepository sellerRepository;
 	private final SaleFormRepository saleFormRepository;
+	private final BuyerRepository buyerRepository;
+	private final BuyerAddressRepository buyerAddressRepository;
 	private final JdbcTemplate jdbcTemplate;
 
 	public record Setup(Long sellerId, Long saleFormId, Long optionId, Long secondOptionId) {
@@ -30,7 +36,7 @@ public class OrderFixture {
 	public void clean() {
 		for (String table : new String[]{
 				"payment_event", "refund", "payment", "outbox",
-				"stock_hold", "order_item", "orders", "order_group",
+				"stock_hold", "order_item", "orders", "shipping", "order_group",
 				"cart_item", "cart", "wishlist", "buyer_address", "buyer",
 				"sale_form_history", "sale_form_image", "product_option", "product", "sale_form", "seller"}) {
 			jdbcTemplate.execute("DELETE FROM " + table);
@@ -46,6 +52,32 @@ public class OrderFixture {
 				.build());
 		seller.approve();
 		return create(seller, stockMax, maxPerUser);
+	}
+
+	/**
+	 * 구매자와 배송지를 미리 만들어 둔다.
+	 *
+	 * <b>/pay 가 배송지를 요구한다</b> (D-033) — 없으면 SHIPPING_ADDRESS_REQUIRED 로 막힌다.
+	 * 결제까지 가는 테스트는 place() 전에 이걸 한 번 불러야 한다.
+	 *
+	 * @return 수령인 이름. 셀러 화면에 찍히는 값이라 카카오 닉네임과 다르다
+	 */
+	@Transactional
+	public String buyerWithAddress(String kakaoId, String recipientName) {
+		Buyer buyer = buyerRepository.findByKakaoId(kakaoId)
+				.orElseGet(() -> buyerRepository.save(Buyer.of(kakaoId, "구매자")));
+
+		if (buyerAddressRepository.findByBuyerId(buyer.getId()).isEmpty()) {
+			buyerAddressRepository.save(BuyerAddress.builder()
+					.buyer(buyer)
+					.recipientName(recipientName)
+					.phone("01012345678")
+					.postalCode("06236")
+					.address1("서울 강남구 테헤란로 1")
+					.address2("2층")
+					.build());
+		}
+		return recipientName;
 	}
 
 	/** 같은 셀러의 두 번째 폼. 여러 폼을 한 묶음에 담는 테스트용 */

@@ -41,6 +41,8 @@ BFF 계층은 두지 않는다. CORS·SameSite는 브라우저 발 호출(CSR)�
 | 12 | `GET /auth/kakao/login` | state 발급 + 카카오 인가 URL로 302 | B3 진입 | 불필요 |
 | 13 | `GET /auth/kakao/callback` | state 검증 → 토큰 교환 → 세션 발급 | B3 콜백 | 불필요 |
 | 14 | `POST /auth/logout` | 세션 폐기 | 어디서든 | 필요 |
+| **15** 🆕 | `GET /seller/orders` | 셀러 주문 목록 + 탭 건수 | **G6** · G5-O(판매별) | 필요 (셀러) |
+| **16** 🆕 | `GET /seller/orders/{orderNo}` | 주문 상세 드로어 | **G6** | 필요 (셀러) |
 
 > 🆕 **#8이 없으면 결제가 완료되지 않는다.**
 > point3는 웹훅을 주지 않는다. 가맹점 서버가 `POST /capture/v2/{sessionId}`를 **직접 호출**해야 출금이 일어난다.
@@ -171,6 +173,10 @@ B1 헤드라인 가격은 `options[0].deposit1Amount`. 상품 자체의 `price` 
 B1 구매하기 → B2 옵션·수량 확정  ←★ 여기서 홀드 (POST /checkout-sessions)
            → B4 배송지 → B5 결제 화면(타이머) → 결제하기(/pay) → point3
 ```
+
+> 🆕 **`/pay` 는 배송지가 없으면 400 (`SHIPPING_ADDRESS_REQUIRED`) 이다.** 결제 시점에
+> `buyer_address` 를 `shipping` 스냅샷으로 굳히기 때문이다 (D-033). B4 를 건너뛰고
+> B5 로 바로 들어오는 경로가 있다면 배송지 입력으로 되돌려야 한다.
 
 **타이머는 B4 부터 보여야 한다.** 홀드가 B4 이전에 시작되므로,
 B5 에서만 타이머를 띄우면 사용자는 이미 흘러간 시간을 모른다.

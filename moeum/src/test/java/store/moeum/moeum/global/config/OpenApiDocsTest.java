@@ -39,6 +39,8 @@ class OpenApiDocsTest extends IntegrationTest {
 				.andExpect(jsonPath("$.paths['/seller/sale-forms/{saleFormId}'].put").exists())
 				.andExpect(jsonPath("$.paths['/seller/sale-forms/{saleFormId}/history'].get").exists())
 				.andExpect(jsonPath("$.paths['/seller/onboarding'].post").exists())
+				.andExpect(jsonPath("$.paths['/seller/orders'].get").exists())
+				.andExpect(jsonPath("$.paths['/seller/orders/{orderNo}'].get").exists())
 				.andExpect(jsonPath("$.paths['/auth/kakao/login'].get").exists())
 				.andExpect(jsonPath("$.paths['/me'].get").exists());
 	}

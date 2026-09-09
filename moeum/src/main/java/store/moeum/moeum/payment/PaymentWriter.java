@@ -7,9 +7,13 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import store.moeum.moeum.global.error.BusinessException;
 import store.moeum.moeum.global.error.ErrorCode;
+import store.moeum.moeum.buyer.domain.BuyerAddress;
+import store.moeum.moeum.buyer.domain.BuyerAddressRepository;
 import store.moeum.moeum.global.jpa.JpaAuditingConfig;
 import store.moeum.moeum.order.domain.Order;
 import store.moeum.moeum.order.domain.OrderGroup;
+import store.moeum.moeum.order.domain.Shipping;
+import store.moeum.moeum.order.domain.ShippingRepository;
 import store.moeum.moeum.outbox.OutboxRecorder;
 import store.moeum.moeum.outbox.domain.OutboxAggregate;
 import store.moeum.moeum.outbox.domain.OutboxEventType;
@@ -53,6 +57,8 @@ public class PaymentWriter {
 	private final OrderGroupRepository orderGroupRepository;
 	private final StockHoldRepository stockHoldRepository;
 	private final SaleFormRepository saleFormRepository;
+	private final ShippingRepository shippingRepository;
+	private final BuyerAddressRepository buyerAddressRepository;
 
 	/**
 	 * 세션 생성 직전 준비 (payment-flow 9번).
@@ -71,6 +77,7 @@ public class PaymentWriter {
 			throw new BusinessException(ErrorCode.PAYMENT_IN_PROGRESS, "이미 결제가 완료된 주문입니다.");
 		}
 		requireHoldsAlive(group);
+		requireShippingAddress(group);
 
 		int amount = group.firstPaymentAmount();
 		Payment payment = paymentRepository
@@ -156,9 +163,40 @@ public class PaymentWriter {
 
 		payment.attachSession(session.id(), session.supplyAmount(), session.vat(), session.taxFreeAmount());
 		if (payment.isFirst()) {
-			payment.getOrderGroup().markPayPending(orderToken);
+			OrderGroup group = payment.getOrderGroup();
+			group.markPayPending(orderToken);
+			snapshotShipping(group);
 		} else {
 			payment.getOrderGroup().markSecondPending();
+		}
+	}
+
+	/**
+	 * 배송지를 스냅샷으로 굳힌다 (D-033). 1차금에서 한 번만 한다 —
+	 * 2차금은 같은 묶음의 잔금이라 보낼 곳이 바뀌지 않는다.
+	 *
+	 * 재결제로 다시 들어오면 이미 있다. 그때 덮어쓰지 않는다 — 스냅샷의 뜻이
+	 * "주문이 성립한 시점의 주소" 인데, 덮어쓰면 마지막 시도의 주소가 되어 버린다.
+	 */
+	private void snapshotShipping(OrderGroup group) {
+		if (shippingRepository.findByOrderGroupId(group.getId()).isPresent()) {
+			return;
+		}
+		BuyerAddress address = buyerAddressRepository.findByBuyerId(group.getBuyer().getId())
+				.orElseThrow(() -> new BusinessException(ErrorCode.SHIPPING_ADDRESS_REQUIRED));
+
+		shippingRepository.save(Shipping.snapshotOf(group, address));
+	}
+
+	/**
+	 * 배송지가 없으면 결제 세션을 만들기 전에 막는다.
+	 *
+	 * <b>{@link #snapshotShipping} 보다 앞이어야 한다.</b> 스냅샷은 point3 세션을 만든
+	 * 뒤에 찍히는데, 거기서 처음 없는 것을 알면 이미 만든 세션이 버려진다.
+	 */
+	private void requireShippingAddress(OrderGroup group) {
+		if (!buyerAddressRepository.existsByBuyerId(group.getBuyer().getId())) {
+			throw new BusinessException(ErrorCode.SHIPPING_ADDRESS_REQUIRED);
 		}
 	}
 

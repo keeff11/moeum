@@ -113,6 +113,7 @@ class OrderRefundApiTest extends IntegrationTest {
 	void setUp() {
 		POINT3.resetAll();
 		fixture.clean();
+		fixture.buyerWithAddress("kakao-refund-api-buyer", "취소수령");
 		formA = fixture.saleForm(10, null);
 		formB = fixture.saleFormOfSameSeller(formA, 10);
 		sellerKakaoId = sellerRepository.findById(formA.sellerId()).orElseThrow().getKakaoId();

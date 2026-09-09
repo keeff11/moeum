@@ -105,6 +105,7 @@ class RefundFlowTest extends IntegrationTest {
 	void setUp() {
 		POINT3.resetAll();
 		fixture.clean();
+		fixture.buyerWithAddress("kakao-refund-buyer", "환불수령");
 		setup = fixture.saleForm(10, null);
 		payFirst(3);
 	}

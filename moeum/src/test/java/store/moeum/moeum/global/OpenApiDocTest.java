@@ -103,7 +103,9 @@ class OpenApiDocTest extends IntegrationTest {
 				"StoreSeller.publicContact", "문의",
 				"StoreItem.dDay", "마감",
 				"StoreItem.price", "옵션",
-				"WishlistResponse.saleFormIds", "찜"
+				"WishlistResponse.saleFormIds", "찜",
+				"TabCounts.secondUnpaid", "청구",
+				"SellerOrderItem.title", "외 N건"
 		);
 
 		expected.forEach((key, keyword) -> {

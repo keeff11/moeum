@@ -78,6 +78,7 @@ class PaymentFlowTest extends IntegrationTest {
 	void setUp() {
 		POINT3.resetAll();
 		fixture.clean();
+		fixture.buyerWithAddress("kakao-payer", "김서연");
 		setup = fixture.saleForm(10, null);
 		OrderGroupResponse group = orderService.place(buyer(), order(3));
 		sessionToken = group.sessionToken();
@@ -352,6 +353,7 @@ class PaymentFlowTest extends IntegrationTest {
 
 		// 홀드가 풀렸으니 주문부터 다시 만든다
 		fixture.clean();
+		fixture.buyerWithAddress("kakao-payer", "김서연");
 		setup = fixture.saleForm(10, null);
 		sessionToken = orderService.place(buyer(), order(2)).sessionToken();
 		stubCreateSession();

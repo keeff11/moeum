@@ -17,6 +17,12 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
 	Optional<Payment> findBySessionId(String sessionId);
 
 	/**
+	 * 셀러 주문 목록이 쓴다. 카드마다 "1차금 완료 · 2차금 미납" 을 찍어야 하는데
+	 * 묶음당 최대 2행(차수)이라, 한 건씩 부르면 목록 크기의 두 배만큼 조회가 나간다.
+	 */
+	List<Payment> findByOrderGroupIdIn(List<Long> orderGroupIds);
+
+	/**
 	 * 확정 처리용 잠금 조회.
 	 *
 	 * 실시간 승인과 대사 배치가 같은 결제를 동시에 확정하려 할 수 있다.
