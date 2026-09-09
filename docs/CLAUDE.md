@@ -64,6 +64,7 @@
 | `docs/payment-flow.md` | 1차금 · 2차금 결제 흐름, 실패 케이스별 처리 |
 | `docs/domain.md` | 도메인 개념, 상태 머신, 정책 |
 | `docs/schema.sql` | 전체 스키마 스냅샷. 마이그레이션을 전부 적용한 결과를 한 곳에 모아 둔 읽기용 문서 |
+| `docs/erd.dbml` | 같은 스냅샷을 관계 중심으로 그린 ERD. 테이블 간 연결을 볼 때 |
 | `moeum/src/main/resources/db/migration/` | 스키마의 원본. 각 변경의 이유가 파일 머리 주석에 있다 |
 | `docs/decisions.md` | 설계 결정과 그 이유 |
 | `docs/roadmap.md` | 개발 순서 |
@@ -74,5 +75,5 @@
 - 동시성과 실패 처리 코드에는 반드시 테스트를 함께 작성한다
 - point3 연동 테스트는 WireMock으로 타임아웃 · 5xx · `processing` 응답을 재현한다
 - 스키마 변경은 Flyway 마이그레이션 파일로. 기존 파일을 수정하지 않는다
-- 마이그레이션을 더했으면 `docs/schema.sql` 도 같은 커밋에서 고친다.
-  둘이 어긋나면 `FlywayMigrationTest` 가 깨진다 — 문서가 늙는 것을 테스트가 막는다
+- 마이그레이션을 더했으면 `docs/schema.sql` 과 `docs/erd.dbml` 도 같은 커밋에서 고친다.
+  어긋나면 `FlywayMigrationTest` 가 깨진다 — 문서가 늙는 것을 테스트가 막는다

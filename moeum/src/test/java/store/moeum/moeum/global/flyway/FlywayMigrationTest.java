@@ -44,6 +44,14 @@ class FlywayMigrationTest extends IntegrationTest {
 			"PRIMARY", "UNIQUE", "KEY", "INDEX", "CONSTRAINT", "FOREIGN", "CHECK",
 			"FULLTEXT", "SPATIAL");
 
+	private static final Pattern DBML_TABLE = Pattern.compile("Table\\s+\"?(\\w+)\"?\\s*\\{");
+
+	/** dbml 의 컬럼 줄. 이름이 따옴표로 묶여 있어 Note: · Indexes { 와 헷갈리지 않는다. */
+	private static final Pattern DBML_COLUMN = Pattern.compile("^\"([A-Za-z_]\\w*)\"\\s+\\S");
+
+	private static final Pattern DBML_REF =
+			Pattern.compile("^Ref\\s+\"([^\"]+)\"", Pattern.MULTILINE);
+
 	@Autowired
 	private JdbcTemplate jdbcTemplate;
 
@@ -67,16 +75,23 @@ class FlywayMigrationTest extends IntegrationTest {
 	@Test
 	@DisplayName("docs_schema_sql_이_실제_스키마와_일치한다")
 	void docs_schema_sql_이_실제_스키마와_일치한다() {
-		Map<String, Set<String>> documented = parseSchemaDoc();
-		Map<String, Set<String>> actual = readActualSchema();
+		assertMatchesActualSchema("docs/schema.sql", parseSchemaDoc());
+	}
 
-		assertThat(documented.keySet())
-				.as("docs/schema.sql 의 테이블 목록. 마이그레이션을 더했으면 문서도 같이 고친다")
-				.containsExactlyInAnyOrderElementsOf(actual.keySet());
+	/**
+	 * ERD 도 같은 스냅샷이라 같은 방식으로 붙든다. 여기서는 관계까지 본다 —
+	 * 테이블 그림만 맞고 선이 틀린 ERD 는 ERD 로서 값이 없다.
+	 */
+	@Test
+	@DisplayName("docs_erd_dbml_이_실제_스키마와_일치한다")
+	void docs_erd_dbml_이_실제_스키마와_일치한다() {
+		String dbml = stripLineComments(readDoc("erd.dbml"), "//");
 
-		actual.forEach((table, columns) -> assertThat(documented.get(table))
-				.as("docs/schema.sql 의 %s 컬럼", table)
-				.containsExactlyInAnyOrderElementsOf(columns));
+		assertMatchesActualSchema("docs/erd.dbml", parseErdTables(dbml));
+
+		assertThat(parseErdRefs(dbml))
+				.as("docs/erd.dbml 의 Ref 이름. 실제 외래키와 하나씩 짝이 맞아야 한다")
+				.containsExactlyInAnyOrderElementsOf(readActualForeignKeys());
 	}
 
 	@Test
@@ -90,6 +105,18 @@ class FlywayMigrationTest extends IntegrationTest {
 				""", String.class);
 
 		assertThat(floatingPointMoneyColumns).isEmpty();
+	}
+
+	private void assertMatchesActualSchema(String doc, Map<String, Set<String>> documented) {
+		Map<String, Set<String>> actual = readActualSchema();
+
+		assertThat(documented.keySet())
+				.as("%s 의 테이블 목록. 마이그레이션을 더했으면 문서도 같이 고친다", doc)
+				.containsExactlyInAnyOrderElementsOf(actual.keySet());
+
+		actual.forEach((table, columns) -> assertThat(documented.get(table))
+				.as("%s 의 %s 컬럼", doc, table)
+				.containsExactlyInAnyOrderElementsOf(columns));
 	}
 
 	private Map<String, Set<String>> readActualSchema() {
@@ -110,24 +137,97 @@ class FlywayMigrationTest extends IntegrationTest {
 		return schema;
 	}
 
+	private Set<String> readActualForeignKeys() {
+		return Set.copyOf(jdbcTemplate.queryForList("""
+				SELECT LOWER(constraint_name)
+				  FROM information_schema.table_constraints
+				 WHERE table_schema = DATABASE()
+				   AND constraint_type = 'FOREIGN KEY'
+				""", String.class));
+	}
+
 	private static Map<String, Set<String>> parseSchemaDoc() {
-		String sql = stripComments(readSchemaDoc());
+		String sql = stripLineComments(readDoc("schema.sql"), "--");
 		Map<String, Set<String>> schema = new TreeMap<>();
 
 		Matcher matcher = CREATE_TABLE.matcher(sql);
 		while (matcher.find()) {
-			String body = balancedBody(sql, matcher.end() - 1);
+			String body = balancedBody(sql, matcher.end() - 1, '(', ')');
 			schema.put(matcher.group(1).toLowerCase(), columnsOf(body));
 		}
 
 		return schema;
 	}
 
-	private static String readSchemaDoc() {
+	private static Map<String, Set<String>> parseErdTables(String dbml) {
+		Map<String, Set<String>> schema = new TreeMap<>();
+
+		Matcher matcher = DBML_TABLE.matcher(dbml);
+		while (matcher.find()) {
+			String body = balancedBody(dbml, matcher.end() - 1, '{', '}');
+			schema.put(matcher.group(1).toLowerCase(), erdColumnsOf(body));
+		}
+
+		return schema;
+	}
+
+	private static Set<String> parseErdRefs(String dbml) {
+		Set<String> refs = new LinkedHashSet<>();
+
+		Matcher matcher = DBML_REF.matcher(dbml);
+		while (matcher.find()) {
+			refs.add(matcher.group(1).toLowerCase());
+		}
+
+		return refs;
+	}
+
+	/**
+	 * 컬럼은 테이블 본문 바로 아래에만 있다. {@code Indexes { ... }} 안쪽은 세지 않는다.
+	 */
+	private static Set<String> erdColumnsOf(String body) {
+		Set<String> columns = new LinkedHashSet<>();
+		int depth = 0;
+
+		for (String line : body.split("\n")) {
+			String trimmed = line.trim();
+
+			if (depth == 0) {
+				Matcher column = DBML_COLUMN.matcher(trimmed);
+				if (column.find()) {
+					columns.add(column.group(1).toLowerCase());
+				}
+			}
+			depth += braceDelta(trimmed);
+		}
+
+		return columns;
+	}
+
+	/** 따옴표 밖의 중괄호만 센다 — Note 문구에 중괄호가 들어가도 깊이가 틀어지지 않는다. */
+	private static int braceDelta(String line) {
+		int delta = 0;
+		boolean inString = false;
+
+		for (int i = 0; i < line.length(); i++) {
+			char c = line.charAt(i);
+			if (c == '\'') {
+				inString = !inString;
+			} else if (!inString && c == '{') {
+				delta++;
+			} else if (!inString && c == '}') {
+				delta--;
+			}
+		}
+
+		return delta;
+	}
+
+	private static String readDoc(String name) {
 		// 테스트 작업 디렉터리는 gradle 프로젝트인 moeum/ 이지만, 저장소 루트에서 돌리는
-		// 경우도 있어 docs/schema.sql 을 찾을 때까지 위로 올라간다.
+		// 경우도 있어 docs/ 를 찾을 때까지 위로 올라간다.
 		for (Path dir = Path.of("").toAbsolutePath(); dir != null; dir = dir.getParent()) {
-			Path candidate = dir.resolve("docs").resolve("schema.sql");
+			Path candidate = dir.resolve("docs").resolve(name);
 			if (Files.isRegularFile(candidate)) {
 				try {
 					return Files.readString(candidate, StandardCharsets.UTF_8);
@@ -136,32 +236,32 @@ class FlywayMigrationTest extends IntegrationTest {
 				}
 			}
 		}
-		throw new IllegalStateException("docs/schema.sql 을 찾지 못했다");
+		throw new IllegalStateException("docs/" + name + " 을 찾지 못했다");
 	}
 
 	/**
-	 * {@code -- } 줄 주석을 지운다. 문자열 리터럴 안의 {@code --} 는 건드리지 않고,
+	 * 줄 주석({@code --} 또는 {@code //})을 지운다. 문자열 리터럴 안의 표식은 건드리지 않고,
 	 * 반대로 주석 안의 따옴표({@code '상품'의 실체})는 리터럴로 세지 않는다.
 	 */
-	private static String stripComments(String sql) {
-		StringBuilder out = new StringBuilder(sql.length());
+	private static String stripLineComments(String src, String marker) {
+		StringBuilder out = new StringBuilder(src.length());
 		boolean inString = false;
 
-		for (int i = 0; i < sql.length(); i++) {
-			char c = sql.charAt(i);
+		for (int i = 0; i < src.length(); i++) {
+			char c = src.charAt(i);
 
 			if (inString) {
 				out.append(c);
-				if (c == '\\' && i + 1 < sql.length()) {
-					out.append(sql.charAt(++i));
+				if (c == '\\' && i + 1 < src.length()) {
+					out.append(src.charAt(++i));
 				} else if (c == '\'') {
 					inString = false;
 				}
 			} else if (c == '\'') {
 				inString = true;
 				out.append(c);
-			} else if (c == '-' && i + 1 < sql.length() && sql.charAt(i + 1) == '-') {
-				while (i < sql.length() && sql.charAt(i) != '\n') {
+			} else if (src.startsWith(marker, i)) {
+				while (i < src.length() && src.charAt(i) != '\n') {
 					i++;
 				}
 				out.append('\n');
@@ -174,12 +274,12 @@ class FlywayMigrationTest extends IntegrationTest {
 	}
 
 	/** {@code openIndex} 의 여는 괄호에 대응하는 닫는 괄호까지의 알맹이. */
-	private static String balancedBody(String sql, int openIndex) {
+	private static String balancedBody(String src, int openIndex, char open, char close) {
 		int depth = 0;
 		boolean inString = false;
 
-		for (int i = openIndex; i < sql.length(); i++) {
-			char c = sql.charAt(i);
+		for (int i = openIndex; i < src.length(); i++) {
+			char c = src.charAt(i);
 
 			if (inString) {
 				if (c == '\\') {
@@ -189,15 +289,15 @@ class FlywayMigrationTest extends IntegrationTest {
 				}
 			} else if (c == '\'') {
 				inString = true;
-			} else if (c == '(') {
+			} else if (c == open) {
 				depth++;
-			} else if (c == ')' && --depth == 0) {
-				return sql.substring(openIndex + 1, i);
+			} else if (c == close && --depth == 0) {
+				return src.substring(openIndex + 1, i);
 			}
 		}
 
-		throw new IllegalStateException("괄호가 닫히지 않았다: " + sql.substring(openIndex,
-				Math.min(sql.length(), openIndex + 60)));
+		throw new IllegalStateException("괄호가 닫히지 않았다: " + src.substring(openIndex,
+				Math.min(src.length(), openIndex + 60)));
 	}
 
 	/**
