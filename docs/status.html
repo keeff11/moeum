@@ -384,7 +384,7 @@
       <span class="sep">/</span>
       <span>2026-09-10 기준</span>
       <span class="sep">/</span>
-      <span>main @ 63c64a0</span>
+      <span>main @ 03b5370</span>
     </div>
     <h1>도메인별 개발 현황</h1>
     <p class="lede">
@@ -478,11 +478,11 @@
         ["GET /products/{id}/availability", "모집 수는 확정 주문만 센다. no-store 를 응답에 직접 싣는다", "done"],
         ["공구 마감 배치", "closes_at 지난 SELLING → CLOSED. 상태 전이만 한다", "done"],
         ["상품 이미지 업로드", "D-022. presigned URL 로 브라우저가 S3 에 직접 올린다. DB 엔 키만", "done"],
-        ["업로드 고아 파일 정리", "폼을 저장 안 하면 버킷에 남는다. 수명주기 규칙 미설정", "check"],
+        ["업로드 고아 파일 정리", "D-041. 매일 04시 배치가 DB 참조와 버킷을 대조해 지운다. 수명주기 규칙으로는 못 푼다 — 규칙은 DB 가 그 키를 쓰는지 모른다. 지금은 dry-run 이라 로그만 남는다. 버킷 versioning 과 IAM(ListBucket·DeleteObject) 을 켠 뒤 끈다", "part"],
         ["S3 버킷 · CORS · IAM", "moeum-images-prod. 공개 읽기는 sale-forms/* 에만, 앱 권한은 PutObject 뿐", "done"],
         ["판매 시작 · 일시중지 · 수동 마감", "DRAFT → SELLING → PAUSED ↔ SELLING → CLOSED. 마감은 되돌릴 수 없다", "done"],
         ["목표수량 미달 자동 취소", "D-026. CANCEL·PROCEED 는 됐다. EXTEND 는 연장 규칙이 기획 미확정이라 보류", "part"],
-        ["테스트 49개", "SaleFormServiceTest · SaleFormUpdateTest · PublicProductTest · ImageUploadUrlTest · SaleFormLifecycleTest", "done"]
+        ["테스트 59개", "SaleFormServiceTest · SaleFormUpdateTest · PublicProductTest · ImageUploadUrlTest · SaleFormLifecycleTest · OrphanSweepPlanTest · ImageKeySourceTest", "done"]
       ]
     },
     {
