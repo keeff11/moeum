@@ -384,7 +384,7 @@
       <span class="sep">/</span>
       <span>2026-09-10 기준</span>
       <span class="sep">/</span>
-      <span>main @ c29ae05</span>
+      <span>main @ b88e305</span>
     </div>
     <h1>도메인별 개발 현황</h1>
     <p class="lede">
@@ -395,9 +395,9 @@
 
     <div class="total">
       <div class="total-label">전체 진척 (로드맵 단계 비중 가중)</div>
-      <div class="total-num" id="totalNum">88<small>%</small></div>
+      <div class="total-num" id="totalNum">89<small>%</small></div>
       <div class="total-bar">
-        <div class="bar"><i style="width:88%"></i></div>
+        <div class="bar"><i style="width:89%"></i></div>
       </div>
       <div class="total-note">
         <strong style="font-weight:500">09-09, 운영에서 100원이 실제로 결제되고 취소됐다.</strong> 연동키 수령 → 세션 발급 → 승인 <code style="font-family:'IBM Plex Mono',monospace;font-size:12.5px">captured</code> → 전액 환불까지 한 바퀴다. 샌드박스가 없어 미뤄 두었던 검증이라, 이걸로 결제·취소 도메인의 마지막 물음표가 지워졌다. 운영 IP 등록은 정말 필요 없었다. 검증 중에 두 가지가 드러나 같이 고쳤다 — <strong style="font-weight:500">point3 키가 컨테이너까지 전달되지 않던 것</strong>, 그리고 <strong style="font-weight:500">취소한 주문이 상태 조회에서 계속 결제 완료로 보이던 것</strong>(D-036). <strong style="font-weight:500">셀러 어드민은 G1 홈까지 붙어 한 바퀴가 돌아간다</strong> — 홈에서 처리할 주문을 보고(G1), 목록에서 고르고(G6), 잔금을 청구한다(S10). 세 화면이 같은 집계를 쓴다 (D-038). <strong style="font-weight:500">G10 결제 내역은 만들지 않기로 했다</strong> — 셀러가 남의 결제를 취소할 실질적 필요가 없고, 열면 셀러 계정이 곧 환불 권한이 된다. 남은 것은 <strong style="font-weight:500">프론트 SDK 연동</strong>, <strong style="font-weight:500">알림톡 계정·템플릿 심사</strong>(항목 9종 중 5종 미구현), 그리고 <strong style="font-weight:500">송장 등록</strong>이다.
@@ -452,13 +452,13 @@
       ]
     },
     {
-      name: "셀러 · 심사", pct: 93, weight: 6,
+      name: "셀러 · 심사", pct: 100, weight: 6,
       items: [
         ["온보딩 제출 → PENDING", "와이어프레임 ONB-121~125", "done"],
-        ["심사 승인 · 반려 API", "로드맵상 '일단 수동 API'", "done"],
+        ["심사 신청자 목록 · 승인 · 반려 API", "GET /admin/sellers 로 대기열을 준다 — 먼저 낸 신청이 위다. 사업자번호는 이 목록에만 실린다(심사의 판단 근거). 정산계좌는 어디에도 안 나간다 (D-039)", "done"],
         ["민감정보 AES 암호화 컬럼", "business_no · settlement_account", "done"],
         ["미승인 셀러 판매 폼 차단", "SELLER_NOT_APPROVED", "done"],
-        ["운영자 인증", "앱에 없다. Caddy 의 /admin/* 404 가 유일한 방어선인데, 스웨거를 열어 그 API 의 존재가 문서에 드러났다", "check"],
+        ["운영자 인증", "D-039. 앱에 만들지 않기로 했다 — 기획측이 사람 눈으로 확인하고 허가한다. 필요한 두 API(신청자 목록 · 수락)만 두고 접근 제어는 Caddy 가 맡는다. 기획측이 밖에서 부르려면 Caddy 에 기본인증을 여는 것이 남았다", "done"],
         ["상호명(store_name)", "공개 페이지 표시용 (V3). 대표자 실명을 쓰지 않는다", "done"],
         ["G12 설정 — 판매공간 주소 변경(SALE-105)", "화면대로 바꿀 수 있게 했다. 중복은 409, 이전 주소 링크는 죽으므로 변경 로그를 남긴다 (D-030)", "done"],
         ["G12 설정 — 구매자 문의 연락처", "V9. public_contact 를 따로 뒀다. 심사용 phone 은 공개 응답에 절대 담기지 않는다 (D-030)", "done"],
@@ -598,7 +598,7 @@
         ["전역 예외 핸들러 · 에러 코드 체계", "공통 응답 포맷 + 토큰 유출 방지 테스트", "done"],
         ["Flyway 마이그레이션 V1~V11", "20개 테이블 + 세션 · 공개상품 · 미달 처리 · 알림 백오프 · 셀러 프로필 · 찜 · 문의 연락처 · 주문번호 · 2차금 청구 이력. ddl-auto: validate", "done"],
         ["schema.sql · erd.dbml 이 실제 스키마와 일치", "D-034. schema.sql 은 V1 이후, ERD 는 그보다도 전인 v2 시절에 멈춰 있었다. 둘 다 맞추고 FlywayMigrationTest 가 테이블 · 컬럼을, ERD 는 외래키 29개까지 대조한다. <b>아직 브랜치에 있다</b> — claude/kind-kirch-fcf1f5, main 미머지", "part"],
-        ["테스트 391개", "Testcontainers MySQL 8.0 + point3 는 WireMock. 테스트 JVM 은 KST 고정 (D-028). 스웨거 설명 누락도 잡는다 (D-031)", "done"],
+        ["테스트 401개", "Testcontainers MySQL 8.0 + point3 는 WireMock. 테스트 JVM 은 KST 고정 (D-028). 스웨거 설명 누락도 잡는다 (D-031)", "done"],
         ["EC2 + Docker Compose + Caddy 자동 TLS", "D-016. 월 $26", "done"],
         ["GitHub Actions OIDC → ECR → SSM 배포", "AWS 액세스 키를 GitHub 에 두지 않는다", "done"],
         ["Parameter Store 시크릿", "D-017. 배포 때마다 .env 재생성", "done"],
