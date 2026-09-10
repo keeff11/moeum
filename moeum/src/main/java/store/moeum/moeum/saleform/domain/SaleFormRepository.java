@@ -17,6 +17,27 @@ public interface SaleFormRepository extends JpaRepository<SaleForm, Long> {
 	boolean existsBySellerIdAndSlug(Long sellerId, String slug);
 
 	/**
+	 * 셀러 홈(G1)의 진행 중 판매 카드.
+	 *
+	 * <b>SELLING 과 PAUSED 를 같이 본다.</b> 일시중지는 끝난 판매가 아니라 셀러가 손을
+	 * 대야 하는 판매다 — 목록에서 빼면 멈춰 둔 것을 잊는다. 상태는 응답에 실어 배지로 구분한다.
+	 *
+	 * <b>마감이 임박한 것이 위로 온다.</b> D-day 가 이 카드의 존재 이유라서 그렇다.
+	 * 마감일이 없는 단독 판매는 급할 것이 없으니 뒤로 보낸다 —
+	 * MySQL 은 NULL 을 가장 작게 보므로 {@code closes_at IS NULL} 을 먼저 정렬한다.
+	 *
+	 * 네이티브인 이유는 그 NULLS LAST 때문이다. JPQL 에는 표준 문법이 없다.
+	 */
+	@Query(value = """
+			SELECT f.* FROM sale_form f
+			 WHERE f.seller_id = :sellerId
+			   AND f.status IN ('SELLING', 'PAUSED')
+			 ORDER BY (f.closes_at IS NULL), f.closes_at ASC, f.id DESC
+			 LIMIT :limit
+			""", nativeQuery = true)
+	List<SaleForm> findSellerActiveForms(@Param("sellerId") Long sellerId, @Param("limit") int limit);
+
+	/**
 	 * 상세 조회. products 만 fetch join 한다.
 	 * options 까지 같이 join 하면 컬렉션 두 개를 동시에 fetch 하게 되어 Hibernate 가 거부한다
 	 * (MultipleBagFetchException). options 는 default_batch_fetch_size 로 한 번에 끌어온다.
