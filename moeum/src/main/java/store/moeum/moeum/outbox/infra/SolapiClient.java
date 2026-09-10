@@ -5,10 +5,13 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
+import org.springframework.http.client.ClientHttpResponse;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
+
+import java.io.IOException;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
@@ -92,10 +95,12 @@ public class SolapiClient {
 					.body(request)
 					.retrieve()
 					.onStatus(HttpStatusCode::is4xxClientError, (req, res) -> {
-						throw new SolapiFailedException("SOLAPI 4xx: " + res.getStatusCode());
+						throw new SolapiFailedException(
+								"SOLAPI 4xx: " + res.getStatusCode() + " " + bodyOf(res));
 					})
 					.onStatus(HttpStatusCode::is5xxServerError, (req, res) -> {
-						throw new SolapiUncertainException("SOLAPI 5xx: " + res.getStatusCode());
+						throw new SolapiUncertainException(
+								"SOLAPI 5xx: " + res.getStatusCode() + " " + bodyOf(res));
 					})
 					.body(SolapiSendResponse.class);
 
@@ -104,6 +109,24 @@ public class SolapiClient {
 		} catch (RestClientException e) {
 			// 타임아웃 · 네트워크 오류. 실제로 나갔는지 알 수 없다
 			throw new SolapiUncertainException("SOLAPI 호출 실패", e);
+		}
+	}
+
+	/**
+	 * 오류 본문을 메시지에 싣는다.
+	 *
+	 * <b>상태 코드만으로는 고칠 수가 없다.</b> 403 하나에도 IP 제한 · 권한 부족 · 계정 미인증이
+	 * 다 섞여 있는데, 어느 쪽인지는 본문의 errorCode 에만 있다. 여기서 버리면 로그를 보고도
+	 * 무엇을 고쳐야 할지 알 수 없다.
+	 *
+	 * <b>본문에 비밀은 없다.</b> 우리가 보낸 apiSecret 은 서명에만 쓰이고 요청에 실리지 않으므로
+	 * 오류 응답에 되비칠 값이 없다.
+	 */
+	private static String bodyOf(ClientHttpResponse response) {
+		try {
+			return new String(response.getBody().readAllBytes(), StandardCharsets.UTF_8);
+		} catch (IOException e) {
+			return "(본문 없음)";
 		}
 	}
 
