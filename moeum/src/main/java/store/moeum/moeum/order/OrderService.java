@@ -34,6 +34,7 @@ import java.util.List;
 public class OrderService {
 
 	private final OrderCreator orderCreator;
+	private final CheckoutResumer checkoutResumer;
 	private final OrderGroupRepository orderGroupRepository;
 	private final StockHoldRepository stockHoldRepository;
 	private final SaleFormRepository saleFormRepository;
@@ -61,8 +62,13 @@ public class OrderService {
 			backoff = @Backoff(delay = 50, multiplier = 2, random = true))
 	public OrderGroupResponse place(SessionUser user, OrderCreateRequest request) {
 		Buyer buyer = buyerService.findOrCreate(user);
-		return orderCreator.create(buyer, request);
+
+		// 로그인 왕복에서 돌아온 뒤 자동 호출이 중복되면 홀드가 두 벌 잡힌다 (D-015 · D-037).
+		// 같은 것을 또 담으라는 요청이면 새로 잡지 않고 이미 잡아 둔 것을 돌려준다
+		return checkoutResumer.resume(buyer, request)
+				.orElseGet(() -> orderCreator.create(buyer, request));
 	}
+
 
 	/**
 	 * 재시도가 끝났을 때 불린다.

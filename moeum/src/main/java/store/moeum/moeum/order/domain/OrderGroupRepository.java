@@ -27,15 +27,23 @@ public interface OrderGroupRepository extends JpaRepository<OrderGroup, Long> {
 	@Query("select g from OrderGroup g where g.id = :id")
 	Optional<OrderGroup> findByIdForUpdate(@Param("id") Long id);
 
-	/** 진행 중인 세션. 복귀 후 자동 재호출이 중복돼도 기존 홀드를 이어받게 한다 (D-015) */
+	/**
+	 * 아직 결제창에 들어가지 않은 세션 (D-015 · D-037).
+	 *
+	 * <b>CREATED 만 본다.</b> PAY_PENDING 부터는 결제창까지 간 것이라 이어받을 대상이 아니다 —
+	 * 거기에 손대면 결제 중인 주문을 건드리게 된다.
+	 *
+	 * 셀러로 좁히지 않는 이유는 부르는 쪽이 아직 셀러를 모르기 때문이다. 셀러는 옵션에서
+	 * 역산되는데(OrderCreator), 그러려면 이어받기 판정 전에 옵션을 한 번 더 읽어야 한다.
+	 * 어차피 항목이 똑같은지 대조하므로 같은 항목이면 셀러도 같다.
+	 */
 	@Query("""
 			select g from OrderGroup g
 			 where g.buyer.id = :buyerId
-			   and g.seller.id = :sellerId
 			   and g.status = store.moeum.moeum.order.domain.OrderGroupStatus.CREATED
 			 order by g.id desc
 			""")
-	List<OrderGroup> findActiveByBuyerAndSeller(Long buyerId, Long sellerId);
+	List<OrderGroup> findActiveByBuyer(@Param("buyerId") Long buyerId);
 
 	Optional<OrderGroup> findByOrderNo(String orderNo);
 

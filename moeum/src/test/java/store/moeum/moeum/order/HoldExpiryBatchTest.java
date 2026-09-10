@@ -111,6 +111,63 @@ class HoldExpiryBatchTest extends IntegrationTest {
 		assertThat(held(setup)).isZero();
 	}
 
+	// ---------------------------------------------------------------- 이어받기 (D-037)
+
+	@Test
+	@DisplayName("같은_선택으로_다시_부르면_홀드를_두_번_잡지_않는다")
+	void 이어받기() {
+		OrderFixture.Setup setup = fixture.saleForm(10, null);
+		SessionUser user = buyer("kakao-resume");
+
+		OrderGroupResponse first = orderService.place(user, order(setup.optionId(), 3));
+		OrderGroupResponse again = orderService.place(user, order(setup.optionId(), 3));
+
+		// 로그인 왕복 뒤 프론트의 자동 호출이 중복되는 자리다. 새로 잡으면 재고가 두 배로 묶인다
+		assertThat(again.sessionToken()).isEqualTo(first.sessionToken());
+		assertThat(held(setup)).isEqualTo(3);
+		assertThat(groupStatus()).hasSize(1);
+	}
+
+	@Test
+	@DisplayName("선택이_다르면_이어받지_않는다")
+	void 선택이_다르면_새로_잡는다() {
+		OrderFixture.Setup setup = fixture.saleForm(10, null);
+		SessionUser user = buyer("kakao-changed");
+
+		OrderGroupResponse first = orderService.place(user, order(setup.optionId(), 3));
+		OrderGroupResponse other = orderService.place(user, order(setup.optionId(), 5));
+
+		// 방금 고른 것과 다른 것을 결제하게 할 수는 없다
+		assertThat(other.sessionToken()).isNotEqualTo(first.sessionToken());
+		assertThat(held(setup)).isEqualTo(8);
+	}
+
+	@Test
+	@DisplayName("다른_구매자의_세션은_이어받지_않는다")
+	void 남의_세션은_이어받지_않는다() {
+		OrderFixture.Setup setup = fixture.saleForm(10, null);
+		OrderGroupResponse mine = orderService.place(buyer("kakao-a"), order(setup.optionId(), 2));
+
+		OrderGroupResponse theirs = orderService.place(buyer("kakao-b"), order(setup.optionId(), 2));
+
+		assertThat(theirs.sessionToken()).isNotEqualTo(mine.sessionToken());
+		assertThat(held(setup)).isEqualTo(4);
+	}
+
+	@Test
+	@DisplayName("홀드가_만료된_세션은_이어받지_않고_새로_잡는다")
+	void 만료된_세션은_이어받지_않는다() {
+		OrderFixture.Setup setup = fixture.saleForm(10, null);
+		SessionUser user = buyer("kakao-stale");
+		OrderGroupResponse first = orderService.place(user, order(setup.optionId(), 2));
+		expireAllHolds();
+
+		OrderGroupResponse fresh = orderService.place(user, order(setup.optionId(), 2));
+
+		// 만료 배치가 아직 안 돌았을 뿐인 세션을 주면 남은 시간 0인 화면을 받고 결제에서 튕긴다
+		assertThat(fresh.sessionToken()).isNotEqualTo(first.sessionToken());
+	}
+
 	private void expireAllHolds() {
 		jdbcTemplate.update("UPDATE stock_hold SET expires_at = NOW(6) - INTERVAL 1 MINUTE");
 	}
