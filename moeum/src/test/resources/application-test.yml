@@ -11,6 +11,9 @@ moeum:
   # 테스트는 relayOnce() 를 직접 부른다
   batch:
     outbox-delay: 3600000
+    orphan-sweep:
+      # "-" 는 스케줄 비활성이다. 테스트에서 돌면 실제 S3 를 부른다 — 목록 조회와 삭제라 더 위험하다
+      cron: "-"
   auth:
     cookie-secure: false
   crypto:

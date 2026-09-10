@@ -163,6 +163,17 @@ moeum:
     bucket: ${S3_BUCKET:}
     # 나중에 CloudFront 를 앞에 세우면 이 값만 바꾼다. 쌓인 행은 키만 갖고 있어 손대지 않는다
     public-base-url: ${S3_PUBLIC_BASE_URL:}
+  batch:
+    orphan-sweep:
+      # 어디에도 연결되지 않은 업로드 이미지를 지운다 (D-041).
+      # 트래픽이 없는 새벽에 돌린다 — 버킷 전체를 훑는 일이다
+      cron: ${ORPHAN_SWEEP_CRON:0 0 4 * * *}
+      # 지울 목록만 로그로 남기고 실제로는 안 지운다. 로그에 살아 있어야 할 이미지가
+      # 안 섞이는 것을 확인한 뒤에 false 로 바꾼다. 되돌릴 수 없는 배치라 이 순서를 지킨다
+      dry-run: ${ORPHAN_SWEEP_DRY_RUN:true}
+      # 올린 지 이 시간이 안 지난 객체는 건드리지 않는다.
+      # 셀러가 이미지를 올려 두고 상세를 쓰는 동안은 아직 폼에 연결돼 있지 않다
+      grace: 24h
   point3:
     # 서버 전용 비밀값. 비어 있으면 결제 호출만 막히고 앱은 정상 기동한다
     base-url: ${POINT3_BASE_URL:https://api.point3.io}

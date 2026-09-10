@@ -428,3 +428,72 @@ AWS 콘솔 → EC2 → Lifecycle Manager → 스냅샷 정책, 대상 태그 `Na
 
 **시크릿을 바꿀 때는** Parameter Store 값만 고치고 재배포하면 된다.
 `deploy.sh` 가 매번 `.env` 를 새로 만든다.
+
+---
+
+## 고아 이미지 청소 켜기 (D-041)
+
+배치는 코드에 들어가 있지만 **기본값이 dry-run 이라 아무것도 지우지 않는다.**
+아래 순서를 지킨다. 되돌릴 수 없는 작업이라 순서가 곧 안전장치다.
+
+**1. 버킷 versioning 을 켠다.** 잘못 지웠을 때 되돌릴 수 있는 유일한 수단이다.
+
+```bash
+aws s3api put-bucket-versioning --bucket moeum-images-prod --versioning-configuration Status=Enabled
+```
+
+이전 버전이 무한정 쌓이지 않게 30일 만료를 건다. **수명주기 규칙은 여기에 쓴다** —
+고아 판정 자체에는 쓸 수 없다(D-041).
+
+```bash
+aws s3api put-bucket-lifecycle-configuration --bucket moeum-images-prod --lifecycle-configuration '{"Rules":[{"ID":"expire-noncurrent","Status":"Enabled","Filter":{"Prefix":""},"NoncurrentVersionExpiration":{"NoncurrentDays":30}}]}'
+```
+
+**2. EC2 역할에 목록·삭제 권한을 준다.** 지금 앱 권한은 `PutObject` 뿐이다.
+`ec2-image-sweep.json` 으로 저장한다.
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    { "Effect": "Allow", "Action": "s3:ListBucket",
+      "Resource": "arn:aws:s3:::moeum-images-prod",
+      "Condition": { "StringLike": { "s3:prefix": "sale-forms/*" } } },
+    { "Effect": "Allow", "Action": "s3:DeleteObject",
+      "Resource": "arn:aws:s3:::moeum-images-prod/sale-forms/*" }
+  ]
+}
+```
+
+```bash
+aws iam put-role-policy --role-name moeum-ec2 --policy-name image-sweep --policy-document file://ec2-image-sweep.json
+```
+
+`sale-forms/*` 로 좁힌 이유는 배치가 그 접두사만 훑기 때문이다.
+버킷에 다른 용도의 경로가 생겨도 삭제 권한이 닿지 않는다.
+
+**3. dry-run 상태로 1~2주 로그를 본다.** 매일 04:00 에 한 줄씩 남는다.
+
+```bash
+sudo docker logs moeum 2>&1 | grep "고아 이미지\|참조 이미지 키"
+```
+
+보는 것은 둘이다.
+
+- `참조 이미지 키: sale_form_image=N건` — **N 이 0 이면 조회가 깨진 것이다.**
+  참조처별 건수가 갑자기 0 이 되는 것이 이 배치에서 가장 위험한 고장이고,
+  건수가 적으면 비율 안전장치에도 안 걸린다
+- `고아 이미지 청소 (dry-run, 지우지 않음): ... 키=[...]` — 이 목록에 **살아 있어야 할
+  이미지가 섞여 있으면 참조처를 빠뜨린 것이다.** 섞여 있으면 4번으로 넘어가지 않는다
+
+2번을 건너뛰면 `ListBucket` 이 403 이라 배치가 아무 일도 못 한다.
+그 상태에서도 로그는 조용하니 **"고아 없음" 만 보고 정상이라고 판단하지 않는다.**
+
+**4. dry-run 을 끈다.** Parameter Store 에 값을 넣고 재배포한다.
+
+```bash
+aws ssm put-parameter --name /moeum/prod/ORPHAN_SWEEP_DRY_RUN --value false --type String --overwrite
+```
+
+되돌릴 때는 값을 `true` 로 바꾸고 재배포한다. 크론 자체를 끄려면
+`ORPHAN_SWEEP_CRON` 을 `-` 로 둔다.

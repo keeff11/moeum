@@ -3,6 +3,12 @@ package store.moeum.moeum.global.storage;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
+import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.Delete;
+import software.amazon.awssdk.services.s3.model.DeleteObjectsRequest;
+import software.amazon.awssdk.services.s3.model.DeleteObjectsResponse;
+import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
+import software.amazon.awssdk.services.s3.model.ObjectIdentifier;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest;
@@ -10,6 +16,9 @@ import store.moeum.moeum.global.error.BusinessException;
 import store.moeum.moeum.global.error.ErrorCode;
 
 import java.time.Duration;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
@@ -39,8 +48,12 @@ public class ImageStorage {
 			"image/gif", "gif"
 	);
 
+	/** DeleteObjects 한 번에 보낼 수 있는 최대 키 수. S3 가 정한 값이다 */
+	private static final int DELETE_BATCH_SIZE = 1000;
+
 	private final StorageProperties properties;
 	private final S3Presigner presigner;
+	private final S3Client s3Client;
 
 	/**
 	 * 업로드용 presigned PUT URL 을 발급한다.
@@ -117,6 +130,66 @@ public class ImageStorage {
 		return base + "/" + objectKey;
 	}
 
+	/**
+	 * 버킷에 실제로 있는 객체를 전부 훑는다. 고아 파일 청소가 쓴다.
+	 *
+	 * 한 번에 1000개씩 끊어 오므로 paginator 에 맡긴다. 접두사 안쪽만 본다 —
+	 * 같은 버킷에 다른 용도의 경로가 생겨도 청소 대상이 되지 않는다.
+	 *
+	 * 버킷이 설정되지 않은 환경(로컬)에서는 빈 목록이다. 호출한 쪽이 그대로 아무 일도 안 하게 된다.
+	 */
+	public List<StoredObject> listAll() {
+		if (!properties.isConfigured()) {
+			return List.of();
+		}
+
+		ListObjectsV2Request request = ListObjectsV2Request.builder()
+				.bucket(properties.bucket())
+				.prefix(properties.keyPrefix() + "/")
+				.build();
+
+		List<StoredObject> objects = new ArrayList<>();
+		s3Client.listObjectsV2Paginator(request)
+				.contents()
+				.forEach(object -> objects.add(new StoredObject(object.key(), object.lastModified())));
+		return objects;
+	}
+
+	/**
+	 * 객체를 지운다. <b>되돌릴 수 없다</b> — 버킷 versioning 이 켜져 있어야 복구가 가능하다.
+	 *
+	 * 1000개씩 묶어 보낸다. 하나씩 부르면 호출 수가 그대로 건수가 되고 요금도 그만큼 붙는다.
+	 * 일부만 실패해도 나머지는 지워진다 — 남은 것은 다음 회차가 다시 집는다.
+	 *
+	 * @return 실제로 지워진 건수
+	 */
+	public int deleteAll(List<String> objectKeys) {
+		if (!properties.isConfigured() || objectKeys.isEmpty()) {
+			return 0;
+		}
+
+		int deleted = 0;
+		for (int from = 0; from < objectKeys.size(); from += DELETE_BATCH_SIZE) {
+			List<String> chunk = objectKeys.subList(
+					from, Math.min(from + DELETE_BATCH_SIZE, objectKeys.size()));
+
+			DeleteObjectsResponse response = s3Client.deleteObjects(DeleteObjectsRequest.builder()
+					.bucket(properties.bucket())
+					.delete(Delete.builder()
+							.objects(chunk.stream()
+									.map(key -> ObjectIdentifier.builder().key(key).build())
+									.toList())
+							.build())
+					.build());
+
+			deleted += response.deleted().size();
+			response.errors().forEach(error ->
+					log.warn("이미지 삭제 실패: key={}, code={}, message={}",
+							error.key(), error.code(), error.message()));
+		}
+		return deleted;
+	}
+
 	private static String extensionOf(String contentType) {
 		String normalized = (contentType == null) ? "" : contentType.trim().toLowerCase(Locale.ROOT);
 		String extension = ALLOWED_TYPES.get(normalized);
@@ -133,5 +206,15 @@ public class ImageStorage {
 	 * @param expiresInSeconds 남은 유효 시간
 	 */
 	public record PresignedUpload(String url, String objectKey, String contentType, long expiresInSeconds) {
+	}
+
+	/**
+	 * 버킷에 있는 객체 하나.
+	 *
+	 * @param key          S3 객체 키
+	 * @param lastModified 올라온 시각. <b>고아 판정의 유예 기간이 이 값을 기준으로 잡힌다</b> —
+	 *                     방금 올린 이미지는 아직 폼 저장을 기다리는 중일 수 있다
+	 */
+	public record StoredObject(String key, Instant lastModified) {
 	}
 }

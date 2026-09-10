@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.List;
 import java.util.Optional;
 
 public interface SellerRepository extends JpaRepository<Seller, Long> {
@@ -18,6 +19,18 @@ public interface SellerRepository extends JpaRepository<Seller, Long> {
 
 	/** 셀러 페이지(B0) 진입. store_slug 가 곧 공개 주소다 */
 	Optional<Seller> findByStoreSlug(String storeSlug);
+
+	/**
+	 * 쓰이고 있는 프로필 사진 키 전부. 고아 파일 청소가 "지우면 안 되는 것" 목록으로 쓴다.
+	 *
+	 * 심사 상태를 보지 않는다 — 반려된 셀러도 사진을 쥐고 있고, 재신청하면 그대로 쓴다.
+	 * 빈 문자열이 들어간 행이 있어도 키로 취급하지 않도록 여기서 거른다.
+	 */
+	@Query("""
+			select s.profileImageKey from Seller s
+			 where s.profileImageKey is not null and s.profileImageKey <> ''
+			""")
+	List<String> findAllProfileImageKeys();
 
 	/**
 	 * 심사 신청자 목록 (운영자).
