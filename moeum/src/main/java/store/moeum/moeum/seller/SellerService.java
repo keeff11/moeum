@@ -3,20 +3,28 @@ package store.moeum.moeum.seller;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import store.moeum.moeum.global.error.BusinessException;
 import store.moeum.moeum.global.error.ErrorCode;
+import store.moeum.moeum.seller.domain.ReviewStatus;
 import store.moeum.moeum.seller.domain.Seller;
 import store.moeum.moeum.seller.domain.SellerRepository;
 import store.moeum.moeum.global.storage.ImageStorage;
 import store.moeum.moeum.seller.dto.OnboardingRequest;
+import store.moeum.moeum.seller.dto.SellerApplicantPageResponse;
 import store.moeum.moeum.seller.dto.SellerProfileRequest;
 
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class SellerService {
+
+	/** 심사 목록 한 장. 대기열이라 한 화면에 다 보이는 편이 낫다 */
+	private static final int DEFAULT_APPLICANT_SIZE = 20;
+	private static final int MAX_APPLICANT_SIZE = 100;
 
 	private final SellerRepository sellerRepository;
 	private final ImageStorage imageStorage;
@@ -122,6 +130,30 @@ public class SellerService {
 	}
 
 	/** 심사 승인. 로드맵상 아직 수동 API 다 */
+	/**
+	 * 심사 신청자 목록 (운영자).
+	 *
+	 * <b>기본값이 PENDING 이다.</b> 이 화면을 여는 이유가 "처리할 신청이 있나" 라서,
+	 * 아무것도 안 주면 대기 중인 것부터 보여 주는 것이 맞는다.
+	 *
+	 * 응답 조립을 이 트랜잭션 안에서 끝낸다 — 사업자번호가 암호화 컬럼이라
+	 * 컨버터가 도는 자리를 영속성 컨텍스트 안에 둔다.
+	 */
+	@Transactional(readOnly = true)
+	public SellerApplicantPageResponse applicants(ReviewStatus status, int page, int size) {
+		Page<Seller> sellers = sellerRepository.findApplicants(
+				status, PageRequest.of(Math.max(page, 0), clampSize(size)));
+
+		return SellerApplicantPageResponse.of(sellers);
+	}
+
+	private static int clampSize(int size) {
+		if (size <= 0) {
+			return DEFAULT_APPLICANT_SIZE;
+		}
+		return Math.min(size, MAX_APPLICANT_SIZE);
+	}
+
 	@Transactional
 	public Seller approve(Long sellerId) {
 		Seller seller = findById(sellerId);
