@@ -384,7 +384,7 @@
       <span class="sep">/</span>
       <span>2026-09-10 기준</span>
       <span class="sep">/</span>
-      <span>main @ cb7400f</span>
+      <span>main @ c29ae05</span>
     </div>
     <h1>도메인별 개발 현황</h1>
     <p class="lede">
@@ -395,12 +395,12 @@
 
     <div class="total">
       <div class="total-label">전체 진척 (로드맵 단계 비중 가중)</div>
-      <div class="total-num" id="totalNum">87<small>%</small></div>
+      <div class="total-num" id="totalNum">88<small>%</small></div>
       <div class="total-bar">
-        <div class="bar"><i style="width:87%"></i></div>
+        <div class="bar"><i style="width:88%"></i></div>
       </div>
       <div class="total-note">
-        <strong style="font-weight:500">09-09, 운영에서 100원이 실제로 결제되고 취소됐다.</strong> 연동키 수령 → 세션 발급 → 승인 <code style="font-family:'IBM Plex Mono',monospace;font-size:12.5px">captured</code> → 전액 환불까지 한 바퀴다. 샌드박스가 없어 미뤄 두었던 검증이라, 이걸로 결제·취소 도메인의 마지막 물음표가 지워졌다. 운영 IP 등록은 정말 필요 없었다. 검증 중에 두 가지가 드러나 같이 고쳤다 — <strong style="font-weight:500">point3 키가 컨테이너까지 전달되지 않던 것</strong>, 그리고 <strong style="font-weight:500">취소한 주문이 상태 조회에서 계속 결제 완료로 보이던 것</strong>(D-036). 남은 것은 <strong style="font-weight:500">프론트 SDK 연동</strong>, <strong style="font-weight:500">알림톡 계정·템플릿 심사</strong>(항목 9종 중 5종 미구현), 그리고 셀러 어드민 <strong style="font-weight:500">G1 대시보드 · G10 결제 내역</strong>이다.
+        <strong style="font-weight:500">09-09, 운영에서 100원이 실제로 결제되고 취소됐다.</strong> 연동키 수령 → 세션 발급 → 승인 <code style="font-family:'IBM Plex Mono',monospace;font-size:12.5px">captured</code> → 전액 환불까지 한 바퀴다. 샌드박스가 없어 미뤄 두었던 검증이라, 이걸로 결제·취소 도메인의 마지막 물음표가 지워졌다. 운영 IP 등록은 정말 필요 없었다. 검증 중에 두 가지가 드러나 같이 고쳤다 — <strong style="font-weight:500">point3 키가 컨테이너까지 전달되지 않던 것</strong>, 그리고 <strong style="font-weight:500">취소한 주문이 상태 조회에서 계속 결제 완료로 보이던 것</strong>(D-036). <strong style="font-weight:500">셀러 어드민은 G1 홈까지 붙어 한 바퀴가 돌아간다</strong> — 홈에서 처리할 주문을 보고(G1), 목록에서 고르고(G6), 잔금을 청구한다(S10). 세 화면이 같은 집계를 쓴다 (D-038). <strong style="font-weight:500">G10 결제 내역은 만들지 않기로 했다</strong> — 셀러가 남의 결제를 취소할 실질적 필요가 없고, 열면 셀러 계정이 곧 환불 권한이 된다. 남은 것은 <strong style="font-weight:500">프론트 SDK 연동</strong>, <strong style="font-weight:500">알림톡 계정·템플릿 심사</strong>(항목 9종 중 5종 미구현), 그리고 <strong style="font-weight:500">송장 등록</strong>이다.
       </div>
     </div>
 
@@ -420,7 +420,7 @@
   <main class="rows" id="rows"></main>
 
   <footer>
-    <div><strong style="font-weight:500;color:var(--ink-2)">다음 한 걸음</strong> — ① <strong style="font-weight:500">프론트 SDK 연동</strong>. API 는 준비됐다(point3-api 6절). 함정 셋만 넘기면 된다 — <code style="font-family:'IBM Plex Mono',monospace;font-size:12.5px">orderId</code> 자리에 sessionId, <code style="font-family:'IBM Plex Mono',monospace;font-size:12.5px">setAmount</code> 는 1 고정, 그리고 <strong style="font-weight:500">successUrl 도달만으로는 결제가 끝나지 않는다</strong>(confirm 을 불러야 한다) → ② 카카오 알림톡 계정·템플릿 심사(항목 9종이 8/26 에 확정됐다. 발송기만 갈아 끼우면 된다) → ③ 남은 셀러 어드민 <strong style="font-weight:500">G1 대시보드</strong>와 <strong style="font-weight:500">G10 결제 내역</strong> — 둘 다 G6 조회 위에 얹힌다</div>
+    <div><strong style="font-weight:500;color:var(--ink-2)">다음 한 걸음</strong> — ① <strong style="font-weight:500">프론트 SDK 연동</strong>. API 는 준비됐다(point3-api 6절). 함정 셋만 넘기면 된다 — <code style="font-family:'IBM Plex Mono',monospace;font-size:12.5px">orderId</code> 자리에 sessionId, <code style="font-family:'IBM Plex Mono',monospace;font-size:12.5px">setAmount</code> 는 1 고정, 그리고 <strong style="font-weight:500">successUrl 도달만으로는 결제가 끝나지 않는다</strong>(confirm 을 불러야 한다) → ② 카카오 알림톡 계정·템플릿 심사(항목 9종이 8/26 에 확정됐다. 발송기만 갈아 끼우면 된다) → ③ <strong style="font-weight:500">송장 등록</strong> — 알림톡 3번(발송 완료)이 이걸 기다리고, G6 의 발송 완료 탭이 항상 0건인 이유도 이것이다</div>
     <div>가중치는 로드맵 8단계의 작업량 비중으로 잡았다. 결제 22 · 주문 12 · 판매폼 10 · 취소 10 · 인증 8 · 인프라 8 · 셀러운영 8 · 셀러심사 6 · 장바구니 6 · 알림 6 · 구매자 4. 맨 아래 <strong style="font-weight:500">와이어프레임 대조</strong> 행은 같은 사실을 화면 쪽에서 다시 센 것이라 가중치가 없다 — 전체 진척에 두 번 들어가지 않는다.</div>
   </footer>
 </div>
@@ -581,13 +581,13 @@
       ]
     },
     {
-      name: "셀러 운영 (G1 · G6 · S10 · G10)", pct: 45, weight: 8,
+      name: "셀러 운영 (G1 · G6 · S10)", pct: 57, weight: 8,
       items: [
         ["입고 처리 → orders.status = ARRIVED", "폼 단위로 처리. 묶음의 모든 폼이 입고돼야 2차금이 열린다", "done"],
-        ["G1 셀러 홈 — 대시보드 집계", "화면이 요구하는 것: 처리할 주문(2차금 미납 N건 · 발송 대기 N건, DUE-110) · 판매 카드의 모집 68/100 과 D-5 · 최근 주문. 이걸 한 번에 주는 API 가 없다. 진행 판매 0건이면 빈 상태", "todo"],
+        ["G1 셀러 홈 — 대시보드 집계", "GET /seller/home. 화면 하나에 요청 하나다 (D-038). 처리할 주문 · 진행 중 판매(모집 68/100 · D-5, 마감 임박순) · 최근 주문 5건. 숫자는 G6 탭 배지를 그대로 빌려 온다 — 갈라지면 S10 청구 대상이 틀어진다", "done"],
         ["G6 주문 목록", "GET /seller/orders — 상태 탭 5종 · 검색 4종 · 판매별 필터 · 상세 드로어. 2차금 미납 탭은 전 폼이 입고된 건만 센다 (D-033). 발송 완료 탭은 송장 등록이 없어 아직 0건이다", "done"],
         ["S10 2차금 일괄 청구", "GET·POST /seller/orders/second-charge. 알림을 다시 내고 이력을 남긴다 — 상태를 올리면 구매자 결제가 막힌다 (D-035). 쿨다운 24시간. 대상은 G6 의 2차금 미납 탭과 같은 쿼리다", "done"],
-        ["G10 결제 내역", "구분 필터 · 상태 탭 6종 · 상세 드로어(8필드+취소 여부). 셀러용 결제 조회 API 가 없다", "todo"],
+        ["셀러가 여는 판매 취소", "D-038. G10 결제 내역(건별 즉시취소)은 만들지 않기로 했다 — 셀러 계정이 곧 환불 권한이 된다. 정말 비어 있는 자리는 셀러가 자기 사정으로 판매를 접는 경우다. 지금은 수동 마감만 되고 결제된 주문은 그대로 남는다", "todo"],
         ["발주서 다운로드", "옵션별 수량 집계 → CSV. 와이어프레임에는 아직 화면이 없다", "todo"],
         ["송장 등록 (개별 · 일괄 업로드)", "알림톡 3번(발송 완료 — 송장번호 + 배송조회 링크)이 이걸 기다린다", "todo"]
       ]
@@ -598,7 +598,7 @@
         ["전역 예외 핸들러 · 에러 코드 체계", "공통 응답 포맷 + 토큰 유출 방지 테스트", "done"],
         ["Flyway 마이그레이션 V1~V11", "20개 테이블 + 세션 · 공개상품 · 미달 처리 · 알림 백오프 · 셀러 프로필 · 찜 · 문의 연락처 · 주문번호 · 2차금 청구 이력. ddl-auto: validate", "done"],
         ["schema.sql · erd.dbml 이 실제 스키마와 일치", "D-034. schema.sql 은 V1 이후, ERD 는 그보다도 전인 v2 시절에 멈춰 있었다. 둘 다 맞추고 FlywayMigrationTest 가 테이블 · 컬럼을, ERD 는 외래키 29개까지 대조한다. <b>아직 브랜치에 있다</b> — claude/kind-kirch-fcf1f5, main 미머지", "part"],
-        ["테스트 376개", "Testcontainers MySQL 8.0 + point3 는 WireMock. 테스트 JVM 은 KST 고정 (D-028). 스웨거 설명 누락도 잡는다 (D-031)", "done"],
+        ["테스트 391개", "Testcontainers MySQL 8.0 + point3 는 WireMock. 테스트 JVM 은 KST 고정 (D-028). 스웨거 설명 누락도 잡는다 (D-031)", "done"],
         ["EC2 + Docker Compose + Caddy 자동 TLS", "D-016. 월 $26", "done"],
         ["GitHub Actions OIDC → ECR → SSM 배포", "AWS 액세스 키를 GitHub 에 두지 않는다", "done"],
         ["Parameter Store 시크릿", "D-017. 배포 때마다 .env 재생성", "done"],
@@ -612,7 +612,7 @@
       ]
     },
     {
-      name: "와이어프레임 대조 (화면 ID ↔ API)", pct: 80, weight: 0, open: true,
+      name: "와이어프레임 대조 (화면 ID ↔ API)", pct: 88, weight: 0, open: true,
       items: [
         ["B0 셀러 페이지", "GET /stores/{storeSlug} + /me/wishlist. 헤더 · 목록 · 검색 · 탭 · 하트까지 화면 그대로 (D-029)", "done"],
         ["B1–B7 구매자 결제", "checkout-sessions · pay · confirm. B6-2 결제 실패의 '재시도(같은 주문 유지)'는 D-023 재결제가 받는다", "done"],
@@ -625,10 +625,10 @@
         ["셀러 4 판매 목록 · 상세 (G5 · G5-O · S13)", "목록·상세·시작·일시중지·마감. S13 미달 마감 자동 분기는 D-026 배치가 한다 (EXTEND 만 보류)", "done"],
         ["G12 설정", "프로필 · 판매공간 주소 · 문의 연락처까지 화면 그대로 (D-030)", "done"],
         ["I 알림톡 발송 항목", "채택 9종 중 4종. 셀러향 2종은 수신자 구분부터 없다 — 알림 행 참고", "part"],
-        ["G1 셀러 홈 대시보드", "API 없음", "todo"],
+        ["G1 셀러 홈 대시보드", "GET /seller/home 하나로 화면 한 장을 준다 (D-038)", "done"],
         ["G6 주문 목록", "GET /seller/orders. 판매별 목록(G5-O)도 saleFormId 만 붙여 같은 것을 쓴다", "done"],
         ["S10 2차금 일괄 청구", "GET·POST /seller/orders/second-charge. 출금이 아니라 알림 재발송이다 — 자동출금이 없어 구매자가 승인해야 한다", "done"],
-        ["G10 결제 내역", "API 없음", "todo"],
+        ["G10 결제 내역", "만들지 않기로 했다 (D-038). 셀러가 남의 결제를 취소할 실질적 필요가 없다 — 공구가 깨지는 경우는 미달 취소 배치가 자동으로 한다", "done"],
         ["대조 범위", "G1 · G6 · S10 · G10 · G12 와 알림톡 항목은 주석 카드를 열어 문장 단위로 읽었다. 셀러 1·3·4 와 구매자 B1~B13 은 화면 단위로만 맞춰 봤고 필드 단위 대조는 아직이다", "check"]
       ]
     }
