@@ -135,7 +135,7 @@ class AlimtalkMessageFactoryTest extends IntegrationTest {
 				"#{userName}", "#{goodsName}", "#{prepayment}", "#{billTime}", "#{LINK}");
 		assertThat(variables.get("#{userName}")).isEqualTo("김서연");
 		assertThat(variables.get("#{goodsName}")).isEqualTo("아크릴 스탠드 — 2차 공구");
-		assertThat(variables.get("#{prepayment}")).isEqualTo("20000");
+		assertThat(variables.get("#{prepayment}")).isEqualTo("20,000");
 		assertThat(variables.get("#{billTime}")).isEqualTo("2026년 9월 10일 10:06");
 		assertThat(variables.get("#{LINK}"))
 				.isEqualTo("https://www.moeum.store/orders/" + group.getOrderToken());
@@ -162,7 +162,7 @@ class AlimtalkMessageFactoryTest extends IntegrationTest {
 		// 부분 취소 뒤 다시 계산하면 알림 문구가 그때 결제한 금액과 달라진다
 		assertThat(create(group, OutboxEventType.ORDER_PAID, 17500, LocalDateTime.now())
 				.orElseThrow().kakaoOptions().variables().get("#{prepayment}"))
-				.isEqualTo("17500");
+				.isEqualTo("17,500");
 	}
 
 	@Test

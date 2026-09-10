@@ -116,7 +116,7 @@ public class AlimtalkMessageFactory {
 
 		variables.put("#{userName}", userNameOf(group));
 		variables.put("#{goodsName}", group.representativeTitle());
-		variables.put("#{prepayment}", String.valueOf(amountOf(message)));
+		variables.put("#{prepayment}", wonOf(amountOf(message)));
 		variables.put("#{billTime}", message.createdAt().format(BILL_TIME));
 		variables.put("#{LINK}", linkOf(group));
 
@@ -145,6 +145,16 @@ public class AlimtalkMessageFactory {
 		} catch (Exception e) {
 			throw new SolapiFailedException("알림 payload 를 읽을 수 없다: outboxId=" + message.id(), e);
 		}
+	}
+
+	/**
+	 * 자릿수를 끊는다 — 템플릿이 "결제 금액 : #{prepayment}원" 이라 20,000원 이 된다.
+	 *
+	 * {@code DecimalFormat} 을 상수로 두지 않는다. <b>스레드 안전하지 않다</b> —
+	 * 지금은 릴레이가 한 스레드지만, 나중에 병렬로 돌리는 순간 금액이 섞인다.
+	 */
+	private static String wonOf(int amount) {
+		return String.format("%,d", amount);
 	}
 
 	/** 버튼 링크. 템플릿의 모바일·PC 웹링크가 같은 {@code #{LINK}} 를 쓴다 */
