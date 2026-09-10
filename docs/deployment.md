@@ -248,6 +248,38 @@ Parameter Store 에만 넣으면 `.env` 에는 들어가지만 앱은 못 본다
 put KAKAO_CLIENT_SECRET "카카오-콘솔에서-발급한-값"
 ```
 
+### 카카오 알림톡 (SOLAPI)
+
+**`NOTIFY_PROVIDER` 를 `solapi` 로 바꾸는 순간 실제로 발송된다.** 건당 단가가 붙고,
+잘못 보내면 구매자에게 간 것을 되돌릴 수 없다. 아래 다섯 개를 **다 채운 뒤에** 바꾼다.
+
+```bash
+# API Key / Secret — SOLAPI 콘솔에서 발급. Secret 은 서명에만 쓰이고 요청에 실리지 않는다
+read -rs SOLAPI_KEY && put SOLAPI_API_KEY "$SOLAPI_KEY" && unset SOLAPI_KEY
+read -rs SOLAPI_SECRET && put SOLAPI_API_SECRET "$SOLAPI_SECRET" && unset SOLAPI_SECRET
+
+# 발신프로필 ID(pfId) 와 승인된 템플릿 ID. 비밀은 아니지만 같이 둔다
+aws ssm put-parameter --region ap-northeast-2     --name /moeum/prod/SOLAPI_PF_ID --value "KA01PF..." --type String --overwrite
+aws ssm put-parameter --region ap-northeast-2     --name /moeum/prod/SOLAPI_TEMPLATE_ORDER_PAID --value "KA01TP..." --type String --overwrite
+
+# 발신번호. SOLAPI 에 사전 등록된 번호여야 한다 —
+# 알림톡이 막힌 수신자에게 문자로 대체 발송될 때 쓰인다
+aws ssm put-parameter --region ap-northeast-2     --name /moeum/prod/SOLAPI_FROM --value "0212345678" --type String --overwrite
+
+# 다 채운 뒤 마지막에 켠다
+aws ssm put-parameter --region ap-northeast-2     --name /moeum/prod/NOTIFY_PROVIDER --value "solapi" --type String --overwrite
+```
+
+**승인된 템플릿이 있는 이벤트만 나간다.** `SOLAPI_TEMPLATE_ORDER_PAID` 만 채워 두면
+1차금 결제 완료만 발송되고, 2차금 청구·환불 완료는 예전처럼 로그만 남는다.
+템플릿이 추가로 승인되면 **파라미터를 하나 더 넣고 재배포하면 된다 — 코드는 손대지 않는다.**
+그때 `docker-compose.prod.yml` 의 `environment` 와 `application.yml` 의 `templates` 에
+이름을 같이 추가한다 (point3 키가 컨테이너까지 안 갔던 것과 같은 함정이다).
+
+**⚠ 켜기 전에 수신번호 문제를 먼저 정리한다.** 지금은 배송지 전화번호로 보낸다 —
+구매자 본인 번호가 DB 에 없기 때문이다. 선물 주문이면 결제 알림이 받는 사람에게 간다
+(D-040).
+
 ---
 
 ## 5. 보안 그룹

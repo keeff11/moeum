@@ -79,6 +79,19 @@ spring:
     show-sql: true
 
 moeum:
+  notify:
+    # log | solapi. 로컬에서는 로그만 남긴다 — 알림톡은 건당 단가가 붙는다
+    provider: ${NOTIFY_PROVIDER:log}
+    solapi:
+      api-key: ${SOLAPI_API_KEY:}
+      api-secret: ${SOLAPI_API_SECRET:}
+      pf-id: ${SOLAPI_PF_ID:}
+      # SOLAPI 에 사전 등록된 발신번호. 알림톡이 막혀 문자로 대체될 때 쓰인다
+      from: ${SOLAPI_FROM:}
+      link-base: ${SOLAPI_LINK_BASE:https://www.moeum.store}
+      templates:
+        # 승인된 템플릿만 적는다. 없는 이벤트는 로그만 남기고 넘어간다
+        ORDER_PAID: ${SOLAPI_TEMPLATE_ORDER_PAID:}
   auth:
     # 로컬은 http 라 Secure 를 붙이면 쿠키가 저장되지 않는다
     cookie-secure: false

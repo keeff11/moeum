@@ -314,6 +314,25 @@ public class OrderGroup extends BaseTimeEntity {
 	}
 
 	/** 아직 살아 있는 주문. 취소 대상과 배송비 판정의 기준이다 */
+	/**
+	 * 이 묶음을 한 줄로 부르는 이름 — "아크릴 스탠드 외 1건".
+	 *
+	 * 셀러 주문 카드(G6)와 알림톡 본문이 같은 문구를 쓴다. 두 군데서 따로 만들면
+	 * 구매자가 받은 알림과 셀러가 보는 목록의 제목이 어긋난다.
+	 *
+	 * <b>취소된 폼은 세지 않는다.</b> 남은 주문의 수가 지금 유효한 건수다.
+	 */
+	public String representativeTitle() {
+		List<Order> alive = activeOrders();
+
+		if (alive.isEmpty()) {
+			// 전부 취소된 묶음. 그래도 무엇이었는지는 보여야 한다
+			return orders.isEmpty() ? "" : orders.get(0).getSaleForm().getTitle();
+		}
+		String head = alive.get(0).getSaleForm().getTitle();
+		return alive.size() == 1 ? head : head + " 외 " + (alive.size() - 1) + "건";
+	}
+
 	public List<Order> activeOrders() {
 		return orders.stream()
 				.filter(o -> !o.isCanceled() && o.getStatus() != OrderStatus.EXPIRED)

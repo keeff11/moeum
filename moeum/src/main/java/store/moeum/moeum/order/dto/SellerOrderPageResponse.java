@@ -1,7 +1,6 @@
 package store.moeum.moeum.order.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
-import store.moeum.moeum.order.domain.Order;
 import store.moeum.moeum.order.domain.OrderGroup;
 import store.moeum.moeum.order.domain.SellerOrderCounts;
 import store.moeum.moeum.order.domain.Shipping;
@@ -126,7 +125,7 @@ public record SellerOrderPageResponse(
 
 		return new SellerOrderItem(
 				group.getOrderNo(),
-				titleOf(group),
+				group.representativeTitle(),
 				shipping != null ? shipping.getRecipientName() : group.getBuyer().getNickname(),
 				group.firstPaymentAmount() + group.secondPaymentAmount(),
 				PaymentSummary.of(first, second, group),
@@ -135,18 +134,4 @@ public record SellerOrderPageResponse(
 				group.getCreatedAt());
 	}
 
-	/**
-	 * 카드에는 제목이 한 줄만 들어간다. 취소된 폼은 세지 않는다 —
-	 * 셀러가 보는 건수는 아직 살아 있는 주문의 수다.
-	 */
-	private static String titleOf(OrderGroup group) {
-		List<Order> alive = group.activeOrders();
-
-		if (alive.isEmpty()) {
-			// 전부 취소된 묶음. 그래도 무엇이었는지는 보여야 한다
-			return group.getOrders().isEmpty() ? "" : group.getOrders().get(0).getSaleForm().getTitle();
-		}
-		String head = alive.get(0).getSaleForm().getTitle();
-		return alive.size() == 1 ? head : head + " 외 " + (alive.size() - 1) + "건";
-	}
 }

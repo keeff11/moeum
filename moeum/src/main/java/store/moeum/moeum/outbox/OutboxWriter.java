@@ -56,7 +56,7 @@ public class OutboxWriter {
 
 		return claimed.stream()
 				.map(row -> new OutboxMessage(row.getId(), row.getAggregateType(), row.getAggregateId(),
-						row.getEventType(), row.getPayload(), row.getRetryCount()))
+						row.getEventType(), row.getPayload(), row.getRetryCount(), row.getCreatedAt()))
 				.toList();
 	}
 
