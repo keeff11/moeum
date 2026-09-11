@@ -23,6 +23,32 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
 	List<Payment> findByOrderGroupIdIn(List<Long> orderGroupIds);
 
 	/**
+	 * 진행 중인 결제 (D-042).
+	 *
+	 * <b>구매자가 orderToken 을 잃어버렸을 때 되찾는 유일한 경로다.</b> 토큰은 {@code /pay}
+	 * 응답으로만 내려가므로, 새로고침하거나 브라우저를 닫으면 결제 중인 주문을 가리킬 방법이
+	 * 사라진다 — 폴링도 confirm 도 못 한다.
+	 *
+	 * <b>끝난 묶음은 뺀다.</b> 만료 · 취소 · 실패한 건을 "진행 중" 으로 주면 이어서 결제하라는
+	 * 화면이 뜨는데 그 세션은 이미 죽어 있다.
+	 *
+	 * 차수를 가리지 않는다 — 1차금이든 2차금이든 구매자 입장에서는 똑같이 "내다 만 결제" 다.
+	 * 최근 것이 위에 온다.
+	 */
+	@Query("""
+			select p from Payment p
+			  join fetch p.orderGroup g
+			 where g.buyer.kakaoId = :kakaoId
+			   and p.status in (store.moeum.moeum.payment.domain.PaymentStatus.CREATED,
+			                    store.moeum.moeum.payment.domain.PaymentStatus.CAPTURE_PENDING)
+			   and g.status not in (store.moeum.moeum.order.domain.OrderGroupStatus.EXPIRED,
+			                        store.moeum.moeum.order.domain.OrderGroupStatus.CANCELED,
+			                        store.moeum.moeum.order.domain.OrderGroupStatus.FAILED)
+			 order by p.updatedAt desc, p.id desc
+			""")
+	List<Payment> findInProgressByBuyer(@Param("kakaoId") String kakaoId);
+
+	/**
 	 * 확정 처리용 잠금 조회.
 	 *
 	 * 실시간 승인과 대사 배치가 같은 결제를 동시에 확정하려 할 수 있다.

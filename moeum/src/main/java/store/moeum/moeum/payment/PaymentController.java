@@ -5,6 +5,8 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.CacheControl;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -14,6 +16,7 @@ import store.moeum.moeum.global.auth.LoginUser;
 import store.moeum.moeum.global.auth.SessionUser;
 import store.moeum.moeum.payment.dto.ConfirmRequest;
 import store.moeum.moeum.payment.dto.PaySessionResponse;
+import store.moeum.moeum.payment.dto.InProgressOrderResponse;
 import store.moeum.moeum.payment.dto.PaymentResultResponse;
 
 /**
@@ -121,5 +124,32 @@ public class PaymentController {
 	                                    @Parameter(description = "주문 토큰")
 	                                    @PathVariable String orderToken) {
 		return paymentService.status(user, orderToken);
+	}
+
+	/**
+	 * 잃어버린 orderToken 되찾기 (D-042).
+	 *
+	 * <b>캐시하지 않는다.</b> 방금 끝난 결제가 목록에 남아 있으면 이어서 결제하라는
+	 * 화면이 뜬다.
+	 */
+	@Operation(summary = "진행 중인 결제 목록",
+			description = """
+					내가 결제하다 만 건을 준다. <b>orderToken 은 /pay 응답으로만 내려가서</b>
+					새로고침하거나 브라우저를 닫으면 되찾을 방법이 없다 — 이 API 가 그 경로다.
+
+					pendingReason 으로 다음 행동이 갈린다.
+					- AWAITING_PAYMENT — 결제창을 아직 끝내지 않았다. <b>이어서 결제해야 한다.</b>
+                      폴링만 해서는 영원히 안 바뀐다
+					- CONFIRMING — 승인 결과 대기 중이다. <b>다시 결제시키면 이중 결제다.</b>
+                      상태 조회만 반복한다
+
+					★ 비어 있는 것이 정상이다. 결제를 끝냈거나 시작하지 않은 구매자가 대부분이다.
+					★ 만료 · 취소 · 실패한 건은 들어 있지 않다.
+					""")
+	@GetMapping("/me/orders/in-progress")
+	public ResponseEntity<InProgressOrderResponse> inProgress(@LoginUser SessionUser user) {
+		return ResponseEntity.ok()
+				.cacheControl(CacheControl.noStore())
+				.body(paymentService.inProgress(user));
 	}
 }

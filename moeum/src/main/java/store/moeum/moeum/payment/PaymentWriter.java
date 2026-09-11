@@ -28,6 +28,7 @@ import store.moeum.moeum.payment.domain.PaymentEventRepository;
 import store.moeum.moeum.payment.domain.PaymentPhase;
 import store.moeum.moeum.payment.domain.PaymentRepository;
 import store.moeum.moeum.payment.domain.PaymentStatus;
+import store.moeum.moeum.payment.dto.InProgressOrderResponse;
 import store.moeum.moeum.payment.dto.PaymentResultResponse;
 import store.moeum.moeum.payment.infra.Point3Session;
 import store.moeum.moeum.payment.refund.RefundRepository;
@@ -365,8 +366,10 @@ public class PaymentWriter {
 		PaymentResultResponse result = switch (payment.getStatus()) {
 			case CAPTURED -> PaymentResultResponse.paid(orderToken);
 			case FAILED -> PaymentResultResponse.failed(orderToken, "결제가 완료되지 않았습니다.");
-			// CREATED 도 PENDING 으로 답한다 — 결제창에 들어가기 전이거나 진행 중이다
-			case CREATED, CAPTURE_PENDING -> PaymentResultResponse.pending(orderToken);
+			// 둘 다 PENDING 이지만 대응이 정반대라 이유를 갈라 준다.
+			// CREATED 는 승인 요청이 안 온 것이라 폴링만 해서는 영원히 안 바뀐다
+			case CREATED -> PaymentResultResponse.awaitingPayment(orderToken);
+			case CAPTURE_PENDING -> PaymentResultResponse.pending(orderToken);
 		};
 
 		// 취소는 payment.status 를 바꾸지 않는다 — 결제는 실제로 일어났고 그 뒤에 환불된 것이다.
@@ -379,6 +382,19 @@ public class PaymentWriter {
 		return result.withRefund(
 				group.getStatus() == OrderGroupStatus.CANCELED,
 				Math.toIntExact(refunded));
+	}
+
+	/**
+	 * 진행 중인 결제 목록 (D-042).
+	 *
+	 * <b>부작용이 없다.</b> 상태 조회와 같은 성격이라 아무것도 바꾸지 않는다 (D-014).
+	 *
+	 * 응답 조립을 이 트랜잭션 안에서 끝낸다 — 제목이 주문·판매 폼을 타고 들어가는
+	 * 지연 로딩이라 밖에서 만들면 터진다.
+	 */
+	@Transactional(readOnly = true)
+	public InProgressOrderResponse readInProgress(String kakaoId) {
+		return InProgressOrderResponse.of(paymentRepository.findInProgressByBuyer(kakaoId));
 	}
 
 	/**

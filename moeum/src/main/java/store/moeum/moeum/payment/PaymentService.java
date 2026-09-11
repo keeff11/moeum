@@ -7,6 +7,7 @@ import store.moeum.moeum.global.auth.SessionUser;
 import store.moeum.moeum.payment.domain.PaymentActor;
 import store.moeum.moeum.payment.domain.PaymentPhase;
 import store.moeum.moeum.payment.dto.PaymentResultResponse;
+import store.moeum.moeum.payment.dto.InProgressOrderResponse;
 import store.moeum.moeum.payment.dto.PaySessionResponse;
 import store.moeum.moeum.payment.exception.Point3FailedException;
 import store.moeum.moeum.payment.exception.Point3UncertainException;
@@ -138,6 +139,15 @@ public class PaymentService {
 	/** 2차금 상태 조회 */
 	public PaymentResultResponse secondStatus(SessionUser user, String orderToken) {
 		return writer.readStatus(user.kakaoId(), orderToken, PaymentPhase.SECOND);
+	}
+
+	/**
+	 * 진행 중인 결제 목록 (D-042).
+	 *
+	 * 새로고침하거나 브라우저를 닫아 orderToken 을 잃은 구매자가 되찾는 경로다.
+	 */
+	public InProgressOrderResponse inProgress(SessionUser user) {
+		return writer.readInProgress(user.kakaoId());
 	}
 
 	/**

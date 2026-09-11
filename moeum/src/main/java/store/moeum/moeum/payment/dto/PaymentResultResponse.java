@@ -15,6 +15,11 @@ public record PaymentResultResponse(
 		@Schema(description = "결제 결과. PENDING 은 실패가 아니다 — 다시 결제시키면 이중 결제가 된다")
 		Status status,
 
+		@Schema(description = "PENDING 인 이유. <b>둘의 대응이 정반대다</b> — "
+				+ "AWAITING_PAYMENT 는 결제를 이어서 진행해야 하고, CONFIRMING 은 기다리기만 해야 한다. "
+				+ "PENDING 이 아니면 null")
+		PendingReason pendingReason,
+
 		@Schema(description = "사용자에게 그대로 보여도 되는 안내 문구")
 		String message,
 
@@ -38,17 +43,54 @@ public record PaymentResultResponse(
 		FAILED
 	}
 
-	public static PaymentResultResponse paid(String orderToken) {
-		return new PaymentResultResponse(orderToken, Status.PAID, "결제가 완료되었습니다.", false, 0);
+	/**
+	 * PENDING 하나에 서로 다른 두 상황이 들어 있다.
+	 *
+	 * <b>대응이 정반대라 구분해서 내려 준다.</b> 합쳐 두면 프론트는 둘 중 하나를 틀린다 —
+	 * 승인 대기 중에 결제를 다시 띄우면 이중 결제고, 결제창을 안 끝낸 건을 계속
+	 * 폴링만 하면 영원히 PENDING 이다.
+	 */
+	@Schema(description = """
+			AWAITING_PAYMENT=결제창을 아직 끝내지 않았다(이어서 결제해야 한다) · 			CONFIRMING=승인 결과 대기 중(기다리기만 한다. 다시 결제시키면 이중 결제)""")
+	public enum PendingReason {
+
+		/**
+		 * 세션만 만들어졌고 승인 요청이 오지 않았다.
+		 *
+		 * <b>폴링만 해서는 영원히 안 바뀐다.</b> 사용자가 결제창을 닫았거나 새로고침한
+		 * 경우가 대부분이라, 결제를 이어서 진행하게 해야 한다.
+		 * 홀드가 만료되면 만료 배치가 걷어 간다.
+		 */
+		AWAITING_PAYMENT,
+
+		/**
+		 * 승인을 요청했고 결과를 모른다 (CAPTURE_PENDING).
+		 *
+		 * <b>여기서 다시 결제시키면 이중 결제다.</b> 실제로 출금됐을 수 있다 —
+		 * 대사 배치가 point3 에 물어 확정할 때까지 폴링만 한다 (D-005).
+		 */
+		CONFIRMING
 	}
 
+	public static PaymentResultResponse paid(String orderToken) {
+		return new PaymentResultResponse(orderToken, Status.PAID, null,
+				"결제가 완료되었습니다.", false, 0);
+	}
+
+	/** 승인 결과 대기. 폴링만 해야 하는 쪽이다 */
 	public static PaymentResultResponse pending(String orderToken) {
-		return new PaymentResultResponse(orderToken, Status.PENDING,
+		return new PaymentResultResponse(orderToken, Status.PENDING, PendingReason.CONFIRMING,
 				"결제 결과를 확인하고 있습니다. 잠시만 기다려 주세요.", false, 0);
 	}
 
+	/** 결제창을 아직 끝내지 않았다. 이어서 결제해야 하는 쪽이다 */
+	public static PaymentResultResponse awaitingPayment(String orderToken) {
+		return new PaymentResultResponse(orderToken, Status.PENDING, PendingReason.AWAITING_PAYMENT,
+				"결제가 완료되지 않았습니다. 결제를 이어서 진행해 주세요.", false, 0);
+	}
+
 	public static PaymentResultResponse failed(String orderToken, String message) {
-		return new PaymentResultResponse(orderToken, Status.FAILED, message, false, 0);
+		return new PaymentResultResponse(orderToken, Status.FAILED, null, message, false, 0);
 	}
 
 	/**
@@ -62,6 +104,7 @@ public record PaymentResultResponse(
 	 */
 	public PaymentResultResponse withRefund(boolean canceled, int refundedAmount) {
 		String text = canceled ? "취소가 완료된 주문입니다." : message;
-		return new PaymentResultResponse(orderToken, status, text, canceled, refundedAmount);
+		return new PaymentResultResponse(orderToken, status, pendingReason, text,
+				canceled, refundedAmount);
 	}
 }
