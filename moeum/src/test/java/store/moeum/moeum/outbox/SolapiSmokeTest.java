@@ -49,7 +49,7 @@ class SolapiSmokeTest {
 				System.getenv("SOLAPI_API_SECRET"),
 				System.getenv("SOLAPI_PF_ID"),
 				System.getenv("SOLAPI_FROM"),
-				"https://www.moeum.store",
+				"https://www.moeum.store", null,
 				Map.of(OutboxEventType.ORDER_PAID, System.getenv("SOLAPI_TEMPLATE_ORDER_PAID")),
 				3000, 10000);
 

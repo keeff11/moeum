@@ -18,6 +18,8 @@ import java.util.Map;
  * @param from      발신번호. 알림톡이 실패해 문자로 대체 발송될 때 쓰인다.
  *                  SOLAPI 에 사전 등록된 번호여야 한다
  * @param linkBase  버튼 링크의 앞부분. 템플릿의 {@code #{LINK}} 에 채운다
+ * @param testRecipient 테스트 수신번호. <b>값이 있으면 모든 알림이 이 번호로만 간다</b> —
+ *                      구매자에게는 한 통도 가지 않는다. 실서비스에서는 반드시 비운다
  */
 @ConfigurationProperties(prefix = "moeum.notify.solapi")
 public record SolapiProperties(
@@ -27,6 +29,7 @@ public record SolapiProperties(
 		String pfId,
 		String from,
 		String linkBase,
+		String testRecipient,
 		Map<OutboxEventType, String> templates,
 		int connectTimeout,
 		int readTimeout
@@ -49,6 +52,21 @@ public record SolapiProperties(
 	public String templateOf(OutboxEventType eventType) {
 		String templateId = templates.get(eventType);
 		return notBlank(templateId) ? templateId : null;
+	}
+
+	/**
+	 * 테스트 수신번호가 걸려 있는가.
+	 *
+	 * <b>걸려 있으면 구매자에게 가지 않는다.</b> 실서비스로 넘어갈 때 이 파라미터를
+	 * 지우는 것을 잊으면 모든 알림이 한 사람에게만 간다 — 잊기 쉬운 자리라
+	 * 발송할 때마다 WARN 을 남긴다.
+	 */
+	public String testRecipientOrNull() {
+		return notBlank(testRecipient) ? digitsOf(testRecipient) : null;
+	}
+
+	private static String digitsOf(String phone) {
+		return phone.replaceAll("[^0-9]", "");
 	}
 
 	public boolean hasCredentials() {

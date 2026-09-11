@@ -83,12 +83,24 @@ public class AlimtalkMessageFactory {
 	/**
 	 * 수신번호.
 	 *
-	 * <b>⚠ 지금은 배송지 번호를 쓴다 — 구매자 본인 번호가 DB 에 없다.</b>
+	 * <b>테스트 수신번호가 설정돼 있으면 그쪽으로만 간다</b> — 구매자에게는 한 통도
+	 * 가지 않는다. 수신번호 정책이 정해지기 전까지 알림톡을 켜 둘 수 있는 유일한 방법이다.
+	 *
+	 * <b>⚠ 그게 없으면 배송지 번호를 쓴다 — 구매자 본인 번호가 DB 에 없다.</b>
 	 * 선물 주문처럼 수령인이 구매자와 다르면 결제 알림이 받는 사람에게 간다 (D-040).
 	 * 카카오 로그인 동의항목에 전화번호를 추가하기 전까지 남는 제약이다.
 	 * 주문 시점 스냅샷을 먼저 보고, 없으면 현재 배송지에서 가져온다.
 	 */
 	private String recipientOf(OrderGroup group, OutboxMessage message) {
+		String testRecipient = properties.testRecipientOrNull();
+
+		if (testRecipient != null) {
+			// 실서비스로 넘어갈 때 지우는 것을 잊으면 모든 알림이 한 사람에게만 간다.
+			// 잊기 쉬운 자리라 나갈 때마다 남긴다
+			log.warn("[알림/테스트수신] 구매자가 아니라 테스트 번호로 보낸다: outboxId={}", message.id());
+			return testRecipient;
+		}
+
 		String phone = shippingRepository.findByOrderGroupId(group.getId())
 				.map(Shipping::getPhone)
 				.filter(value -> value != null && !value.isBlank())

@@ -75,6 +75,8 @@ services:
       SOLAPI_PF_ID: ${SOLAPI_PF_ID:-}
       SOLAPI_FROM: ${SOLAPI_FROM:-}
       SOLAPI_TEMPLATE_ORDER_PAID: ${SOLAPI_TEMPLATE_ORDER_PAID:-}
+      # 값이 있으면 모든 알림이 이 번호로만 간다. 실서비스 전에 반드시 지운다 (D-040)
+      SOLAPI_TEST_RECIPIENT: ${SOLAPI_TEST_RECIPIENT:-}
     expose:
       - "8080"
     healthcheck:

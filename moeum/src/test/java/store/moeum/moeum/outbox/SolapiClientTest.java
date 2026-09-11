@@ -179,7 +179,7 @@ class SolapiClientTest {
 	@DisplayName("설정이_비어_있으면_호출하기_전에_막는다")
 	void 설정_누락() {
 		SolapiClient unconfigured = new SolapiClient(new SolapiProperties(
-				server.baseUrl(), "", "", "", "", "https://www.moeum.store",
+				server.baseUrl(), "", "", "", "", "https://www.moeum.store", null,
 				Map.of(OutboxEventType.ORDER_PAID, TEMPLATE_ID), 2000, 10000));
 
 		assertThatThrownBy(() -> unconfigured.send(message()))
@@ -194,7 +194,7 @@ class SolapiClientTest {
 	private SolapiClient clientWith(int readTimeout) {
 		return new SolapiClient(new SolapiProperties(
 				server.baseUrl(), API_KEY, API_SECRET, PF_ID, "0212345678",
-				"https://www.moeum.store", Map.of(OutboxEventType.ORDER_PAID, TEMPLATE_ID),
+				"https://www.moeum.store", null, Map.of(OutboxEventType.ORDER_PAID, TEMPLATE_ID),
 				2000, readTimeout));
 	}
 

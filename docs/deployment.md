@@ -276,9 +276,24 @@ aws ssm put-parameter --region ap-northeast-2     --name /moeum/prod/NOTIFY_PROV
 그때 `docker-compose.prod.yml` 의 `environment` 와 `application.yml` 의 `templates` 에
 이름을 같이 추가한다 (point3 키가 컨테이너까지 안 갔던 것과 같은 함정이다).
 
-**⚠ 켜기 전에 수신번호 문제를 먼저 정리한다.** 지금은 배송지 전화번호로 보낸다 —
-구매자 본인 번호가 DB 에 없기 때문이다. 선물 주문이면 결제 알림이 받는 사람에게 간다
-(D-040).
+### 테스트 수신번호 — 구매자에게 안 가게 하고 켜는 법
+
+수신번호 정책이 정해지기 전까지는 **모든 알림을 한 번호로 몰아** 보낼 수 있다.
+이 값이 있으면 구매자에게는 한 통도 가지 않는다.
+
+```bash
+aws ssm put-parameter --region ap-northeast-2     --name /moeum/prod/SOLAPI_TEST_RECIPIENT --value "01012345678" --type String --overwrite
+```
+
+**실서비스로 넘어갈 때 반드시 지운다.** 잊으면 모든 구매자의 알림이 한 사람에게만 간다 —
+잊기 쉬운 자리라 발송할 때마다 `[알림/테스트수신]` WARN 을 남긴다. 지우는 명령은 이것이다.
+
+```bash
+aws ssm delete-parameter --region ap-northeast-2 --name /moeum/prod/SOLAPI_TEST_RECIPIENT
+```
+
+**⚠ 이 값을 지우기 전에 수신번호 문제를 정리한다.** 없으면 배송지 전화번호로 보내는데,
+구매자 본인 번호가 DB 에 없어서다. 선물 주문이면 결제 알림이 받는 사람에게 간다 (D-040).
 
 ---
 

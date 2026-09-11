@@ -89,6 +89,9 @@ moeum:
       # SOLAPI 에 사전 등록된 발신번호. 알림톡이 막혀 문자로 대체될 때 쓰인다
       from: ${SOLAPI_FROM:}
       link-base: ${SOLAPI_LINK_BASE:https://www.moeum.store}
+      # 값이 있으면 모든 알림이 이 번호로만 간다 — 구매자에게는 한 통도 가지 않는다.
+      # 수신번호 정책이 정해지기 전까지 알림톡을 켜 두는 방법이다. 실서비스에서는 비운다
+      test-recipient: ${SOLAPI_TEST_RECIPIENT:}
       templates:
         # 승인된 템플릿만 적는다. 없는 이벤트는 로그만 남기고 넘어간다
         ORDER_PAID: ${SOLAPI_TEMPLATE_ORDER_PAID:}

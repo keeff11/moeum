@@ -6,6 +6,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.TestPropertySource;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import store.moeum.moeum.buyer.domain.Buyer;
 import store.moeum.moeum.buyer.domain.BuyerAddress;
 import store.moeum.moeum.buyer.domain.BuyerAddressRepository;
@@ -19,6 +21,7 @@ import store.moeum.moeum.order.domain.ShippingRepository;
 import store.moeum.moeum.outbox.domain.OutboxAggregate;
 import store.moeum.moeum.outbox.domain.OutboxEventType;
 import store.moeum.moeum.outbox.infra.SolapiFailedException;
+import store.moeum.moeum.outbox.infra.SolapiProperties;
 import store.moeum.moeum.outbox.infra.SolapiSendRequest;
 import store.moeum.moeum.saleform.domain.Product;
 import store.moeum.moeum.saleform.domain.ProductOption;
@@ -63,6 +66,12 @@ class AlimtalkMessageFactoryTest extends IntegrationTest {
 
 	@Autowired
 	private AlimtalkMessageFactory factory;
+
+	@Autowired
+	private SolapiProperties properties;
+
+	@Autowired
+	private PlatformTransactionManager transactionManager;
 
 	@Autowired
 	private SellerRepository sellerRepository;
@@ -204,6 +213,24 @@ class AlimtalkMessageFactoryTest extends IntegrationTest {
 	}
 
 	@Test
+	@DisplayName("테스트_수신번호가_걸려_있으면_구매자에게_가지_않는다")
+	void 테스트_수신번호() {
+		OrderGroup group = placeAndShip();
+
+		// 수신번호 정책이 정해지기 전까지 알림톡을 켜 둘 수 있는 유일한 방법이다.
+		// 이게 깨지면 선물 주문의 결제 알림이 수령인에게 간다
+		//
+		// 직접 만든 팩토리는 빈이 아니라 @Transactional 프록시를 타지 않는다 —
+		// 이 클래스를 따로 뺀 이유 그대로라, 여기서는 트랜잭션을 손으로 연다
+		String to = new TransactionTemplate(transactionManager).execute(status ->
+				overriding("010-9073-6864")
+						.create(outbox(group, OutboxEventType.ORDER_PAID, 20000, LocalDateTime.now()))
+						.orElseThrow().to());
+
+		assertThat(to).isEqualTo("01090736864");
+	}
+
+	@Test
 	@DisplayName("배송지가_아예_없으면_확정_실패다")
 	void 수신번호_없음() {
 		OrderGroup group = place();
@@ -229,12 +256,28 @@ class AlimtalkMessageFactoryTest extends IntegrationTest {
 
 	private Optional<SolapiSendRequest.Message> create(OrderGroup group, OutboxEventType eventType,
 	                                                   int amount, LocalDateTime createdAt) {
+		return factory.create(outbox(group, eventType, amount, createdAt));
+	}
+
+	private OutboxMessage outbox(OrderGroup group, OutboxEventType eventType,
+	                             int amount, LocalDateTime createdAt) {
 		String payload = """
 				{"orderToken":"%s","buyerId":%d,"amount":%d}
 				""".formatted(group.getOrderToken(), buyer.getId(), amount);
 
-		return factory.create(new OutboxMessage(1L, OutboxAggregate.ORDER_GROUP, group.getId(),
-				eventType, payload, 0, createdAt));
+		return new OutboxMessage(1L, OutboxAggregate.ORDER_GROUP, group.getId(),
+				eventType, payload, 0, createdAt);
+	}
+
+	/** 테스트 수신번호만 바꾼 팩토리. 설정이 record 라 통째로 다시 만든다 */
+	private AlimtalkMessageFactory overriding(String testRecipient) {
+		SolapiProperties overridden = new SolapiProperties(
+				properties.baseUrl(), properties.apiKey(), properties.apiSecret(),
+				properties.pfId(), properties.from(), properties.linkBase(), testRecipient,
+				properties.templates(), properties.connectTimeout(), properties.readTimeout());
+
+		return new AlimtalkMessageFactory(orderGroupRepository, shippingRepository,
+				buyerAddressRepository, overridden);
 	}
 
 	private OrderGroup place() {
