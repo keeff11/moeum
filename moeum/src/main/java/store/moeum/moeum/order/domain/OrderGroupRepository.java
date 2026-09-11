@@ -48,6 +48,34 @@ public interface OrderGroupRepository extends JpaRepository<OrderGroup, Long> {
 	Optional<OrderGroup> findByOrderNo(String orderNo);
 
 	/**
+	 * 구매자 주문 목록 (와이어프레임 B13).
+	 *
+	 * <b>{@code CREATED} 와 {@code EXPIRED} 는 뺀다.</b> 결제 전 장바구니 세션은 주문이 아니다 —
+	 * 15분 뒤 사라질 것이 "내 구매 목록" 에 쌓이면 안 된다. 셀러 목록과 같은 판단이다 (D-033).
+	 *
+	 * <b>취소된 주문은 남긴다.</b> 셀러 목록과 같다 — 구매자도 자기가 취소한 내역을 봐야 한다.
+	 *
+	 * 탭은 판매 유형이다(전체 · 공동구매 · 단독판매). 묶음 하나에 유형이 섞일 수는 없지만
+	 * 폼을 타고 들어가야 알 수 있어서 EXISTS 로 건다.
+	 *
+	 * fetch join 을 걸지 않는다 — 컬렉션을 조인하면 LIMIT 이 행 기준으로 잘려
+	 * 페이지 크기가 틀어진다. default_batch_fetch_size 가 끌어온다.
+	 */
+	@Query("""
+			select g from OrderGroup g
+			 where g.buyer.kakaoId = :kakaoId
+			   and g.status not in (store.moeum.moeum.order.domain.OrderGroupStatus.CREATED,
+			                        store.moeum.moeum.order.domain.OrderGroupStatus.EXPIRED)
+			   and (:saleType is null
+			        or exists (select 1 from Order o
+			                    where o.orderGroup = g and o.saleForm.saleType = :saleType))
+			 order by g.createdAt desc, g.id desc
+			""")
+	Page<OrderGroup> findBuyerOrders(@Param("kakaoId") String kakaoId,
+	                                 @Param("saleType") store.moeum.moeum.saleform.domain.SaleType saleType,
+	                                 Pageable pageable);
+
+	/**
 	 * 셀러 주문 목록 (와이어프레임 G6). 최신순이다.
 	 *
 	 * <b>fetch join 을 걸지 않는다.</b> orders · items 는 컬렉션이라 조인하면 LIMIT 이
