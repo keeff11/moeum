@@ -8,6 +8,7 @@ import org.springframework.transaction.annotation.Transactional;
 import store.moeum.moeum.global.error.BusinessException;
 import store.moeum.moeum.global.error.ErrorCode;
 import store.moeum.moeum.buyer.domain.BuyerAddress;
+import store.moeum.moeum.cart.CartCleaner;
 import store.moeum.moeum.buyer.domain.BuyerAddressRepository;
 import store.moeum.moeum.global.jpa.JpaAuditingConfig;
 import store.moeum.moeum.order.domain.Order;
@@ -36,6 +37,8 @@ import store.moeum.moeum.saleform.domain.SaleFormRepository;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * 결제의 DB 쓰기만 맡는다. <b>point3 호출은 한 줄도 들어오지 않는다.</b>
@@ -58,6 +61,7 @@ public class PaymentWriter {
 	private final OutboxRecorder outboxRecorder;
 	private final OrderGroupRepository orderGroupRepository;
 	private final StockHoldRepository stockHoldRepository;
+	private final CartCleaner cartCleaner;
 	private final SaleFormRepository saleFormRepository;
 	private final RefundRepository refundRepository;
 	private final ShippingRepository shippingRepository;
@@ -290,6 +294,7 @@ public class PaymentWriter {
 		if (payment.isFirst()) {
 			if (group.markPaid()) {
 				commitHolds(group);
+				clearOrderedCartItems(group);
 			}
 			// 1차금에서만 받아 둔다. 2차금은 이 값을 쓰는 쪽이다
 			group.getBuyer().rememberPayerId(payerId);
@@ -423,6 +428,33 @@ public class PaymentWriter {
 	// ---------------------------------------------------------------- 내부
 
 	/** 홀드를 확정으로 넘긴다. held -= qty, sold += qty */
+	/**
+	 * 결제한 항목을 장바구니에서 뺀다.
+	 *
+	 * <b>{@code markPaid()} 가드 안쪽이다.</b> 대사 배치가 확정된 결제를 다시 훑어도
+	 * 한 번만 돈다 — 지우는 일이라 두 번 돌아도 결과는 같지만, 매번 장바구니를
+	 * 훑을 이유가 없다.
+	 *
+	 * <b>실패해도 결제는 확정한다.</b> {@link CartCleaner} 가 자기 트랜잭션을 쓰므로
+	 * 여기서 잡으면 이 트랜잭션은 멀쩡하다. 장바구니가 안 비워지는 것은 구매자가
+	 * 손으로 지울 수 있지만, 출금된 결제가 CAPTURE_PENDING 으로 남는 것은 그럴 수 없다.
+	 */
+	private void clearOrderedCartItems(OrderGroup group) {
+		Set<Long> optionIds = group.getOrders().stream()
+				.flatMap(order -> order.getItems().stream())
+				.map(item -> item.getOption().getId())
+				.collect(Collectors.toSet());
+
+		try {
+			int removed = cartCleaner.removeOrdered(group.getBuyer().getId(), optionIds);
+			if (removed > 0) {
+				log.info("장바구니 정리: orderGroupId={}, 항목={}건", group.getId(), removed);
+			}
+		} catch (RuntimeException e) {
+			log.error("장바구니 정리 실패(결제는 확정한다): orderGroupId={}", group.getId(), e);
+		}
+	}
+
 	private void commitHolds(OrderGroup group) {
 		for (StockHold hold : holdsOf(group)) {
 			if (!hold.commit()) {
