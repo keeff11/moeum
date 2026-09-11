@@ -6,6 +6,10 @@ import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.CacheControl;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -15,6 +19,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import store.moeum.moeum.global.auth.LoginUser;
+import store.moeum.moeum.order.PurchaseOrderService;
 import store.moeum.moeum.global.auth.SessionUser;
 import store.moeum.moeum.saleform.dto.ImageUploadUrlRequest;
 import store.moeum.moeum.saleform.dto.ImageUploadUrlResponse;
@@ -25,6 +30,7 @@ import store.moeum.moeum.saleform.dto.SaleFormUpdateRequest;
 import store.moeum.moeum.saleform.dto.SaleFormSummaryResponse;
 
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 @Tag(name = "판매 폼", description = "생성 · 조회 · 수정 · 변경 이력")
@@ -34,6 +40,7 @@ import java.util.List;
 public class SaleFormController {
 
 	private final SaleFormService saleFormService;
+	private final PurchaseOrderService purchaseOrderService;
 
 	@Operation(summary = "판매 폼 만들기",
 			description = """
@@ -159,5 +166,43 @@ public class SaleFormController {
 	public List<SaleFormHistoryResponse> history(@LoginUser SessionUser user,
 			@Parameter(description = "판매 폼 id", example = "12") @PathVariable Long saleFormId) {
 		return saleFormService.findHistory(user.kakaoId(), saleFormId);
+	}
+
+	/**
+	 * 발주서 내려받기.
+	 *
+	 * <b>바로 엑셀에서 열리는 파일이라 응답이 DTO 가 아니다.</b> BOM 이 붙은 UTF-8 CSV 를
+	 * 그대로 내려보낸다 (CsvWriter 참고).
+	 *
+	 * 파일 이름이 한글이라 {@code filename*} 으로 싣는다. 옛 브라우저용 ASCII
+	 * {@code filename} 도 같이 둔다 — 둘 다 주면 브라우저가 아는 쪽을 고른다.
+	 */
+	@Operation(summary = "발주서 내려받기 (CSV)",
+			description = """
+					이 판매의 옵션별 발주 수량을 CSV 로 준다. 엑셀에서 바로 열린다.
+					컬럼은 상품명 · 옵션명 · 주문 수량 · 취소 수량 · 발주 수량 다섯이다.
+
+					★ 구매자 정보는 담기지 않는다. 공장에 보내는 문서라 누가 샀는지는 들어가지 않는다.
+					★ 결제가 끝난 주문만 센다 — 승인 결과를 기다리는 중인 건은 빠진다.
+					★ 마감 전에도 받을 수 있지만 숫자가 더 움직인다. 그때는 파일 이름에 '_잠정' 이 붙는다.
+					★ 목표수량 미달 자동취소가 아직 안 돌았으면 그것도 잠정이다 — 곧 취소될 주문이 섞여 있다.
+					""")
+	@GetMapping("/{saleFormId}/purchase-order.csv")
+	public ResponseEntity<byte[]> purchaseOrder(@LoginUser SessionUser user,
+			@Parameter(description = "판매 폼 id", example = "12") @PathVariable Long saleFormId) {
+
+		PurchaseOrderService.PurchaseOrderFile file =
+				purchaseOrderService.create(user.kakaoId(), saleFormId);
+
+		ContentDisposition disposition = ContentDisposition.attachment()
+				.filename(file.fileName(), StandardCharsets.UTF_8)
+				.build();
+
+		return ResponseEntity.ok()
+				// 주문이 계속 들어오는 동안 숫자가 바뀐다. 받을 때마다 지금 값이어야 한다
+				.cacheControl(CacheControl.noStore())
+				.header(HttpHeaders.CONTENT_DISPOSITION, disposition.toString())
+				.contentType(new MediaType("text", "csv", StandardCharsets.UTF_8))
+				.body(file.content());
 	}
 }

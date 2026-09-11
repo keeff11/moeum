@@ -195,13 +195,31 @@ PROCESSING → COMPLETED
 ### 발주서 — 폼별 · 옵션별 수량 집계
 
 ```sql
-SELECT i.product_name, i.option_name, SUM(i.qty) AS total_qty
+SELECT p.name AS product_name, po.name AS option_name,
+       SUM(i.qty)                                                  AS ordered_qty,
+       SUM(CASE WHEN o.status = 'CANCELED' THEN i.qty ELSE 0 END)  AS canceled_qty
   FROM order_item i
-  JOIN orders o ON o.id = i.order_id
+  JOIN orders o          ON o.id  = i.order_id
+  JOIN product p         ON p.id  = i.product_id
+  JOIN product_option po ON po.id = i.option_id
  WHERE o.sale_form_id = :formId
-   AND o.status NOT IN ('CANCELED','EXPIRED')
- GROUP BY i.product_id, i.option_id;
+   AND o.status NOT IN ('CREATED','EXPIRED')
+ GROUP BY p.id, p.name, p.sort_order, po.id, po.name, po.sort_order
+ ORDER BY p.sort_order, po.sort_order;
 ```
+
+**`CREATED` 를 뺀다.** 예전 버전은 `CANCELED · EXPIRED` 만 뺐는데, 그러면 **승인 결과를
+모르는 결제(`CAPTURE_PENDING`)가 발주서에 들어간다** — 주문은 `captured` 를 확인한 뒤에야
+PAID 가 되므로 그 건은 여전히 CREATED 다. 돈이 안 들어온 수량까지 공장에 발주하게 된다.
+
+**`PAID` 로 좁히지도 않는다.** 상태가 PAID → RECRUITING → CLOSED → PRODUCING → ARRIVED 로
+흐르기 때문에, 발주를 넣고 PRODUCING 으로 올린 뒤 다시 받으면 빈 파일이 된다.
+
+**`CANCELED` 는 넣고 따로 센다.** 빼 버리면 셀러가 "원래 몇 개였고 몇 개가 취소됐는지" 를
+대조할 수 없다. 실제 발주 수량은 둘의 차다.
+
+**이름은 스냅샷(`i.product_name`)이 아니라 현재 이름을 쓴다.** 공장이 받아야 하는 것은
+지금 이름 하나인데, 스냅샷으로 묶으면 중간에 이름을 바꾼 옵션이 두 줄로 갈라진다 (D-045).
 
 ### 2차금 청구 대상 — 모든 폼이 입고된 묶음
 
