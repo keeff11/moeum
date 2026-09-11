@@ -384,7 +384,7 @@
       <span class="sep">/</span>
       <span>2026-09-10 기준</span>
       <span class="sep">/</span>
-      <span>main @ de9847d</span>
+      <span>main @ 04a7140</span>
     </div>
     <h1>도메인별 개발 현황</h1>
     <p class="lede">
@@ -492,7 +492,8 @@
         ["찜(하트)", "V8. 목록과 분리해 응답이 사용자별로 갈리지 않게 했다. 찜·해제 둘 다 멱등", "done"],
         ["GET · PUT /me/address", "", "done"],
         ["주문 시 shipping 스냅샷 복사", "D-033. /pay 에서 buyer_address 를 떠 온다. 구매자가 이사해도 발송한 주문의 주소가 흔들리지 않는다. 배송지가 없으면 결제가 400 이다", "done"],
-        ["payer_id 저장", "1차금 confirm 에서 받아 보관. 이미 있으면 덮어쓰지 않는다 (point3-api 5절)", "done"]
+        ["payer_id 저장", "1차금 confirm 에서 받아 보관. 이미 있으면 덮어쓰지 않는다 (point3-api 5절)", "done"],
+        ["B13 나의 구매 목록", "GET /me/orders. 탭(전체·공동구매·단독판매) · 진행 단계 배지 · 취소 가능 여부 (D-043). 셀러 배지를 재사용하지 않는다 — 그러면 모집 중인지 제작 중인지가 사라진다. 취소 여부는 로컬 규칙만 본 추정이고 확정은 refundable 이 한다", "done"]
       ]
     },
     {
@@ -599,7 +600,7 @@
         ["전역 예외 핸들러 · 에러 코드 체계", "공통 응답 포맷 + 토큰 유출 방지 테스트", "done"],
         ["Flyway 마이그레이션 V1~V11", "20개 테이블 + 세션 · 공개상품 · 미달 처리 · 알림 백오프 · 셀러 프로필 · 찜 · 문의 연락처 · 주문번호 · 2차금 청구 이력. ddl-auto: validate", "done"],
         ["schema.sql · erd.dbml 이 실제 스키마와 일치", "D-034. schema.sql 은 V1 이후, ERD 는 그보다도 전인 v2 시절에 멈춰 있었다. 둘 다 맞추고 FlywayMigrationTest 가 테이블 · 컬럼을, ERD 는 외래키 29개까지 대조한다. <b>아직 브랜치에 있다</b> — claude/kind-kirch-fcf1f5, main 미머지", "part"],
-        ["테스트 438개", "Testcontainers MySQL 8.0 + point3 는 WireMock. 테스트 JVM 은 KST 고정 (D-028). 스웨거 설명 누락도 잡는다 (D-031)", "done"],
+        ["테스트 453개", "Testcontainers MySQL 8.0 + point3 는 WireMock. 테스트 JVM 은 KST 고정 (D-028). 스웨거 설명 누락도 잡는다 (D-031)", "done"],
         ["EC2 + Docker Compose + Caddy 자동 TLS", "D-016. 월 $26", "done"],
         ["GitHub Actions OIDC → ECR → SSM 배포", "AWS 액세스 키를 GitHub 에 두지 않는다", "done"],
         ["Parameter Store 시크릿", "D-017. 배포 때마다 .env 재생성", "done"],
@@ -617,7 +618,8 @@
       items: [
         ["B0 셀러 페이지", "GET /stores/{storeSlug} + /me/wishlist. 헤더 · 목록 · 검색 · 탭 · 하트까지 화면 그대로 (D-029)", "done"],
         ["B1–B7 구매자 결제", "checkout-sessions · pay · confirm. B6-2 결제 실패의 '재시도(같은 주문 유지)'는 D-023 재결제가 받는다", "done"],
-        ["B8-1~6 · B9 · B10 · B12 · B13 공동구매 상태 · 2차금", "GET /orders/{token} 과 second-payment 3종. 상태 흐름(모집중→마감→발주→제작중→입고·2차금→발송)이 orders.status 와 맞는다", "done"],
+        ["B8-1~6 · B9 · B10 · B12 공동구매 상태 · 2차금", "GET /orders/{token} 과 second-payment 3종. 상태 흐름(모집중→마감→발주→제작중→입고·2차금→발송)이 orders.status 와 맞는다", "done"],
+        ["B13 나의 구매 목록", "GET /me/orders. 화면의 탭 3종 · 배지 · 세 번째 줄 문구까지 그대로 (D-043)", "done"],
         ["B8-O1~3 단독(1:1) 상태 3종", "같은 API 를 탄다. 취소 구간만 D-025 로 갈린다", "done"],
         ["B8-C1~3 취소 요청 · 취소 처리 중 · 정산 후 환불 접수", "refundable · refund · settled_manual. 'PROCESSING 은 실패가 아니다'가 B8-C2 화면과 같은 뜻이다", "done"],
         ["장바구니 (요구사항 3)", "/me/cart 는 있는데 주문 후 정리와 로그인 복귀 후 자동 담기(D-015)가 없다", "part"],
