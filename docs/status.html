@@ -384,7 +384,7 @@
       <span class="sep">/</span>
       <span>2026-09-10 기준</span>
       <span class="sep">/</span>
-      <span>main @ 03b5370</span>
+      <span>main @ de9847d</span>
     </div>
     <h1>도메인별 개발 현황</h1>
     <p class="lede">
@@ -524,7 +524,7 @@
       ]
     },
     {
-      name: "결제 · point3", pct: 88, weight: 22, open: true,
+      name: "결제 · point3", pct: 90, weight: 22, open: true,
       items: [
         ["payment · payment_event 스키마", "테이블과 설계 문서만 있고 payment 패키지가 없다", "done"],
         ["point3 서버 API 토큰", "09-09 수령·적용 완료. 운영 IP 등록은 정말 불필요했다 — 필요했으면 세션 생성부터 4xx 로 끊겼다", "done"],
@@ -544,7 +544,8 @@
         ["부분 취소 묶음의 2차금", "D-035. 폼 하나가 취소되면 2차금이 영영 안 열리고, 금액에서 취소분도 빠지지 않던 것을 고쳤다", "done"],
         ["프론트 SDK 연동 + 확인 중 화면", "PENDING 은 실패가 아니다. 재결제시키면 이중 결제가 된다", "todo"],
         ["실결제 검증", "09-09 운영에서 100원 결제→취소 한 바퀴 통과. 세션 발급 · captured 확정 · 전액 환불 · 재취소 차단까지", "done"],
-        ["취소 뒤 상태 조회", "D-036. 취소해도 payment 는 CAPTURED 라 status 가 PAID 로 남던 것을 canceled · refundedAmount 로 실어 보낸다", "done"]
+        ["취소 뒤 상태 조회", "D-036. 취소해도 payment 는 CAPTURED 라 status 가 PAID 로 남던 것을 canceled · refundedAmount 로 실어 보낸다", "done"],
+        ["진행 중 결제 목록 · PENDING 세분화", "D-042. orderToken 은 /pay 응답으로만 내려가서 새로고침하면 되찾을 방법이 없었다 — GET /me/orders/in-progress 가 그 경로다. 그리고 PENDING 하나가 '결제창을 안 끝냄'과 '승인 결과 대기'를 덮고 있었다. 대응이 정반대라 pendingReason 으로 갈랐다", "done"]
       ]
     },
     {
@@ -598,7 +599,7 @@
         ["전역 예외 핸들러 · 에러 코드 체계", "공통 응답 포맷 + 토큰 유출 방지 테스트", "done"],
         ["Flyway 마이그레이션 V1~V11", "20개 테이블 + 세션 · 공개상품 · 미달 처리 · 알림 백오프 · 셀러 프로필 · 찜 · 문의 연락처 · 주문번호 · 2차금 청구 이력. ddl-auto: validate", "done"],
         ["schema.sql · erd.dbml 이 실제 스키마와 일치", "D-034. schema.sql 은 V1 이후, ERD 는 그보다도 전인 v2 시절에 멈춰 있었다. 둘 다 맞추고 FlywayMigrationTest 가 테이블 · 컬럼을, ERD 는 외래키 29개까지 대조한다. <b>아직 브랜치에 있다</b> — claude/kind-kirch-fcf1f5, main 미머지", "part"],
-        ["테스트 417개", "Testcontainers MySQL 8.0 + point3 는 WireMock. 테스트 JVM 은 KST 고정 (D-028). 스웨거 설명 누락도 잡는다 (D-031)", "done"],
+        ["테스트 438개", "Testcontainers MySQL 8.0 + point3 는 WireMock. 테스트 JVM 은 KST 고정 (D-028). 스웨거 설명 누락도 잡는다 (D-031)", "done"],
         ["EC2 + Docker Compose + Caddy 자동 TLS", "D-016. 월 $26", "done"],
         ["GitHub Actions OIDC → ECR → SSM 배포", "AWS 액세스 키를 GitHub 에 두지 않는다", "done"],
         ["Parameter Store 시크릿", "D-017. 배포 때마다 .env 재생성", "done"],
