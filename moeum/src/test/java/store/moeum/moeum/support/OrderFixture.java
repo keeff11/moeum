@@ -80,6 +80,47 @@ public class OrderFixture {
 		return recipientName;
 	}
 
+	/**
+	 * 단독 판매 폼. <b>2차금이 없다</b> — 배송비가 1차금으로 온다 (D-046).
+	 *
+	 * 폼 생성 검증이 SOLO 의 deposit2 를 0 으로 강제하므로 옵션도 그렇게 만든다.
+	 */
+	@Transactional
+	public Setup soloSaleForm(int stockMax) {
+		Seller seller = sellerRepository.save(Seller.builder()
+				.kakaoId("kakao-solo-seller-" + System.nanoTime())
+				.storeSlug("solo-store-" + System.nanoTime())
+				.shippingFee(3000)
+				.build());
+		seller.approve();
+
+		long unique = System.nanoTime();
+
+		SaleForm form = SaleForm.builder()
+				.seller(seller)
+				.title("단독 판매 " + unique)
+				.slug("solo-" + unique)
+				.saleType(SaleType.SOLO)
+				.stockMax(stockMax)
+				.minOrderAmount(0)
+				.build();
+
+		Product product = Product.builder().name("상품").sortOrder(0).build();
+		product.addOption(ProductOption.builder()
+				.name("옵션 A").deposit1Amount(32000).deposit2Amount(0).sortOrder(0).build());
+		product.addOption(ProductOption.builder()
+				.name("옵션 B").deposit1Amount(45000).deposit2Amount(0).sortOrder(1).build());
+		form.addProduct(product);
+
+		saleFormRepository.saveAndFlush(form);
+		jdbcTemplate.update("UPDATE sale_form SET status = ? WHERE id = ?",
+				SaleFormStatus.SELLING.name(), form.getId());
+
+		Product saved = form.getProducts().get(0);
+		return new Setup(seller.getId(), form.getId(),
+				saved.getOptions().get(0).getId(), saved.getOptions().get(1).getId());
+	}
+
 	/** 같은 셀러의 두 번째 폼. 여러 폼을 한 묶음에 담는 테스트용 */
 	@Transactional
 	public Setup saleFormOfSameSeller(Setup existing, int stockMax) {

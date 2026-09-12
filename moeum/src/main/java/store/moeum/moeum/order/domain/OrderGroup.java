@@ -162,11 +162,32 @@ public class OrderGroup extends BaseTimeEntity {
 	 * 배송비가 되살아나면 안 된다 ({@link #applyShippingFee} 와 D-032 가 같은 이유다).
 	 */
 	public int secondPaymentAmount() {
+		if (!hasSecondPayment()) {
+			// 배송비까지 1차금에서 받았다. 여기서 또 더하면 이중 청구다
+			return 0;
+		}
+
 		int deposit2 = activeOrders().stream()
 				.mapToInt(Order::getDeposit2Sum)
 				.sum();
 
 		return deposit2 + shippingFee;
+	}
+
+	/**
+	 * 이 묶음에 2차금이 있는가. <b>배송비가 어디로 갈지를 정하는 값이다.</b>
+	 *
+	 * 단독 판매(SOLO)는 2차금이 없다 (domain.md 1절 — {@code second_type = NONE}).
+	 * 그래서 폼을 만들 때 deposit2 를 0 으로 강제한다. 공동구매라도 전액 선결제면
+	 * 마찬가지로 0 이다. <b>유형이 아니라 실제 금액을 보는 이유가 이것이다</b> —
+	 * "SOLO 인가" 로 물으면 전액 선결제 공구가 빠진다.
+	 *
+	 * <b>누적 스냅샷인 {@code deposit2Total} 을 본다.</b> 살아 있는 주문으로 세면
+	 * 폼 하나가 취소될 때 배송비의 자리가 1차금과 2차금 사이에서 움직인다 —
+	 * 이미 받은 1차금은 소급해서 못 바꾸므로 판정은 주문 생성 시점에 굳어야 한다.
+	 */
+	public boolean hasSecondPayment() {
+		return deposit2Total > 0;
 	}
 
 	public void expire() {
@@ -175,13 +196,18 @@ public class OrderGroup extends BaseTimeEntity {
 	}
 
 	/**
-	 * 1차금 청구액 — <b>배송비는 넣지 않는다</b>.
+	 * 1차금 청구액.
 	 *
-	 * 배송비는 묶음당 1회이고 2차금으로 이연된다 (api-spec 6절 "B5 청구액은 옵션가뿐").
-	 * 여기서도 더하면 같은 배송비를 1차금·2차금 두 번 청구하게 된다.
+	 * <b>배송비는 2차금이 있을 때만 뒤로 미룬다.</b> 배송비는 묶음당 1회이고 원래
+	 * 2차금으로 이연된다 (api-spec 6절 "B5 청구액은 옵션가뿐"). 1차금에서도 더하면
+	 * 같은 배송비를 두 번 청구하게 된다.
+	 *
+	 * <b>그런데 2차금이 없는 묶음은 여기서 안 받으면 영영 못 받는다</b> (D-046).
+	 * 단독 판매는 2차금 단계 자체를 건너뛰므로(domain.md 1절), 이연하면 배송비를
+	 * 청구할 자리가 사라져 셀러가 배송비를 떠안는다. 그래서 2차금이 없으면 1차금에 싣는다.
 	 */
 	public int firstPaymentAmount() {
-		return deposit1Total;
+		return deposit1Total + (hasSecondPayment() ? 0 : shippingFee);
 	}
 
 	/**
@@ -255,11 +281,19 @@ public class OrderGroup extends BaseTimeEntity {
 	 * 배송비가 묶음당 1회라 일부만 입고됐다고 청구하면 배송비를 나눌 방법이 없다.
 	 * 한 폼이라도 늦어지면 그 묶음 전체가 기다린다.
 	 *
+	 * <b>2차금이 없는 묶음은 애초에 대상이 아니다</b> (D-046) — 단독 판매가 그렇다.
+	 * 빼지 않으면 배송비를 1차금에서 이미 받은 주문이 "2차금 미납" 탭에 쌓인다.
+	 *
 	 * <b>기준은 살아 있는 주문이다</b> (D-035). 취소된 폼까지 입고를 요구하면 그 폼은
 	 * 영원히 CANCELED 라 조건이 영영 참이 되지 않는다 — 부분 취소된 묶음의 잔금을
 	 * 영영 못 받는다. 셀러 목록의 '2차금 미납' 판정도 같은 기준을 쓴다.
 	 */
 	public boolean isSecondPaymentDue() {
+		if (!hasSecondPayment()) {
+			// 2차금이 없는 묶음이다. 배송비까지 1차금에서 받았으니 청구할 것이 남지 않았다
+			return false;
+		}
+
 		List<Order> alive = activeOrders();
 
 		return status == OrderGroupStatus.PAID

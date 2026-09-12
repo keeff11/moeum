@@ -88,6 +88,11 @@ public interface OrderGroupRepository extends JpaRepository<OrderGroup, Long> {
 	 * {@code findStorePage} 가 네이티브인 것은 enum 파라미터의 null 비교 때문이었고,
 	 * 여기 탭은 문자열이라 그 문제가 없다. EXISTS 가 여럿이라 JPQL 쪽이 읽기도 낫다.
 	 *
+	 * <b>SECOND_UNPAID 는 2차금이 있는 묶음만이다.</b> {@code deposit2Total = 0} 이면
+	 * 배송비까지 1차금에서 받았으므로 청구할 것이 없다 (D-046) — 단독 판매가 그렇다.
+	 * {@code OrderGroup.hasSecondPayment()} 와 같은 조건이고, 갈라지면 탭 숫자와
+	 * 일괄 청구(S10) 대상이 어긋난다.
+	 *
 	 * <b>SECOND_UNPAID 는 살아 있는 주문이 하나라도 있어야 한다.</b> 취소를 제외하고
 	 * "입고 안 된 것이 없다" 만 보면 <b>전부 취소된 묶음도 통과한다</b> — 받을 잔금이 없는데
 	 * 청구 대상에 섞인다. {@code OrderGroup.isSecondPaymentDue()} 의 {@code !alive.isEmpty()}
@@ -106,6 +111,7 @@ public interface OrderGroupRepository extends JpaRepository<OrderGroup, Long> {
 			        or (:tab = 'SECOND_UNPAID'
 			            and g.status in (store.moeum.moeum.order.domain.OrderGroupStatus.PAID,
 			                             store.moeum.moeum.order.domain.OrderGroupStatus.SECOND_PENDING)
+			            and g.deposit2Total > 0
 			            and exists (select 1 from Order a
 			                         where a.orderGroup = g
 			                           and a.status = store.moeum.moeum.order.domain.OrderStatus.ARRIVED)
@@ -143,6 +149,10 @@ public interface OrderGroupRepository extends JpaRepository<OrderGroup, Long> {
 	 * 목록 쿼리에서 탭 조건만 빼고 나머지 필터는 그대로 건다 — 검색 중이면 배지도
 	 * 그 검색 결과의 숫자여야 화면이 맞는다.
 	 *
+	 * <b>2차금 미납은 {@code deposit2Total > 0} 인 묶음만 센다</b> (D-046).
+	 * 목록 쿼리({@code findSellerOrders})의 SECOND_UNPAID 조건과 같아야 한다 —
+	 * 갈라지면 배지 숫자와 목록 건수가 어긋나고, 셀러는 열리지 않는 탭에 숫자만 보게 된다.
+	 *
 	 * <b>발송 완료는 당분간 항상 0 이다.</b> SHIPPED 로 올리는 코드가 아직 없다
 	 * (송장 등록은 7단계). 탭을 지우지 않는 이유는 화면이 다섯 칸이기 때문이다.
 	 */
@@ -153,6 +163,7 @@ public interface OrderGroupRepository extends JpaRepository<OrderGroup, Long> {
 			                  then 1 end),
 			       count(case when g.status in (store.moeum.moeum.order.domain.OrderGroupStatus.PAID,
 			                                    store.moeum.moeum.order.domain.OrderGroupStatus.SECOND_PENDING)
+			                   and g.deposit2Total > 0
 			                   and exists (select 1 from Order a
 			                                where a.orderGroup = g
 			                                  and a.status = store.moeum.moeum.order.domain.OrderStatus.ARRIVED)

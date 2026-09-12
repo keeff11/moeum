@@ -27,15 +27,22 @@ public record OrderGroupResponse(
 		@Schema(description = "홀드 만료까지 남은 초. 결제 화면 타이머가 이 값을 쓴다", example = "870")
 		long remainingSeconds,
 
-		@Schema(description = "1차금 합계. 지금 결제할 금액이다. 배송비는 들어 있지 않다",
-				example = "60000")
+		@Schema(description = "1차금 상품 합계. 배송비는 들어 있지 않다. "
+				+ "실제로 지금 결제할 금액은 firstPaymentAmount 를 쓴다", example = "60000")
 		int deposit1Total,
 
-		@Schema(description = "2차금 합계. 입고 후 청구될 잔금이다", example = "36000")
+		@Schema(description = "2차금 합계. 입고 후 청구될 잔금이다. 0 이면 2차금 단계가 없다는 뜻이고, "
+				+ "그때는 배송비도 1차금에 실린다", example = "36000")
 		int deposit2Total,
 
-		@Schema(description = "배송비. 묶음당 1회이고 2차금에서 청구된다", example = "3000")
+		@Schema(description = "배송비. 묶음당 1회다. 2차금이 있으면 그쪽에서, 없으면 1차금에서 청구된다",
+				example = "3000")
 		int shippingFee,
+
+		@Schema(description = "★ 지금 결제창에 띄울 금액. 화면에서 직접 더하지 말고 이 값을 쓴다. "
+				+ "2차금이 없는 묶음(단독 판매)은 배송비가 여기 포함돼 있다 (D-046)",
+				example = "63000")
+		int firstPaymentAmount,
 
 		@Schema(description = "판매 폼별 주문. 폼마다 입고 시점이 달라 상태가 따로 돈다")
 		List<OrderLine> orders
@@ -115,6 +122,7 @@ public record OrderGroupResponse(
 
 		return new OrderGroupResponse(
 				group.getSessionToken(), group.getStatus(), holdExpiresAt, remaining,
-				group.getDeposit1Total(), group.getDeposit2Total(), group.getShippingFee(), lines);
+				group.getDeposit1Total(), group.getDeposit2Total(), group.getShippingFee(),
+				group.firstPaymentAmount(), lines);
 	}
 }
