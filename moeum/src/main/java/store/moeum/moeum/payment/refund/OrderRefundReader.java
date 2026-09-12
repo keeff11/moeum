@@ -87,10 +87,18 @@ public class OrderRefundReader {
 		Payment first = capturedPayment(group.getId(), PaymentPhase.FIRST)
 				.orElseThrow(() -> new BusinessException(ErrorCode.REFUND_NOT_ALLOWED,
 						"결제가 완료된 주문만 취소할 수 있습니다."));
-		int firstAmount = targets.stream().mapToInt(Order::getDeposit1Sum).sum();
-
 		Payment second = capturedPayment(group.getId(), PaymentPhase.SECOND).orElse(null);
-		int secondAmount = second == null ? 0 : secondAmountOf(targets, group, fullGroup);
+
+		int shipping = shippingRefund(group, fullGroup);
+		boolean shippingOnFirst = !group.hasSecondPayment();
+
+		int firstAmount = targets.stream().mapToInt(Order::getDeposit1Sum).sum()
+				+ (shippingOnFirst ? shipping : 0);
+
+		// 2차금이 아직 청구되지 않았으면 배송비도 받은 적이 없다. 여기서 더하면 과다 환불이다
+		int secondAmount = second == null ? 0
+				: targets.stream().mapToInt(Order::getDeposit2Sum).sum()
+						+ (shippingOnFirst ? 0 : shipping);
 
 		if (firstAmount == 0 && secondAmount == 0) {
 			throw new BusinessException(ErrorCode.REFUND_NOT_ALLOWED, "취소할 금액이 없습니다.");
@@ -116,12 +124,16 @@ public class OrderRefundReader {
 		boolean allCancelable = !items.isEmpty() && items.stream().allMatch(RefundableResponse.Item::refundable);
 		boolean anyCancelable = items.stream().anyMatch(RefundableResponse.Item::refundable);
 
+		// 배송비가 이미 청구됐는가. 2차금이 없는 묶음은 1차금에서 받았으므로
+		// 2차금 결제를 볼 것이 아니다 (D-046). 안내가 실제 환불액과 어긋나면 안 된다
+		boolean shippingCharged = !group.hasSecondPayment() || secondCaptured;
+
 		return new RefundableResponse(orderToken, anyCancelable,
 				anyCancelable ? null : "취소할 수 있는 주문이 없습니다.",
 				null,
 				group.getShippingFee(),
 				// 배송비는 남은 폼을 전부 취소할 때만 함께 돌아간다
-				allCancelable && secondCaptured && group.getShippingFee() > 0,
+				allCancelable && shippingCharged && group.getShippingFee() > 0,
 				items);
 	}
 
@@ -136,10 +148,18 @@ public class OrderRefundReader {
 				order.getDeposit1Sum(), second, order.getDeposit1Sum() + second);
 	}
 
-	private static int secondAmountOf(List<Order> targets, OrderGroup group, boolean fullGroup) {
-		int balance = targets.stream().mapToInt(Order::getDeposit2Sum).sum();
-		// 배송비는 묶음당 1회다. 폼 하나만 빠져도 나머지는 그대로 배송되므로 돌려주지 않는다
-		return fullGroup ? balance + group.getShippingFee() : balance;
+	/**
+	 * 이번 취소에서 돌려줄 배송비. 돌려줄 것이 없으면 0.
+	 *
+	 * <b>배송비는 묶음당 1회다.</b> 폼 하나만 빠져도 나머지는 그대로 배송되므로 돌려주지 않는다 —
+	 * 남은 폼을 전부 취소할 때만 함께 돌아간다.
+	 *
+	 * 어느 결제에서 뺄지는 {@code hasSecondPayment()} 가 정한다. <b>청구를 가른 값과 같은 값이다</b>
+	 * (D-046 — 2차금이 없는 묶음은 배송비를 1차금에서 받는다). 여기가 청구와 어긋나면
+	 * 받은 배송비를 돌려주지 않거나, 받은 적 없는 배송비를 돌려주게 된다.
+	 */
+	private static int shippingRefund(OrderGroup group, boolean fullGroup) {
+		return fullGroup ? group.getShippingFee() : 0;
 	}
 
 	private static List<Order> targets(List<Order> active, Long orderId) {
