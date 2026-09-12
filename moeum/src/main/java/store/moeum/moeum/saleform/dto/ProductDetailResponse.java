@@ -15,7 +15,9 @@ import java.util.List;
  * 구매자용 상품 정적 정보 (api-spec 2절, B1 · B1-O · B2 · B5).
  *
  * 셀러용 {@link SaleFormDetailResponse} 와 나눈 이유는 담기는 값이 다르기 때문이다.
- * held · sold · stockMax · slug · 심사 상태처럼 내부 사정을 드러내는 값은 여기 오지 않는다.
+ * held · sold · stockMax · 심사 상태처럼 내부 사정을 드러내는 값은 여기 오지 않는다.
+ * storeSlug 는 예외다 — 셀러가 링크로 뿌리는 공개 주소라 감출 것이 아니고,
+ * 상품에서 셀러 페이지로 돌아가려면 화면이 그 값을 알아야 한다.
  * 재고 숫자도 여기 없다 — 캐시되는 응답에 휘발성 값을 섞으면 낡은 재고가 화면에 남는다.
  * 그건 /availability 가 no-store 로 따로 내려준다.
  *
@@ -73,6 +75,12 @@ public record ProductDetailResponse(
 	public record SellerResponse(
 			@Schema(description = "셀러 id", example = "1") Long id,
 			@Schema(description = "상점 이름", example = "모음 상점") String name,
+
+			@Schema(description = "셀러 페이지 주소(meoum.store/{storeSlug}). "
+					+ "상품에서 셀러 페이지(B0)로 돌아가는 링크가 이 값을 쓴다",
+					example = "moeum-store")
+			String storeSlug,
+
 			@Schema(description = "배송비. 묶음당 1회이고 2차금에서 청구된다", example = "3000") int shippingFee,
 			@Schema(description = "이 금액 이상이면 배송비 면제. 없으면 null", example = "50000")
 			Integer freeShippingOver) {
@@ -81,6 +89,7 @@ public record ProductDetailResponse(
 			return new SellerResponse(
 					seller.getId(),
 					seller.displayName(),
+					seller.getStoreSlug(),
 					seller.getShippingFee(),
 					seller.getFreeShippingOver()
 			);

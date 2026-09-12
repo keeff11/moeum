@@ -34,6 +34,26 @@ public interface RefundRepository extends JpaRepository<Refund, Long> {
 	RefundedTotals sumCompleted(@Param("paymentId") Long paymentId);
 
 	/**
+	 * 이 묶음에서 확정된 취소의 요청 주체. 최근 것이 앞에 온다.
+	 *
+	 * <b>payment 를 거쳐 묶음까지 올라간다.</b> 1차금과 2차금이 서로 다른 payment 라
+	 * 한 차수만 보면 다른 차수에서 취소한 주체를 놓친다 — 묶음을 취소하면 차수마다
+	 * refund 행이 하나씩 생긴다.
+	 *
+	 * <b>COMPLETED 만 본다.</b> PROCESSING 은 아직 환불이 확정되지 않은 것이라,
+	 * 그걸로 "판매자가 취소했습니다" 를 띄우면 거절된 취소가 취소된 것으로 보인다.
+	 */
+	@Query("""
+			select r.requestedBy
+			  from Refund r, store.moeum.moeum.payment.domain.Payment p
+			 where p.id = r.paymentId
+			   and p.orderGroup.id = :orderGroupId
+			   and r.status = store.moeum.moeum.payment.refund.RefundStatus.COMPLETED
+			 order by r.id desc
+			""")
+	List<RefundRequester> findCompletedRequesters(@Param("orderGroupId") Long orderGroupId);
+
+	/**
 	 * 대사 배치가 집어갈 미확정 건.
 	 *
 	 * SKIP LOCKED 로 인스턴스 간 분산하고, 방금 만들어진 건은 제외한다 —

@@ -5,6 +5,7 @@ import store.moeum.moeum.order.domain.Order;
 import store.moeum.moeum.order.domain.OrderGroup;
 import store.moeum.moeum.order.domain.Shipping;
 import store.moeum.moeum.saleform.domain.SaleType;
+import store.moeum.moeum.seller.domain.Seller;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -44,6 +45,15 @@ public record BuyerOrderPageResponse(
 			@Schema(description = "대표 판매 폼 제목. 폼이 여럿이면 '외 N건' 이 붙는다",
 					example = "아크릴 스탠드")
 			String title,
+
+			@Schema(description = "상점 이름. 카드 머리에 찍힌다 — 묶음은 셀러 하나로 제한되므로 한 값이다",
+					example = "모음 상점")
+			String sellerName,
+
+			@Schema(description = "셀러 페이지 주소(meoum.store/{storeSlug}). "
+					+ "카드에서 셀러 페이지(B0)로 가는 링크가 이 값을 쓴다",
+					example = "moeum-store")
+			String storeSlug,
 
 			@Schema(description = "주문 총액. 1차금 + 2차금 + 배송비다", example = "32000")
 			int amount,
@@ -109,11 +119,17 @@ public record BuyerOrderPageResponse(
 	                                    Shipping shipping) {
 		BuyerOrderStatus status = BuyerOrderStatus.of(group);
 
+		// LAZY 프록시다. 카드마다 깨우지만 default_batch_fetch_size 가 한 번에 끌어온다 —
+		// 목록 쿼리에 fetch join 을 걸지 않는 이유는 저쪽(findBuyerOrders) 주석에 있다
+		Seller seller = group.getSeller();
+
 		return new BuyerOrderItem(
 				group.getOrderToken(),
 				group.getOrderNo(),
 				thumbnailUrl,
 				group.representativeTitle(),
+				seller.displayName(),
+				seller.getStoreSlug(),
 				group.firstPaymentAmount() + group.secondPaymentAmount(),
 				saleTypeOf(group),
 				status,

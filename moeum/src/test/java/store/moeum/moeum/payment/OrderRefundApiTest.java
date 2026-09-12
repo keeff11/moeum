@@ -16,8 +16,10 @@ import store.moeum.moeum.global.auth.SessionUser;
 import store.moeum.moeum.global.error.BusinessException;
 import store.moeum.moeum.global.error.ErrorCode;
 import store.moeum.moeum.order.OrderService;
+import store.moeum.moeum.order.domain.OrderStatus;
 import store.moeum.moeum.order.dto.OrderCreateRequest;
 import store.moeum.moeum.payment.refund.OrderRefundService;
+import store.moeum.moeum.payment.refund.RefundRequester;
 import store.moeum.moeum.payment.dto.PaymentResultResponse;
 import store.moeum.moeum.payment.refund.dto.OrderRefundResponse;
 import store.moeum.moeum.payment.refund.dto.RefundableResponse;
@@ -173,6 +175,50 @@ class OrderRefundApiTest extends IntegrationTest {
 		assertThat(status.canceled()).isTrue();
 		assertThat(status.refundedAmount()).isEqualTo(DEPOSIT1 * 3);
 		assertThat(status.message()).contains("취소");
+		// 누가 취소했는지로 화면 문구가 갈린다 — 셀러가 깬 공구를 "직접 취소하셨습니다" 로
+		// 안내하면 구매자는 자기가 누른 적 없는 취소를 자기 탓으로 읽는다
+		assertThat(status.canceledBy()).isEqualTo(RefundRequester.BUYER);
+	}
+
+	@Test
+	@DisplayName("상태_조회가_폼별_주문을_함께_준다")
+	void 상태_조회의_주문_내역() {
+		paySecond();
+
+		PaymentResultResponse status = paymentService.status(buyer(), orderToken);
+
+		// 상세(B8)가 이 응답 하나로 화면을 그린다. 진행 단계는 묶음이 아니라 폼별로 돈다
+		assertThat(status.orders()).hasSize(2);
+		assertThat(status.orders()).allSatisfy(line -> {
+			assertThat(line.saleFormTitle()).isNotBlank();
+			assertThat(line.items()).isNotEmpty();
+			assertThat(line.canceledAt()).isNull();
+		});
+		assertThat(status.orders()).extracting(PaymentResultResponse.OrderLine::qty)
+				.containsExactlyInAnyOrder(2, 1);
+		// 취소가 없으면 주체도 없다
+		assertThat(status.canceledBy()).isNull();
+	}
+
+	@Test
+	@DisplayName("취소된_폼도_주문_내역에_남는다")
+	void 취소된_폼도_남는다() {
+		paySecond();
+		stubRefundable();
+		stubRefundOk();
+		Long canceled = orderIdOf(formA);
+		orderRefundService.refund(buyer(), orderToken, canceled, "단순 변심");
+
+		PaymentResultResponse status = paymentService.status(buyer(), orderToken);
+
+		// 빼 버리면 결제한 금액과 화면의 상품 목록이 맞지 않는다
+		assertThat(status.orders()).hasSize(2);
+		assertThat(status.orders()).filteredOn(line -> line.orderId().equals(canceled))
+				.singleElement()
+				.satisfies(line -> {
+					assertThat(line.status()).isEqualTo(OrderStatus.CANCELED);
+					assertThat(line.canceledAt()).isNotNull();
+				});
 	}
 
 	@Test
@@ -188,6 +234,8 @@ class OrderRefundApiTest extends IntegrationTest {
 		// 남은 폼은 살아 있다. canceled 로 접으면 아직 받을 상품이 있는 주문을 취소로 그린다
 		assertThat(status.canceled()).isFalse();
 		assertThat(status.refundedAmount()).isEqualTo(DEPOSIT1 * 2);
+		// 묶음은 살아 있어도 취소한 폼은 있다. 주체를 비우면 그 폼이 왜 빠졌는지 알 수 없다
+		assertThat(status.canceledBy()).isEqualTo(RefundRequester.BUYER);
 	}
 
 	@Test

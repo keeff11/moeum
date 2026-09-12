@@ -1,6 +1,8 @@
 package store.moeum.moeum.cart.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
+import store.moeum.moeum.saleform.domain.SaleType;
+
 import java.util.List;
 
 /**
@@ -18,6 +20,11 @@ public record CartResponse(
 
 		@Schema(description = "상점 이름", example = "모음 상점")
 		String sellerName,
+
+		@Schema(description = "셀러 페이지 주소(meoum.store/{storeSlug}). "
+				+ "장바구니 묶음 머리에서 셀러 페이지(B0)로 가는 링크가 이 값을 쓴다",
+				example = "moeum-store")
+		String storeSlug,
 
 		@Schema(description = "셀러가 정한 기본 배송비. 무료배송 기준을 적용하기 전 값이다",
 				example = "3000")
@@ -61,6 +68,10 @@ public record CartResponse(
 
 			@Schema(description = "상품명", example = "아크릴 스탠드")
 			String saleFormTitle,
+
+			@Schema(description = "판매 유형. GROUP=공동구매, SOLO=단독 판매. "
+					+ "항목 배지와 안내 문구가 이 값으로 갈린다 — 공동구매는 입고 뒤 2차금이 더 붙는다")
+			SaleType saleType,
 
 			@Schema(description = "상품 id", example = "5")
 			Long productId,

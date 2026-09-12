@@ -220,6 +220,17 @@ class BuyerOrderListTest extends IntegrationTest {
 		assertThat(items().get(0).status()).isEqualTo(BuyerOrderStatus.SHIPPED);
 	}
 
+	@Test
+	@DisplayName("카드에_상점_이름과_셀러_페이지_주소가_실린다")
+	void 셀러_정보() {
+		jdbcTemplate.update("UPDATE seller SET store_name = ? WHERE id = ?", "모음 상점", seller.getId());
+		place(buyer, groupForm, OrderGroupStatus.PAID, OrderStatus.PAID);
+
+		// 한 묶음은 한 셀러다. 카드에서 셀러 페이지(B0)로 돌아가려면 slug 를 알아야 한다
+		assertThat(items().get(0).sellerName()).isEqualTo("모음 상점");
+		assertThat(items().get(0).storeSlug()).isEqualTo(seller.getStoreSlug());
+	}
+
 	// ---------------------------------------------------------------- 취소 가능 여부
 
 	@Test

@@ -94,6 +94,8 @@ class PublicProductTest extends IntegrationTest {
 
 		assertThat(response.seller().name()).isEqualTo("모으미 상점");
 		assertThat(response.seller().name()).isNotEqualTo("홍길동");
+		// 상품에서 셀러 페이지(B0)로 돌아가는 링크가 이 값을 쓴다. 공개 주소라 감출 것이 아니다
+		assertThat(response.seller().storeSlug()).isEqualTo("moeum-store");
 		// 엔티티에는 S3 키만 있고 읽기 주소는 조립된다 — 버킷·CDN 이 바뀌어도 쌓인 행은 그대로다
 		assertThat(response.images()).containsExactly(
 				"https://img.test.moeum.store/sale-forms/1/first.jpg",

@@ -89,6 +89,32 @@ public class CartService {
 		item.getCart().remove(item);
 	}
 
+	/**
+	 * 비우기. {@code cartId} 가 null 이면 전부, 있으면 그 셀러 장바구니만 지운다.
+	 *
+	 * <b>없어도 조용히 넘어간다.</b> 결제가 확정되면 {@link CartCleaner} 가 이미 산 항목을
+	 * 빼고 빈 장바구니는 행째로 지우므로, 결제 완료 화면이 이걸 부르는 시점에는 대상이
+	 * 사라져 있는 것이 정상이다. 거기에 404 를 주면 정상 경로가 에러 화면이 된다.
+	 *
+	 * <b>남의 장바구니는 지울 수 없다.</b> 구매자의 장바구니에서 찾아 지우므로
+	 * {@code cartId} 를 찍어 보내도 남의 것은 걸리지 않는다 — 없는 것으로 취급된다.
+	 *
+	 * @return 지운 장바구니 수
+	 */
+	@Transactional
+	public int clear(SessionUser user, Long cartId) {
+		return buyerService.findByKakaoId(user.kakaoId())
+				.map(buyer -> {
+					List<Cart> targets = cartRepository.findAllByBuyerId(buyer.getId()).stream()
+							.filter(cart -> cartId == null || cart.getId().equals(cartId))
+							.toList();
+
+					cartRepository.deleteAll(targets);
+					return targets.size();
+				})
+				.orElse(0);
+	}
+
 	private CartItem findOwnedItem(SessionUser user, Long cartItemId) {
 		Buyer buyer = buyerService.getByKakaoId(user.kakaoId());
 
@@ -119,8 +145,10 @@ public class CartService {
 		// 떠 놓고 2차금에서 배송비가 붙는다
 		int estimatedShippingFee = seller.shippingFeeFor(deposit1Total + deposit2Total);
 
+		// sellerName 에 슬러그를 넣고 있었다. 상점 이름을 지은 셀러도 장바구니에서만
+		// 주소 문자열로 보였다 — 이름은 displayName(), 주소는 storeSlug 로 따로 내려보낸다
 		return new CartResponse(
-				cart.getId(), seller.getId(), seller.getStoreSlug(),
+				cart.getId(), seller.getId(), seller.displayName(), seller.getStoreSlug(),
 				seller.getShippingFee(), seller.getFreeShippingOver(), estimatedShippingFee,
 				deposit1Total, deposit2Total, orderable, items);
 	}
@@ -133,6 +161,7 @@ public class CartService {
 				item.getId(),
 				form.getId(),
 				form.getTitle(),
+				form.getSaleType(),
 				item.getProduct().getId(),
 				item.getProduct().getName(),
 				option.getId(),

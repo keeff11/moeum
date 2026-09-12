@@ -12,6 +12,7 @@ import store.moeum.moeum.cart.dto.CartResponse;
 import store.moeum.moeum.global.auth.SessionUser;
 import store.moeum.moeum.global.error.BusinessException;
 import store.moeum.moeum.global.error.ErrorCode;
+import store.moeum.moeum.saleform.domain.SaleType;
 import store.moeum.moeum.support.IntegrationTest;
 import store.moeum.moeum.support.OrderFixture;
 
@@ -156,6 +157,75 @@ class CartServiceTest extends IntegrationTest {
 				.isInstanceOf(BusinessException.class)
 				.extracting(e -> ((BusinessException) e).errorCode())
 				.isEqualTo(ErrorCode.CART_ITEM_NOT_FOUND);
+	}
+
+	@Test
+	@DisplayName("상점_이름과_주소를_따로_준다")
+	void 상점_이름과_주소를_따로_준다() {
+		OrderFixture.Setup setup = fixture.saleForm(10, null);
+		jdbcTemplate.update("UPDATE seller SET store_name = ? WHERE id = ?", "모음 상점", setup.sellerId());
+		cartService.add(BUYER, new CartAddRequest(setup.optionId(), 1));
+
+		CartResponse cart = cartService.findMine(BUYER).get(0);
+
+		// 예전에는 sellerName 에 슬러그가 들어가서, 이름을 지은 셀러도 주소 문자열로 보였다
+		assertThat(cart.sellerName()).isEqualTo("모음 상점");
+		assertThat(cart.storeSlug()).startsWith("store-");
+	}
+
+	@Test
+	@DisplayName("항목마다_판매_유형이_실린다")
+	void 항목마다_판매_유형이_실린다() {
+		OrderFixture.Setup setup = fixture.saleForm(10, null);
+		cartService.add(BUYER, new CartAddRequest(setup.optionId(), 1));
+
+		// 공동구매는 입고 뒤 2차금이 더 붙는다. 항목별로 갈라 주지 않으면 화면이 안내를 못 한다
+		assertThat(cartService.findMine(BUYER).get(0).items().get(0).saleType())
+				.isEqualTo(SaleType.GROUP);
+	}
+
+	@Test
+	@DisplayName("비우기는_셀러_하나만_지울_수도_전부_지울_수도_있다")
+	void 비우기() {
+		OrderFixture.Setup first = fixture.saleForm(10, null);
+		OrderFixture.Setup second = fixture.saleForm(10, null);
+		cartService.add(BUYER, new CartAddRequest(first.optionId(), 1));
+		cartService.add(BUYER, new CartAddRequest(second.optionId(), 1));
+
+		Long cartId = cartService.findMine(BUYER).stream()
+				.filter(cart -> cart.sellerId().equals(first.sellerId()))
+				.findFirst().orElseThrow().cartId();
+
+		assertThat(cartService.clear(BUYER, cartId)).isEqualTo(1);
+		assertThat(cartService.findMine(BUYER)).singleElement()
+				.satisfies(cart -> assertThat(cart.sellerId()).isEqualTo(second.sellerId()));
+
+		assertThat(cartService.clear(BUYER, null)).isEqualTo(1);
+		assertThat(cartService.findMine(BUYER)).isEmpty();
+	}
+
+	@Test
+	@DisplayName("비울_것이_없어도_안전하다")
+	void 비울_것이_없어도_안전하다() {
+		// 결제가 확정되면 서버가 이미 항목을 뺀다. 결제 완료 화면이 이걸 부를 때는
+		// 대상이 없는 쪽이 정상이라, 404 를 주면 정상 경로가 에러 화면이 된다
+		assertThat(cartService.clear(BUYER, null)).isZero();
+		assertThat(cartService.clear(BUYER, 99999L)).isZero();
+	}
+
+	@Test
+	@DisplayName("남의_장바구니는_비울_수_없다")
+	void 남의_장바구니는_비울_수_없다() {
+		OrderFixture.Setup setup = fixture.saleForm(10, null);
+		cartService.add(BUYER, new CartAddRequest(setup.optionId(), 1));
+		Long cartId = cartService.findMine(BUYER).get(0).cartId();
+
+		SessionUser other = new SessionUser("kakao-other-buyer", "남");
+		cartService.add(other, new CartAddRequest(setup.optionId(), 1));
+
+		// 내 장바구니에서만 찾으므로 없는 것으로 취급된다
+		assertThat(cartService.clear(other, cartId)).isZero();
+		assertThat(cartService.findMine(BUYER)).hasSize(1);
 	}
 
 	@Test

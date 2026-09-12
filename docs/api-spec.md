@@ -66,6 +66,7 @@ BFF 계층은 두지 않는다. CORS·SameSite는 브라우저 발 호출(CSR)�
 | `saleType` | 배지 2차 공구 / 단독 판매 | `GROUP` \| `SOLO`. B1 ↔ B1-O 분기 키 |
 | `title` / `images[]` | 상품명 · 이미지 | |
 | `seller.id` / `.name` | 헤더 셀러 이름 | B2·B5에서 재사용 |
+| `seller.storeSlug` 🆕 | 셀러 페이지로 가는 링크 | `meoum.store/{storeSlug}`. 공개 주소다 (D-051) |
 | `minOrderAmount` | 10,000원부터 주문 가능 | |
 | `shippingStartText` | 8월 20일(월) 순차발송 | 서버가 문자열로 포맷 |
 | `recruitDeadline` | D-5 | 서버가 렌더 시점에 계산 |
@@ -323,7 +324,10 @@ successUrl 도달 후 **반드시 호출**해야 결제가 완료된다.
 | `status` | 성공/실패 화면 분기 | 아래 표 참고 |
 | `failReason?` | 실패 화면 문구 | 취소/한도/만료 구분 |
 | `paidAmount` | 결제 금액 확인 | 서버가 PG 승인 결과와 대조한 값 |
-| `item` 요약 | 주문 내용 표시 | #5 응답과 동일 구조 재사용 |
+| `orders[]` 🆕 | B8 상품 목록 · 폼별 진행 배지 | 폼 단위다. `status` 가 `orders.status` 라 폼마다 다르다 (D-049 · D-051) |
+| `orders[].items[]` 🆕 | 옵션 · 수량 · 금액 | 주문 시점 스냅샷 (D-010) |
+| `canceled` / `refundedAmount` | 취소 내역 | 취소해도 `status` 는 `PAID` 다 (D-036) |
+| `canceledBy` 🆕 | 취소 안내 문구 분기 | `BUYER` · `SELLER` · `SYSTEM`. 확정된 취소가 없으면 `null` (D-051) |
 
 ⚠️ **이 API에서 승인을 시도하면 안 된다.** 폴링 대상이므로 부작용이 없어야 한다.
 

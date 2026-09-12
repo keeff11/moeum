@@ -33,6 +33,7 @@ import store.moeum.moeum.payment.dto.InProgressOrderResponse;
 import store.moeum.moeum.payment.dto.PaymentResultResponse;
 import store.moeum.moeum.payment.infra.Point3Session;
 import store.moeum.moeum.payment.refund.RefundRepository;
+import store.moeum.moeum.payment.refund.RefundRequester;
 import store.moeum.moeum.saleform.domain.SaleFormRepository;
 
 import java.time.LocalDateTime;
@@ -384,9 +385,17 @@ public class PaymentWriter {
 		// 실제 기준은 COMPLETED 인 refund 행들의 합이고, 세금 안분도 그걸 쓴다 (RefundWriter)
 		long refunded = refundRepository.sumCompleted(payment.getId()).amount();
 
-		return result.withRefund(
+		// 취소 주체는 차수가 아니라 묶음에서 본다. 2차금까지 낸 주문을 취소하면 refund 행이
+		// 차수마다 하나씩 생기는데, 어느 쪽을 조회하든 취소한 사람은 같아야 한다
+		RefundRequester canceledBy = refundRepository.findCompletedRequesters(group.getId())
+				.stream().findFirst().orElse(null);
+
+		return result.withOrderDetail(
 				group.getStatus() == OrderGroupStatus.CANCELED,
-				Math.toIntExact(refunded));
+				Math.toIntExact(refunded),
+				canceledBy,
+				// 지연 로딩이다. 이 트랜잭션 안에서 조립을 끝낸다
+				PaymentResultResponse.linesOf(group));
 	}
 
 	/**
