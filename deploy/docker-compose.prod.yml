@@ -60,7 +60,9 @@ services:
       # 크론을 "-" 로 두면 배치 자체가 안 돈다
       ORPHAN_SWEEP_DRY_RUN: ${ORPHAN_SWEEP_DRY_RUN:-true}
       ORPHAN_SWEEP_CRON: "${ORPHAN_SWEEP_CRON:-0 0 4 * * *}"
-      # 스마트택배 배송조회 (D-048). 없으면 조회만 꺼지고 송장 등록은 그대로 된다
+      # 스마트택배 배송조회 (D-048). 무료 이용권이 월 100건이라 스위치를 따로 뒀다 —
+      # 키를 넣어 두고도 꺼 둘 수 있다. 꺼져 있으면 조회만 안 되고 송장 등록은 그대로 된다
+      SMART_TRACKER_ENABLED: ${SMART_TRACKER_ENABLED:-false}
       SMART_TRACKER_API_KEY: ${SMART_TRACKER_API_KEY:-}
       KAKAO_CLIENT_ID: ${KAKAO_CLIENT_ID}
       KAKAO_CLIENT_SECRET: ${KAKAO_CLIENT_SECRET}

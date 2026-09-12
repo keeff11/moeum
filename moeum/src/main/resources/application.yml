@@ -108,7 +108,8 @@ moeum:
     bucket: ${S3_BUCKET:}
     public-base-url: ${S3_PUBLIC_BASE_URL:}
   tracking:
-    # 스마트택배 배송조회 (D-048). 비면 조회 기능만 꺼진다 — 송장 등록은 그대로 된다
+    # 스마트택배 배송조회 (D-048). 꺼져 있으면 조회만 안 되고 송장 등록은 그대로 된다
+    enabled: ${SMART_TRACKER_ENABLED:false}
     api-key: ${SMART_TRACKER_API_KEY:}
   oauth:
     kakao:
@@ -170,7 +171,12 @@ moeum:
     # 나중에 CloudFront 를 앞에 세우면 이 값만 바꾼다. 쌓인 행은 키만 갖고 있어 손대지 않는다
     public-base-url: ${S3_PUBLIC_BASE_URL:}
   tracking:
-    # 스마트택배 배송조회 (D-048). 키가 없으면 조회만 꺼지고 송장 등록은 그대로 된다.
+    # 스마트택배 배송조회 (D-048).
+    #
+    # 무료 이용권이 월 100건이라 켤 시점을 고른다. 키와 별개인 스위치를 둔 이유가 그것이다 —
+    # 키를 넣고 빼는 것으로 끄고 켜면 급할 때 번거롭고 키를 다시 찾아야 한다.
+    # 기본값이 false 다. 켜는 것은 명시적인 행동이어야 한다.
+    enabled: ${SMART_TRACKER_ENABLED:false}
     # 키는 저장소에 두지 않는다 — Parameter Store 에서 온다 (D-017)
     api-key: ${SMART_TRACKER_API_KEY:}
     # 화면이 기다리는 호출이라 짧게 둔다. 늦으면 조회 실패로 접고 송장번호만 보여 준다

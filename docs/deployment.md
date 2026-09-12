@@ -231,6 +231,26 @@ aws ssm put-parameter --region ap-northeast-2 \
 
 `POINT3_BASE_URL` 은 등록하지 않는다. 기본값(`https://api.point3.io`)이 운영 주소와 같다.
 
+### 스마트택배 배송조회 키 (D-048)
+
+**무료 이용권이 월 100건이다.** 그래서 키와 별개인 스위치를 뒀다 — 키를 넣어 두고도
+꺼 둘 수 있다. **기본값이 꺼짐이라 키만 등록하면 아직 한 건도 안 나간다.**
+
+```bash
+read -rs ST_KEY && put SMART_TRACKER_API_KEY "$ST_KEY" && unset ST_KEY
+```
+
+켤 때만 스위치를 올린다. 시크릿이 아니라 `String` 이다.
+
+```bash
+aws ssm put-parameter --region ap-northeast-2     --name /moeum/prod/SMART_TRACKER_ENABLED --value true --type String --overwrite
+```
+
+끄는 것도 같은 명령에 `false` 다. **키를 지우지 않는다** — 급할 때 번거롭고 다시 찾아야 한다.
+
+한도가 걱정되면 꺼 둔 채로 배포해도 된다. 그때 구매자 화면은 배송조회 대신
+송장번호를 보여 주고, 셀러의 송장 등록은 택배사를 직접 입력받아 그대로 동작한다.
+
 어느 값이 어느 쪽인지 헷갈리면 **형식으로 가른다** — client id 는 `client-` + UUID 다
 (`point3-api.md` 10절). 연동키가 `client-` 로 시작하면 두 값이 뒤바뀐 것이다.
 

@@ -39,7 +39,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class SmartTrackerSmokeTest {
 
 	private final SmartTrackerClient client = new SmartTrackerClient(
-			new SmartTrackerProperties(null, System.getenv("SMART_TRACKER_API_KEY"),
+			new SmartTrackerProperties(true, null, System.getenv("SMART_TRACKER_API_KEY"),
 					null, null, null, null, null));
 
 	@Test

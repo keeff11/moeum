@@ -25,8 +25,11 @@ import java.util.Optional;
 @RequiredArgsConstructor
 public class TrackingService {
 
-	/** 캐시된 실패에는 원래 사유가 없다. 화면에 보여 줄 문구만 준다 */
-	private static final String UNAVAILABLE = "지금은 배송조회를 할 수 없습니다. 잠시 후 다시 시도해 주세요.";
+	/** 사유를 구매자에게 보일 수 없을 때의 문구. 캐시된 실패와 우리 쪽 사정이 여기로 온다 */
+	private static final String UNAVAILABLE = "지금은 배송조회를 할 수 없습니다. 택배사에서 직접 조회해 주세요.";
+
+	/** 꺼져 있을 때. "실패" 가 아니라 "제공하지 않는다" 다 */
+	private static final String DISABLED = "이 주문은 배송조회를 제공하지 않습니다. 택배사에서 직접 조회해 주세요.";
 
 	private final ShippingRepository shippingRepository;
 	private final SmartTrackerClient smartTrackerClient;
@@ -45,8 +48,13 @@ public class TrackingService {
 				.orElseThrow(() -> new BusinessException(ErrorCode.ORDER_GROUP_NOT_FOUND));
 
 		if (!ref.trackable()) {
-			// 송장은 있는데 택배사 코드가 없다. 조회 키가 없던 때 등록된 건이다
-			return TrackingResponse.unavailable(ref, "이 주문은 배송조회를 제공하지 않습니다.");
+			// 송장은 있는데 택배사 코드가 없다. 조회가 꺼져 있던 때 등록된 건이다
+			return TrackingResponse.unavailable(ref, DISABLED);
+		}
+
+		// 꺼져 있으면 여기서 끝낸다. 클라이언트까지 내려가면 내부 사유가 응답에 실린다
+		if (!smartTrackerClient.isEnabled()) {
+			return TrackingResponse.unavailable(ref, DISABLED);
 		}
 
 		// 캐시된 칸이 있으면 그것으로 끝낸다. 이용권이 월 100건이라 여기서 막는 것이 전제다
@@ -67,7 +75,8 @@ public class TrackingService {
 		} catch (TrackingException e) {
 			// 실패도 담는다. 그쪽이 죽어 있으면 새로고침마다 이용권을 한 건씩 태운다
 			cache.putFailure(ref.carrierCode(), ref.trackingNo());
-			return TrackingResponse.unavailable(ref, e.getMessage());
+			// 택배사가 준 사유만 그대로 보여 준다. 우리 쪽 사정은 로그에만 남는다
+			return TrackingResponse.unavailable(ref, e.userMessage().orElse(UNAVAILABLE));
 		}
 	}
 
@@ -82,7 +91,7 @@ public class TrackingService {
 	 * 화면은 빈 목록이면 택배사를 직접 입력하게 두면 된다 (코드 없이 등록된다).
 	 */
 	public List<SmartTrackerClient.Carrier> carriers() {
-		if (!smartTrackerClient.isConfigured()) {
+		if (!smartTrackerClient.isEnabled()) {
 			return List.of();
 		}
 

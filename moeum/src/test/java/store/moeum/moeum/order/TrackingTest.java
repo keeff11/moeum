@@ -59,6 +59,8 @@ class TrackingTest extends IntegrationTest {
 		registry.add("moeum.point3.api-token", () -> "test-token");
 		registry.add("moeum.tracking.base-url", TRACKER::baseUrl);
 		registry.add("moeum.tracking.api-key", () -> "test-tracker-key");
+		// 키만으로는 안 나간다. 스위치가 기본 false 다 (D-048)
+		registry.add("moeum.tracking.enabled", () -> "true");
 	}
 
 	@Autowired

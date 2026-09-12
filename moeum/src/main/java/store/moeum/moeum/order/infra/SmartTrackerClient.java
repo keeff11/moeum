@@ -52,10 +52,16 @@ public class SmartTrackerClient {
 				.baseUrl(properties.baseUrl())
 				.requestFactory(factory)
 				.build();
+
+		if (properties.isConfigured() && !properties.isEnabled()) {
+			// 키를 넣었는데 안 나가면 설정이 잘못된 줄 알기 쉽다. 일부러 꺼 둔 것임을 남긴다
+			log.info("배송조회 키는 있지만 꺼져 있다. moeum.tracking.enabled=true 로 켠다");
+		}
 	}
 
-	public boolean isConfigured() {
-		return properties.isConfigured();
+	/** 실제로 조회를 부를 수 있는가. 키와 {@code enabled} 스위치가 둘 다 있어야 한다 */
+	public boolean isEnabled() {
+		return properties.isEnabled();
 	}
 
 	/**
@@ -71,7 +77,7 @@ public class SmartTrackerClient {
 		// 둘 다 받는다 — 여기서 틀리면 목록이 통째로 비고, 그때 셀러는 택배사를 고를 수 없다
 		JsonNode array = body.isArray() ? body : firstArrayOf(body);
 		if (array == null) {
-			throw new TrackingException("택배사 목록을 읽을 수 없다: " + body);
+			throw TrackingException.internal("택배사 목록을 읽을 수 없다: " + body);
 		}
 
 		List<Carrier> carriers = new ArrayList<>();
@@ -102,7 +108,7 @@ public class SmartTrackerClient {
 		if (status != null && status.isBoolean() && !status.asBoolean()) {
 			String message = body.path("msg").asText("조회할 수 없는 송장이다");
 			log.info("배송조회 실패: code={}, msg={}", body.path("code").asText(""), message);
-			throw new TrackingException(message);
+			throw TrackingException.ofProvider(message);
 		}
 
 		List<Tracking.Step> steps = new ArrayList<>();
@@ -122,9 +128,9 @@ public class SmartTrackerClient {
 	}
 
 	private JsonNode get(String path, java.util.function.UnaryOperator<org.springframework.web.util.UriBuilder> query) {
-		if (!properties.isConfigured()) {
-			// 키가 없는 환경(로컬)이다. 500 으로 터뜨리지 않고 기능만 꺼진 것으로 알린다
-			throw new TrackingException("배송조회 키가 설정되지 않았다");
+		if (!properties.isEnabled()) {
+			// 부르는 쪽이 이미 걸렀어야 한다. 여기까지 오면 호출 지점을 하나 빠뜨린 것이다
+			throw TrackingException.internal("배송조회가 꺼져 있다");
 		}
 
 		try {
@@ -134,14 +140,14 @@ public class SmartTrackerClient {
 					.body(JsonNode.class);
 
 			if (body == null) {
-				throw new TrackingException("배송조회 응답이 비어 있다");
+				throw TrackingException.internal("배송조회 응답이 비어 있다");
 			}
 			return body;
 
 		} catch (RestClientException e) {
 			// 4xx · 5xx · 타임아웃을 나누지 않는다 ({@link TrackingException} 참고)
 			log.warn("배송조회 호출 실패: path={}", path, e);
-			throw new TrackingException("배송조회에 실패했다", e);
+			throw TrackingException.internal("배송조회 호출 실패", e);
 		}
 	}
 
