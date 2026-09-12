@@ -160,6 +160,35 @@ public class SaleFormController {
 			int arrivedOrders) {
 	}
 
+	/**
+	 * 발주 · 제작 시작 (S9 · D-049).
+	 *
+	 * 입고({@code /arrive})의 한 단계 앞이다. 이게 없어서 공동구매 주문이
+	 * 모집 → 마감 다음에 바로 입고로 뛰었고, 구매자는 "제작 중" 을 볼 수 없었다.
+	 */
+	@Operation(summary = "발주 · 제작 시작",
+			description = """
+					모집이 마감된 이 판매의 주문을 '제작 중' 으로 넘긴다. 구매자 화면의 진행
+					배지가 이 값을 본다.
+
+					★ 마감된 주문만 넘어간다. 모집이 끝나야 몇 개를 만들지가 정해지고,
+					  그 전에 발주하면 발주서의 수량과 어긋난다.
+					★ 다시 불러도 안전하다. 이미 제작 중인 주문은 세지 않는다.
+					★ 입고는 이 단계를 건너뛰어도 된다 — 바로 /arrive 를 불러도 막지 않는다.
+					""")
+	@PostMapping("/{saleFormId}/producing")
+	public ProducingResponse startProducing(@LoginUser SessionUser user,
+			@Parameter(description = "판매 폼 id", example = "12") @PathVariable Long saleFormId) {
+		return new ProducingResponse(saleFormService.startProducing(user.kakaoId(), saleFormId));
+	}
+
+	@Schema(description = "발주 처리 결과")
+	public record ProducingResponse(
+			@Schema(description = "이번에 제작 중으로 넘어간 주문 수. 이미 제작 중인 건은 세지 않는다",
+					example = "5")
+			int producingOrders) {
+	}
+
 	@Operation(summary = "판매 폼 수정 이력",
 			description = "항목 단위로 무엇이 언제 어떻게 바뀌었는지 남는다.")
 	@GetMapping("/{saleFormId}/history")

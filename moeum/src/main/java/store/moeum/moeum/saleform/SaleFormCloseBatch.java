@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
+import store.moeum.moeum.order.domain.OrderRepository;
 import store.moeum.moeum.saleform.domain.SaleFormRepository;
 
 /**
@@ -27,6 +28,7 @@ import store.moeum.moeum.saleform.domain.SaleFormRepository;
 public class SaleFormCloseBatch {
 
 	private final SaleFormRepository saleFormRepository;
+	private final OrderRepository orderRepository;
 
 	@Transactional
 	@Scheduled(fixedDelayString = "${moeum.batch.sale-form-close-delay:60000}")
@@ -37,9 +39,22 @@ public class SaleFormCloseBatch {
 		}
 	}
 
-	/** 한 번의 마감. 테스트가 직접 부를 수 있게 열어 둔다 */
+	/**
+	 * 한 번의 마감. 테스트가 직접 부를 수 있게 열어 둔다.
+	 *
+	 * <b>폼만 마감하면 주문은 모집 중에 머문다</b> (D-049). 구매자 화면의 진행 배지가
+	 * {@code orders.status} 를 보므로, 폼이 CLOSED 인데 주문이 RECRUITING 이면
+	 * 마감된 공구가 계속 "모집 중" 으로 보인다.
+	 *
+	 * 주문은 한 문장으로 같이 넘긴다 — 폼이 수백 개 마감돼도 엔티티를 올리지 않는다.
+	 */
 	@Transactional
 	public int closeOnce() {
-		return saleFormRepository.closeExpired();
+		int closed = saleFormRepository.closeExpired();
+		if (closed > 0) {
+			int orders = orderRepository.closeRecruitingOfClosedForms();
+			log.info("모집 마감: 폼 {}건, 주문 {}건", closed, orders);
+		}
+		return closed;
 	}
 }

@@ -181,6 +181,12 @@ public class SaleFormService {
 		}
 
 		recordStatusChange(form, form.close(), seller);
+
+		// 폼만 마감하면 주문은 모집 중에 머물러 구매자 화면이 "모집 중" 으로 남는다 (D-049)
+		int closed = closeOrders(saleFormId);
+		if (closed > 0) {
+			log.info("모집 마감: saleFormId={}, 주문 {}건", saleFormId, closed);
+		}
 		return SaleFormDetailResponse.of(form, seller, imageUrlsOf(form));
 	}
 
@@ -203,7 +209,7 @@ public class SaleFormService {
 		}
 
 		int arrived = 0;
-		for (Order order : orderRepository.findPaidBySaleForm(saleFormId)) {
+		for (Order order : orderRepository.findArrivableBySaleForm(saleFormId)) {
 			if (!order.markArrived()) {
 				continue;
 			}
@@ -214,6 +220,41 @@ public class SaleFormService {
 		}
 		log.info("입고 처리: saleFormId={}, 주문 {}건", saleFormId, arrived);
 		return arrived;
+	}
+
+	/**
+	 * 발주 · 제작 시작 (D-049). 셀러가 누른다.
+	 *
+	 * <b>모집이 마감된 주문만 넘어간다.</b> 모집이 끝나야 몇 개를 만들지가 정해지고,
+	 * 그 전에 발주하면 발주서(D-045)의 수량과 어긋난다.
+	 *
+	 * 알림은 적재하지 않는다 — 진행 상태 변경 알림(항목 4)은 템플릿이 아직 없다.
+	 * 자리는 여기다.
+	 */
+	@Transactional
+	public int startProducing(String kakaoId, Long saleFormId) {
+		Seller seller = sellerService.getByKakaoId(kakaoId);
+		SaleForm form = findOwned(seller, saleFormId);
+
+		int producing = 0;
+		for (Order order : orderRepository.findClosedBySaleForm(saleFormId)) {
+			if (order.markProducing()) {
+				producing++;
+			}
+		}
+		log.info("발주 처리: saleFormId={}, 주문 {}건", form.getId(), producing);
+		return producing;
+	}
+
+	/** 모집 중인 주문을 마감으로 넘긴다. 폼 마감과 같이 부른다 */
+	private int closeOrders(Long saleFormId) {
+		int closed = 0;
+		for (Order order : orderRepository.findRecruitingBySaleForm(saleFormId)) {
+			if (order.markClosed()) {
+				closed++;
+			}
+		}
+		return closed;
 	}
 
 	/**

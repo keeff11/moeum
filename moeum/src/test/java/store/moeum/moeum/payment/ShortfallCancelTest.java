@@ -146,7 +146,8 @@ class ShortfallCancelTest extends IntegrationTest {
 
 		// 앞에서 멈추면 뒤의 구매자는 다음 주기를 기다리는데, 그 주기는 오지 않는다
 		assertThat(refundStatuses()).containsExactlyInAnyOrder("FAILED", "COMPLETED");
-		assertThat(orderStatuses()).containsExactlyInAnyOrder("PAID", "CANCELED");
+		// 공동구매는 결제 확정 시 RECRUITING 이 된다 (D-049). 남은 주문은 그대로다
+		assertThat(orderStatuses()).containsExactlyInAnyOrder("RECRUITING", "CANCELED");
 	}
 
 	// ---------------------------------------------------------------- 멱등
@@ -195,7 +196,8 @@ class ShortfallCancelTest extends IntegrationTest {
 		// 훑기는 하되(1건) 취소는 나가지 않는다
 		assertThat(batch.handleOnce()).isEqualTo(1);
 		assertThat(refundAmounts()).isEmpty();
-		assertThat(orderStatuses()).containsOnly("PAID");
+		// 공동구매는 결제 확정 시 RECRUITING 이다 (D-049) — 취소가 안 나갔다는 뜻은 그대로다
+		assertThat(orderStatuses()).containsOnly("RECRUITING");
 	}
 
 	@Test
@@ -219,7 +221,8 @@ class ShortfallCancelTest extends IntegrationTest {
 		// 몇 번까지 · 얼마나 미룰지가 기획 미확정이다. 임의로 정해 돈을 돌려주지 않는다
 		assertThat(batch.handleOnce()).isEqualTo(1);
 		assertThat(refundAmounts()).isEmpty();
-		assertThat(orderStatuses()).containsOnly("PAID");
+		// 공동구매는 결제 확정 시 RECRUITING 이다 (D-049) — 취소가 안 나갔다는 뜻은 그대로다
+		assertThat(orderStatuses()).containsOnly("RECRUITING");
 	}
 
 	@Test

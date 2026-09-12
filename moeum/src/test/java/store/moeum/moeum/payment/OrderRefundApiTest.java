@@ -281,7 +281,8 @@ class OrderRefundApiTest extends IntegrationTest {
 
 		// 남은 폼은 계속 배송돼야 하고, 묶음을 내리면 2차금 청구 대상에서도 빠진다
 		assertThat(groupStatus()).isEqualTo("PAID");
-		assertThat(orderStatus(orderIdOf(formB))).isEqualTo("PAID");
+		// 주문 쪽은 공동구매라 RECRUITING 이다 (D-049). 묶음 상태(PAID)와 다른 축이다
+		assertThat(orderStatus(orderIdOf(formB))).isEqualTo("RECRUITING");
 	}
 
 	// ---------------------------------------------------------------- 취소 구간
