@@ -3,6 +3,7 @@ package store.moeum.moeum.order.dto;
 import io.swagger.v3.oas.annotations.media.Schema;
 import store.moeum.moeum.order.domain.Order;
 import store.moeum.moeum.order.domain.OrderGroup;
+import store.moeum.moeum.order.domain.Shipping;
 import store.moeum.moeum.saleform.domain.SaleType;
 
 import java.time.LocalDateTime;
@@ -66,6 +67,12 @@ public record BuyerOrderPageResponse(
 			@Schema(description = "카드 세 번째 줄 문구", example = "취소 가능")
 			String note,
 
+			@Schema(description = "택배사. 송장이 등록되기 전에는 null 이다 (D-047)", example = "CJ대한통운")
+			String carrier,
+
+			@Schema(description = "송장번호. 송장이 등록되기 전에는 null 이다", example = "123456789012")
+			String trackingNo,
+
 			@Schema(description = "주문한 시각", example = "2026-08-30T14:12:03")
 			LocalDateTime orderedAt
 	) {
@@ -98,7 +105,8 @@ public record BuyerOrderPageResponse(
 	 * @param cancelable {@code RefundPolicy} 로 판정한 값. <b>서비스가 넘겨준다</b> —
 	 *                   정책이 refund 패키지에 있어 DTO 가 그쪽을 알 이유가 없다
 	 */
-	public static BuyerOrderItem itemOf(OrderGroup group, String thumbnailUrl, boolean cancelable) {
+	public static BuyerOrderItem itemOf(OrderGroup group, String thumbnailUrl, boolean cancelable,
+	                                    Shipping shipping) {
 		BuyerOrderStatus status = BuyerOrderStatus.of(group);
 
 		return new BuyerOrderItem(
@@ -112,6 +120,9 @@ public record BuyerOrderPageResponse(
 				status.label(),
 				cancelable,
 				noteOf(status, cancelable),
+				// 배송지 본문은 싣지 않는다. 구매자 본인 것이지만 목록 한 장에 20건이 실린다
+				(shipping == null) ? null : shipping.getCarrier(),
+				(shipping == null) ? null : shipping.getTrackingNo(),
 				group.getCreatedAt());
 	}
 

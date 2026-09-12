@@ -167,8 +167,7 @@ public interface OrderGroupRepository extends JpaRepository<OrderGroup, Long> {
 	 * 목록 쿼리({@code findSellerOrders})의 SECOND_UNPAID 조건과 같아야 한다 —
 	 * 갈라지면 배지 숫자와 목록 건수가 어긋나고, 셀러는 열리지 않는 탭에 숫자만 보게 된다.
 	 *
-	 * <b>발송 완료는 당분간 항상 0 이다.</b> SHIPPED 로 올리는 코드가 아직 없다
-	 * (송장 등록은 7단계). 탭을 지우지 않는 이유는 화면이 다섯 칸이기 때문이다.
+	 * <b>발송 완료는 송장이 등록된 묶음이다</b> (D-047).
 	 */
 	@Query("""
 			select new store.moeum.moeum.order.domain.SellerOrderCounts(

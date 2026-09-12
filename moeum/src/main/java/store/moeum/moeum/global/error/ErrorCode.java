@@ -46,6 +46,7 @@ public enum ErrorCode {
 	MULTIPLE_SELLERS(HttpStatus.BAD_REQUEST, "한 번에 한 셀러의 상품만 주문할 수 있습니다."),
 	ORDER_GROUP_NOT_FOUND(HttpStatus.NOT_FOUND, "주문을 찾을 수 없습니다."),
 	SHIPPING_ADDRESS_REQUIRED(HttpStatus.BAD_REQUEST, "배송지를 먼저 입력해 주세요."),
+	NOT_READY_TO_SHIP(HttpStatus.BAD_REQUEST, "아직 발송할 수 없는 주문입니다."),
 	MIN_ORDER_AMOUNT_NOT_MET(HttpStatus.CONFLICT, "최소 주문 금액을 넘지 않았습니다."),
 	TEMPORARY_ERROR(HttpStatus.SERVICE_UNAVAILABLE, "일시적인 오류입니다. 다시 시도해 주세요."),
 

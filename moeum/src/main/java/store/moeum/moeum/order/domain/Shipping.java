@@ -27,7 +27,7 @@ import java.time.LocalDateTime;
  * 복사 시점은 /pay 다 — order_token · order_no 와 같은 자리다 (D-033).
  * CREATED 세션은 15분 뒤 사라지는 임시 자리라 배송지를 굳힐 이유가 없다.
  *
- * carrier · trackingNo · shippedAt 은 지금 채우지 않는다. 송장 등록(7단계)이 쓸 자리다.
+ * carrier · trackingNo · shippedAt 은 송장 등록이 채운다 (D-047).
  */
 @Entity
 @Table(name = "shipping")
@@ -64,7 +64,7 @@ public class Shipping {
 	@Column(name = "memo", length = 200)
 	private String memo;
 
-	/** 송장 3종. 7단계 송장 등록 전까지는 비어 있다 */
+	/** 송장 3종. 송장 등록(D-047) 전까지는 비어 있다 */
 	@Column(name = "carrier", length = 50)
 	private String carrier;
 
@@ -85,6 +85,23 @@ public class Shipping {
 		this.address1 = address.getAddress1();
 		this.address2 = address.getAddress2();
 		this.memo = address.getMemo();
+	}
+
+	/**
+	 * 송장을 적는다 (D-047).
+	 *
+	 * <b>다시 부르면 덮어쓴다.</b> 셀러가 송장번호를 잘못 적는 일이 실제로 있고,
+	 * 고칠 방법이 없으면 구매자가 엉뚱한 배송을 조회하게 된다.
+	 *
+	 * {@code shippedAt} 은 <b>처음 등록한 시각으로 굳힌다.</b> 번호를 고쳤다고 발송일이
+	 * 미래로 밀리면, 발송 기준으로 세는 것들(취소 가능 여부 · 정산)이 같이 흔들린다.
+	 */
+	public void registerShipment(String carrier, String trackingNo, LocalDateTime at) {
+		this.carrier = carrier;
+		this.trackingNo = trackingNo;
+		if (this.shippedAt == null) {
+			this.shippedAt = at;
+		}
 	}
 
 	/** 주문 시점의 배송지를 그대로 떠 온다 */

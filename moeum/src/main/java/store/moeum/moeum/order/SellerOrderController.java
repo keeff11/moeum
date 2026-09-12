@@ -3,12 +3,14 @@ package store.moeum.moeum.order;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.CacheControl;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -18,6 +20,8 @@ import store.moeum.moeum.order.domain.SellerOrderTab;
 import store.moeum.moeum.order.dto.SellerOrderDetailResponse;
 import store.moeum.moeum.order.dto.SecondChargeResponse;
 import store.moeum.moeum.order.dto.SellerOrderPageResponse;
+import store.moeum.moeum.order.dto.ShipmentRequest;
+import store.moeum.moeum.order.dto.ShipmentResponse;
 
 /**
  * 셀러 주문 목록 (와이어프레임 G6).
@@ -33,6 +37,7 @@ public class SellerOrderController {
 
 	private final SellerOrderService sellerOrderService;
 	private final SecondChargeService secondChargeService;
+	private final ShipmentService shipmentService;
 
 	/**
 	 * 목록. <b>캐시하지 않는다</b> — 카드마다 결제·입고 상태가 실려 있어 D-029 와 이유가 같다.
@@ -46,7 +51,7 @@ public class SellerOrderController {
 					검색어나 판매별 필터를 걸면 그 조건이 반영된 숫자로 바뀐다.
 
 					★ 결제 전 장바구니 세션과 만료된 건은 어느 탭에도 나오지 않는다.
-					★ 발송 완료는 송장 등록 기능이 아직 없어 당분간 항상 0건이다.
+					★ 발송 완료는 송장이 등록된 주문이다 (D-047).
 					""")
 	@GetMapping
 	public ResponseEntity<SellerOrderPageResponse> list(
@@ -137,5 +142,34 @@ public class SellerOrderController {
 		return ResponseEntity.ok()
 				.cacheControl(CacheControl.noStore())
 				.body(sellerOrderService.detail(user.kakaoId(), orderNo));
+	}
+
+	/**
+	 * 송장 등록 (S12).
+	 *
+	 * <b>{@code /second-charge} 와 마찬가지로 이 경로가 {@code /{orderNo}} 보다 먼저 잡힌다</b> —
+	 * 여기는 하위 경로라 애초에 겹치지 않지만, 주문번호가 ORD- 로 시작해서 실제로도 안 겹친다.
+	 */
+	@Operation(summary = "송장 등록",
+			description = """
+					택배사와 송장번호를 적고 발송 완료로 넘긴다. 송장은 묶음당 하나다.
+
+					★ 받을 돈이 남아 있으면 등록할 수 없다. 2차금이 있는 주문은 잔금까지 받아야 하고,
+					  없는 주문(단독 판매)은 입고되면 바로 등록할 수 있다. 셀러 목록의 '배송 준비 중'
+					  탭에 뜬 주문이 곧 등록 대상이다.
+					★ 다시 불러 송장번호를 고칠 수 있다. 그때는 상태가 그대로고 발송 알림도 다시
+					  나가지 않는다 (newlyShipped=false).
+					★ 발송일시는 처음 등록한 시각으로 굳는다. 번호를 고쳐도 밀리지 않는다.
+					""")
+	@PostMapping("/{orderNo}/shipment")
+	public ShipmentResponse registerShipment(
+			@LoginUser SessionUser user,
+
+			@Parameter(description = "주문번호. 목록 카드에 찍힌 그 값이다", example = "ORD-260912-41")
+			@PathVariable String orderNo,
+
+			@Valid @RequestBody ShipmentRequest request) {
+
+		return shipmentService.register(user.kakaoId(), orderNo, request);
 	}
 }

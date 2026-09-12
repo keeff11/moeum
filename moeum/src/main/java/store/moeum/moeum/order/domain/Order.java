@@ -132,6 +132,24 @@ public class Order extends BaseTimeEntity {
 	}
 
 	/**
+	 * 발송 완료. 송장이 등록될 때 묶음이 주문들을 같이 넘긴다 (D-047).
+	 *
+	 * 입고된 주문만 넘어간다 — 아직 물건이 안 들어왔는데 보냈다고 할 수는 없다.
+	 * 이미 SHIPPED 면 조용히 넘어간다: 셀러가 송장번호를 고칠 수 있어야 하고,
+	 * 그때마다 예외가 나면 수정 자체가 막힌다.
+	 */
+	boolean markShipped() {
+		if (status == OrderStatus.SHIPPED) {
+			return false;
+		}
+		if (status != OrderStatus.ARRIVED) {
+			throw new IllegalStateException("발송 처리할 수 없는 주문 상태다: " + status + " (id=" + id + ")");
+		}
+		this.status = OrderStatus.SHIPPED;
+		return true;
+	}
+
+	/**
 	 * 취소 확정. <b>멱등하다</b> — 실시간 취소와 대사 배치가 같은 건을 확정할 수 있다.
 	 *
 	 * 환불이 끝난 뒤에만 부른다. 요청만 받고 미리 바꾸면 취소가 거절됐을 때

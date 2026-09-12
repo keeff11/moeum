@@ -317,6 +317,49 @@ public class OrderGroup extends BaseTimeEntity {
 	}
 
 	/**
+	 * 송장을 등록할 수 있는 단계인가 (D-047).
+	 *
+	 * <b>받을 돈이 남아 있으면 아직 아니다.</b> 2차금이 있는 묶음은 잔금까지 받아야
+	 * ({@code SECOND_PAID}) 하고, 없는 묶음은 입고가 곧 발송 준비 완료다 (D-046).
+	 * 셀러 화면의 "배송 준비 중" 과 같은 조건이라 그 탭에 뜬 주문이 곧 등록 대상이다.
+	 */
+	public boolean isReadyToShip() {
+		return status == OrderGroupStatus.SECOND_PAID || isReadyToShipWithoutSecond();
+	}
+
+	/**
+	 * 송장을 적을 수 있는 상태인가 (D-047).
+	 *
+	 * <b>이미 발송된 묶음도 참이다.</b> 셀러가 송장번호를 잘못 적는 일이 실제로 있고,
+	 * {@link #isReadyToShip()} 만 보면 발송 처리된 순간부터 수정이 막힌다 —
+	 * 그러면 구매자가 엉뚱한 배송을 조회하게 된다.
+	 */
+	public boolean canRegisterShipment() {
+		return status == OrderGroupStatus.SHIPPED || isReadyToShip();
+	}
+
+	/**
+	 * 발송 완료로 넘긴다. 송장이 등록될 때 부른다 (D-047).
+	 *
+	 * <b>멱등하다.</b> 이미 SHIPPED 면 false 를 주고 아무것도 하지 않는다 — 셀러가
+	 * 송장번호를 잘못 적어 고치는 경우가 있고, 그때 상태를 다시 넘기거나 발송 알림을
+	 * 또 보내면 안 된다. 알림 적재를 이 반환값 안쪽에 두는 이유다.
+	 *
+	 * 취소된 주문은 넘기지 않는다 — 보내지 않은 물건이다.
+	 */
+	public boolean markShipped() {
+		if (status == OrderGroupStatus.SHIPPED) {
+			return false;
+		}
+		if (!isReadyToShip()) {
+			throw new IllegalStateException("발송 처리할 수 없는 주문 상태다: " + status + " (id=" + id + ")");
+		}
+		this.status = OrderGroupStatus.SHIPPED;
+		activeOrders().forEach(Order::markShipped);
+		return true;
+	}
+
+	/**
 	 * 살아 있는 주문이 전부 입고됐는가.
 	 *
 	 * 하나도 없으면 거짓이다 — 전부 취소된 묶음은 "입고 안 된 것이 없다" 가 참이 되어

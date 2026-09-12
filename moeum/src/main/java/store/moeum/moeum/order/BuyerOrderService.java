@@ -9,12 +9,17 @@ import store.moeum.moeum.global.storage.ImageStorage;
 import store.moeum.moeum.order.domain.Order;
 import store.moeum.moeum.order.domain.OrderGroup;
 import store.moeum.moeum.order.domain.OrderGroupRepository;
+import store.moeum.moeum.order.domain.Shipping;
+import store.moeum.moeum.order.domain.ShippingRepository;
 import store.moeum.moeum.order.dto.BuyerOrderPageResponse;
 import store.moeum.moeum.payment.refund.RefundPolicy;
 import store.moeum.moeum.saleform.domain.SaleForm;
 import store.moeum.moeum.saleform.domain.SaleType;
 
 import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 /**
  * 구매자 주문 목록 (와이어프레임 B13).
@@ -31,6 +36,7 @@ public class BuyerOrderService {
 	private static final int MAX_SIZE = 50;
 
 	private final OrderGroupRepository orderGroupRepository;
+	private final ShippingRepository shippingRepository;
 	private final ImageStorage imageStorage;
 
 	/**
@@ -42,9 +48,13 @@ public class BuyerOrderService {
 		Page<OrderGroup> groups = orderGroupRepository.findBuyerOrders(
 				kakaoId, saleType, PageRequest.of(Math.max(page, 0), clampSize(size)));
 
+		// 송장은 한 번에 끌어온다 — 카드마다 조회하면 목록 한 장에 쿼리가 20번 더 나간다
+		Map<Long, Shipping> shippings = shippingsOf(groups.getContent());
+
 		List<BuyerOrderPageResponse.BuyerOrderItem> items = groups.getContent().stream()
 				.map(group -> BuyerOrderPageResponse.itemOf(
-						group, thumbnailOf(group), cancelableOf(group)))
+						group, thumbnailOf(group), cancelableOf(group),
+						shippings.get(group.getId())))
 				.toList();
 
 		return new BuyerOrderPageResponse(items,
@@ -53,6 +63,16 @@ public class BuyerOrderService {
 	}
 
 	// ---------------------------------------------------------------- 내부
+
+	/** 송장이 없는 묶음은 키가 아예 없다 — 등록 전이라는 뜻이다 */
+	private Map<Long, Shipping> shippingsOf(List<OrderGroup> groups) {
+		if (groups.isEmpty()) {
+			return Map.of();
+		}
+		return shippingRepository.findByOrderGroupIdIn(groups.stream().map(OrderGroup::getId).toList())
+				.stream()
+				.collect(Collectors.toMap(s -> s.getOrderGroup().getId(), Function.identity()));
+	}
 
 	/**
 	 * 카드에 찍히는 취소 가능 여부.

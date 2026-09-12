@@ -20,6 +20,14 @@ public enum OutboxEventType {
 	/** 2차금 결제 완료 */
 	SECOND_PAID,
 
+	/**
+	 * 발송 완료 — 송장번호가 등록됐다 (알림톡 3번 · D-047).
+	 *
+	 * <b>승인된 템플릿이 아직 없다.</b> 그러면 예전처럼 로그만 남고 SENT 로 넘어간다
+	 * (D-040) — 템플릿 id 를 설정에 채우는 순간 나가기 시작한다.
+	 */
+	SHIPPED,
+
 	/** 취소·환불 완료 */
 	REFUND_COMPLETED
 }
