@@ -201,7 +201,7 @@ class ShipmentTest extends IntegrationTest {
 
 		// 403 이면 "그 번호가 있긴 하다" 가 새어 나가 주문번호를 훑을 수 있다
 		assertThatThrownBy(() -> shipmentService.register(
-				"kakao-stranger", orderNo, new ShipmentRequest("CJ대한통운", "1")))
+				"kakao-stranger", orderNo, new ShipmentRequest("CJ대한통운", "04", "1")))
 				.isInstanceOf(BusinessException.class);
 	}
 
@@ -238,7 +238,8 @@ class ShipmentTest extends IntegrationTest {
 	// ---------------------------------------------------------------- 도우미
 
 	private ShipmentResponse register(String carrier, String trackingNo) {
-		return shipmentService.register(sellerKakaoId, orderNo, new ShipmentRequest(carrier, trackingNo));
+		return shipmentService.register(sellerKakaoId, orderNo,
+				new ShipmentRequest(carrier, "04", trackingNo));
 	}
 
 	private void payAndArrive() {

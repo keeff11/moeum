@@ -68,8 +68,8 @@ public class ShipmentService {
 				.orElseThrow(() -> new BusinessException(ErrorCode.SHIPPING_ADDRESS_REQUIRED));
 
 		boolean first = group.markShipped();
-		shipping.registerShipment(request.carrier().trim(), request.trackingNo().trim(),
-				LocalDateTime.now(KST));
+		shipping.registerShipment(request.carrier().trim(), blankToNull(request.carrierCode()),
+				request.trackingNo().trim(), LocalDateTime.now(KST));
 
 		if (first) {
 			notifyShipped(group, shipping);
@@ -79,6 +79,10 @@ public class ShipmentService {
 		}
 
 		return ShipmentResponse.of(group, shipping, first);
+	}
+
+	private static String blankToNull(String value) {
+		return (value == null || value.isBlank()) ? null : value.trim();
 	}
 
 	/**

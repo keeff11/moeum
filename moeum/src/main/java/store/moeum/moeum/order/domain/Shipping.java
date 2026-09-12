@@ -68,6 +68,19 @@ public class Shipping {
 	@Column(name = "carrier", length = 50)
 	private String carrier;
 
+	/**
+	 * 스마트택배 택배사 코드 (D-048). 배송조회가 이 값을 쓴다.
+	 *
+	 * <b>이름과 따로 둔다.</b> 코드만 저장하면 구매자에게 "04" 를 보여 주게 되고,
+	 * 이름을 얻으려면 조회 API 를 매번 불러야 한다 — 그쪽이 죽으면 이미 발송한 주문의
+	 * 택배사 이름이 화면에서 사라진다.
+	 *
+	 * 비어 있을 수 있다. 배송조회 키가 없는 환경에서는 화면이 코드를 고를 수 없는데,
+	 * 그렇다고 송장 등록 자체를 막을 수는 없다. 그때는 조회만 안 된다.
+	 */
+	@Column(name = "carrier_code", length = 10)
+	private String carrierCode;
+
 	@Column(name = "tracking_no", length = 50)
 	private String trackingNo;
 
@@ -96,12 +109,20 @@ public class Shipping {
 	 * {@code shippedAt} 은 <b>처음 등록한 시각으로 굳힌다.</b> 번호를 고쳤다고 발송일이
 	 * 미래로 밀리면, 발송 기준으로 세는 것들(취소 가능 여부 · 정산)이 같이 흔들린다.
 	 */
-	public void registerShipment(String carrier, String trackingNo, LocalDateTime at) {
+	public void registerShipment(String carrier, String carrierCode, String trackingNo,
+	                             LocalDateTime at) {
 		this.carrier = carrier;
+		this.carrierCode = carrierCode;
 		this.trackingNo = trackingNo;
 		if (this.shippedAt == null) {
 			this.shippedAt = at;
 		}
+	}
+
+	/** 배송조회를 걸 수 있는가. 코드가 없으면 택배사 이름만 보여 준다 */
+	public boolean isTrackable() {
+		return carrierCode != null && !carrierCode.isBlank()
+				&& trackingNo != null && !trackingNo.isBlank();
 	}
 
 	/** 주문 시점의 배송지를 그대로 떠 온다 */

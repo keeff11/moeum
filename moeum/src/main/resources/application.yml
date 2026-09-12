@@ -107,6 +107,9 @@ moeum:
     # 비워 두면 이미지 업로드만 꺼진다. 로컬에서 AWS 자격증명을 갖추게 만들 이유가 없다
     bucket: ${S3_BUCKET:}
     public-base-url: ${S3_PUBLIC_BASE_URL:}
+  tracking:
+    # 스마트택배 배송조회 (D-048). 비면 조회 기능만 꺼진다 — 송장 등록은 그대로 된다
+    api-key: ${SMART_TRACKER_API_KEY:}
   oauth:
     kakao:
       client-id: ${KAKAO_CLIENT_ID:local-client-id}
@@ -166,6 +169,13 @@ moeum:
     bucket: ${S3_BUCKET:}
     # 나중에 CloudFront 를 앞에 세우면 이 값만 바꾼다. 쌓인 행은 키만 갖고 있어 손대지 않는다
     public-base-url: ${S3_PUBLIC_BASE_URL:}
+  tracking:
+    # 스마트택배 배송조회 (D-048). 키가 없으면 조회만 꺼지고 송장 등록은 그대로 된다.
+    # 키는 저장소에 두지 않는다 — Parameter Store 에서 온다 (D-017)
+    api-key: ${SMART_TRACKER_API_KEY:}
+    # 화면이 기다리는 호출이라 짧게 둔다. 늦으면 조회 실패로 접고 송장번호만 보여 준다
+    connect-timeout: 2s
+    read-timeout: 5s
   batch:
     orphan-sweep:
       # 어디에도 연결되지 않은 업로드 이미지를 지운다 (D-041).
