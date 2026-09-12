@@ -13,6 +13,8 @@ import store.moeum.moeum.global.auth.SessionUser;
 import store.moeum.moeum.order.domain.SellerOrderTab;
 import store.moeum.moeum.order.dto.OrderCreateRequest;
 import store.moeum.moeum.order.dto.OrderGroupResponse;
+import store.moeum.moeum.order.dto.BuyerOrderPageResponse;
+import store.moeum.moeum.order.dto.BuyerOrderStatus;
 import store.moeum.moeum.order.dto.SellerOrderPageResponse;
 import store.moeum.moeum.payment.PaymentService;
 import store.moeum.moeum.seller.domain.SellerRepository;
@@ -62,6 +64,9 @@ class SoloShippingFeeTest extends IntegrationTest {
 
 	@Autowired
 	private SellerOrderService sellerOrderService;
+
+	@Autowired
+	private BuyerOrderService buyerOrderService;
 
 	@Autowired
 	private SellerRepository sellerRepository;
@@ -151,10 +156,71 @@ class SoloShippingFeeTest extends IntegrationTest {
 		assertThat(totalAmountOf(solo)).isEqualTo(35_000);
 	}
 
+	// ---------------------------------------------------------------- 입고 후 발송 단계
+
+	@Test
+	@DisplayName("입고되면_셀러의_배송_준비_중_탭에_뜬다")
+	void 셀러_배송_준비_중() {
+		// 묶음 상태가 SECOND_PAID 로 안 넘어가서, 그것만 보면 보낼 주문을 못 찾는다
+		OrderFixture.Setup solo = fixture.soloSaleForm(10);
+		payAndArrive(solo);
+
+		SellerOrderPageResponse page = sellerPage(solo, SellerOrderTab.PREPARING);
+
+		assertThat(page.items()).hasSize(1);
+		assertThat(page.items().get(0).statusLabel()).isEqualTo("배송 준비 중");
+		assertThat(page.counts().preparing()).isEqualTo(1);
+	}
+
+	@Test
+	@DisplayName("입고되면_구매자에게_배송_준비_중으로_보인다")
+	void 구매자_배송_준비_중() {
+		// 단독 판매에는 '제작 중' 이라는 단계가 없다 (domain.md 1절)
+		OrderFixture.Setup solo = fixture.soloSaleForm(10);
+		payAndArrive(solo);
+
+		BuyerOrderPageResponse page = buyerOrderService.list(buyer().kakaoId(), null, 0, 20);
+
+		assertThat(page.items()).hasSize(1);
+		assertThat(page.items().get(0).status()).isEqualTo(BuyerOrderStatus.PREPARING);
+	}
+
+	@Test
+	@DisplayName("입고_전이면_아직_배송_준비_중이_아니다")
+	void 입고_전() {
+		OrderFixture.Setup solo = fixture.soloSaleForm(10);
+		pay(solo);
+
+		assertThat(sellerPage(solo, SellerOrderTab.PREPARING).items()).isEmpty();
+		assertThat(buyerOrderService.list(buyer().kakaoId(), null, 0, 20).items().get(0).status())
+				.isNotEqualTo(BuyerOrderStatus.PREPARING);
+	}
+
+	@Test
+	@DisplayName("공동구매는_입고만으로_배송_준비_중이_되지_않는다")
+	void 공동구매는_잔금까지() {
+		// 잔금을 받아야 발송 단계다. 여기까지 넓히면 미납인 묶음이 발송 대기로 보인다
+		OrderFixture.Setup group = fixture.saleForm(10, null);
+		payAndArrive(group);
+
+		assertThat(sellerPage(group, SellerOrderTab.PREPARING).items()).isEmpty();
+		assertThat(sellerPage(group, SellerOrderTab.SECOND_UNPAID).items()).hasSize(1);
+	}
+
 	// ---------------------------------------------------------------- 도우미
 
-	/** 결제까지 마치고 입고 처리한다 — 2차금 판정이 서는 지점이다 */
+	private SellerOrderPageResponse sellerPage(OrderFixture.Setup setup, SellerOrderTab tab) {
+		String sellerKakaoId = sellerRepository.findById(setup.sellerId()).orElseThrow().getKakaoId();
+		return sellerOrderService.list(sellerKakaoId, tab, null, null, 0, 20);
+	}
+
+	/** 결제까지 마치고 입고 처리한다 — 2차금과 발송 단계 판정이 서는 지점이다 */
 	private void payAndArrive(OrderFixture.Setup setup) {
+		pay(setup);
+		jdbcTemplate.update("UPDATE orders SET status = 'ARRIVED'");
+	}
+
+	private void pay(OrderFixture.Setup setup) {
 		String sessionToken = orderService.place(buyer(), order(setup.optionId(), 1)).sessionToken();
 		stubCreateSession();
 		String orderToken = paymentService.pay(buyer(), sessionToken).orderToken();
@@ -162,8 +228,6 @@ class SoloShippingFeeTest extends IntegrationTest {
 				.willReturn(json(200, """
 						{"id":"%s","status":"captured"}""".formatted(SESSION_ID))));
 		paymentService.confirm(buyer(), orderToken, SESSION_ID, null);
-
-		jdbcTemplate.update("UPDATE orders SET status = 'ARRIVED'");
 	}
 
 	/** 카드의 amount 는 1차금 + 2차금이다. 이중 청구가 있으면 여기서 드러난다 */

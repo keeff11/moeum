@@ -289,16 +289,43 @@ public class OrderGroup extends BaseTimeEntity {
 	 * 영영 못 받는다. 셀러 목록의 '2차금 미납' 판정도 같은 기준을 쓴다.
 	 */
 	public boolean isSecondPaymentDue() {
-		if (!hasSecondPayment()) {
-			// 2차금이 없는 묶음이다. 배송비까지 1차금에서 받았으니 청구할 것이 남지 않았다
-			return false;
-		}
+		// 2차금이 없는 묶음은 배송비까지 1차금에서 받았다. 청구할 것이 남지 않았다
+		return hasSecondPayment()
+				&& status == OrderGroupStatus.PAID
+				&& isAllAliveArrived();
+	}
 
+	/**
+	 * 잔금 없이 발송만 남았는가 (D-046).
+	 *
+	 * <b>단독 판매가 여기로 온다.</b> 2차금이 있는 묶음은 입고돼도 잔금을 받아야 발송
+	 * 단계가 되지만(그때 {@code SECOND_PAID} 로 넘어간다), 2차금이 없으면 입고가 곧
+	 * 발송 준비 완료다. 받을 돈이 더 없다.
+	 *
+	 * <b>이게 없으면 단독 판매 주문이 어느 화면에서도 발송 대기로 보이지 않는다.</b>
+	 * 묶음 상태는 {@code PAID} 에 머무는데(SOLO 는 SECOND_PENDING · SECOND_PAID 를
+	 * 건너뛴다 — domain.md 3절), 발송 준비 중 판정이 {@code SECOND_PAID} 만 보고 있었다.
+	 * 셀러는 보낼 주문을 못 찾고, 구매자는 이미 도착한 물건을 "제작 중" 으로 본다.
+	 *
+	 * 묶음 상태를 억지로 {@code SECOND_PAID} 로 올리지 않는 이유가 그 문서다 —
+	 * 단독 판매는 그 상태를 지나지 않기로 한 것이고, 여기서 뒤집으면 상태 이름이 거짓이 된다.
+	 */
+	public boolean isReadyToShipWithoutSecond() {
+		return !hasSecondPayment()
+				&& status == OrderGroupStatus.PAID
+				&& isAllAliveArrived();
+	}
+
+	/**
+	 * 살아 있는 주문이 전부 입고됐는가.
+	 *
+	 * 하나도 없으면 거짓이다 — 전부 취소된 묶음은 "입고 안 된 것이 없다" 가 참이 되어
+	 * 그냥 두면 청구 · 발송 대상에 섞인다 (D-035).
+	 */
+	private boolean isAllAliveArrived() {
 		List<Order> alive = activeOrders();
 
-		return status == OrderGroupStatus.PAID
-				&& !alive.isEmpty()
-				&& alive.stream().allMatch(Order::isArrived);
+		return !alive.isEmpty() && alive.stream().allMatch(Order::isArrived);
 	}
 
 	/** 2차금 결제 세션을 만들 준비가 된 상태 */

@@ -88,6 +88,10 @@ public interface OrderGroupRepository extends JpaRepository<OrderGroup, Long> {
 	 * {@code findStorePage} 가 네이티브인 것은 enum 파라미터의 null 비교 때문이었고,
 	 * 여기 탭은 문자열이라 그 문제가 없다. EXISTS 가 여럿이라 JPQL 쪽이 읽기도 낫다.
 	 *
+	 * <b>PREPARING 은 2차금이 없는 묶음도 받는다</b> (D-046). 단독 판매는 묶음 상태가
+	 * SECOND_PAID 로 넘어가지 않고 PAID 에 머물러서, 그 상태만 보면 발송할 주문이
+	 * 어느 탭에도 나오지 않는다. 잔금이 없으면 입고가 곧 발송 준비 완료다.
+	 *
 	 * <b>SECOND_UNPAID 는 2차금이 있는 묶음만이다.</b> {@code deposit2Total = 0} 이면
 	 * 배송비까지 1차금에서 받았으므로 청구할 것이 없다 (D-046) — 단독 판매가 그렇다.
 	 * {@code OrderGroup.hasSecondPayment()} 와 같은 조건이고, 갈라지면 탭 숫자와
@@ -121,7 +125,17 @@ public interface OrderGroupRepository extends JpaRepository<OrderGroup, Long> {
 			                                                    store.moeum.moeum.order.domain.OrderStatus.EXPIRED,
 			                                                    store.moeum.moeum.order.domain.OrderStatus.ARRIVED)))
 			        or (:tab = 'PREPARING'
-			            and g.status = store.moeum.moeum.order.domain.OrderGroupStatus.SECOND_PAID)
+			            and (g.status = store.moeum.moeum.order.domain.OrderGroupStatus.SECOND_PAID
+			                 or (g.status = store.moeum.moeum.order.domain.OrderGroupStatus.PAID
+			                     and g.deposit2Total = 0
+			                     and exists (select 1 from Order p
+			                                  where p.orderGroup = g
+			                                    and p.status = store.moeum.moeum.order.domain.OrderStatus.ARRIVED)
+			                     and not exists (select 1 from Order q
+			                                      where q.orderGroup = g
+			                                        and q.status not in (store.moeum.moeum.order.domain.OrderStatus.CANCELED,
+			                                                             store.moeum.moeum.order.domain.OrderStatus.EXPIRED,
+			                                                             store.moeum.moeum.order.domain.OrderStatus.ARRIVED)))))
 			        or (:tab = 'SHIPPED'
 			            and g.status = store.moeum.moeum.order.domain.OrderGroupStatus.SHIPPED))
 			   and (:saleFormId is null
@@ -174,6 +188,16 @@ public interface OrderGroupRepository extends JpaRepository<OrderGroup, Long> {
 			                                                           store.moeum.moeum.order.domain.OrderStatus.ARRIVED))
 			                  then 1 end),
 			       count(case when g.status = store.moeum.moeum.order.domain.OrderGroupStatus.SECOND_PAID
+			                   or (g.status = store.moeum.moeum.order.domain.OrderGroupStatus.PAID
+			                       and g.deposit2Total = 0
+			                       and exists (select 1 from Order p
+			                                    where p.orderGroup = g
+			                                      and p.status = store.moeum.moeum.order.domain.OrderStatus.ARRIVED)
+			                       and not exists (select 1 from Order q
+			                                        where q.orderGroup = g
+			                                          and q.status not in (store.moeum.moeum.order.domain.OrderStatus.CANCELED,
+			                                                               store.moeum.moeum.order.domain.OrderStatus.EXPIRED,
+			                                                               store.moeum.moeum.order.domain.OrderStatus.ARRIVED)))
 			                  then 1 end),
 			       count(case when g.status = store.moeum.moeum.order.domain.OrderGroupStatus.SHIPPED
 			                  then 1 end))

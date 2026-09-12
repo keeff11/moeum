@@ -42,15 +42,25 @@ public enum SellerOrderStatus {
 	}
 
 	/**
-	 * <b>{@code isSecondPaymentDue()} 가 갈림길이다.</b> 같은 PAID 라도 전 폼이 입고됐으면
-	 * 청구 대상(2차금 미납)이고, 하나라도 남았으면 아직 진행 중이다.
+	 * <b>같은 PAID 라도 셋으로 갈린다.</b> 전 폼이 입고됐고 받을 잔금이 남았으면 청구
+	 * 대상(2차금 미납), 받을 것이 없으면 발송만 남은 것(배송 준비 중), 하나라도 입고
+	 * 전이면 진행 중이다.
+	 *
+	 * 가운데가 단독 판매다 (D-046). 묶음 상태가 {@code SECOND_PAID} 로 넘어가지 않아
+	 * {@code PAID} 에 머무는데, 그것만 보고 판정하면 <b>셀러가 보낼 주문을 어느 탭에서도
+	 * 찾지 못한다.</b>
 	 */
 	public static SellerOrderStatus of(OrderGroup group) {
 		OrderGroupStatus status = group.getStatus();
 
 		return switch (status) {
 			case PAY_PENDING -> PAYMENT_WAITING;
-			case PAID, SECOND_PENDING -> group.isSecondPaymentDue() ? SECOND_UNPAID : IN_PROGRESS;
+			case PAID, SECOND_PENDING -> {
+				if (group.isSecondPaymentDue()) {
+					yield SECOND_UNPAID;
+				}
+				yield group.isReadyToShipWithoutSecond() ? PREPARING : IN_PROGRESS;
+			}
 			case SECOND_PAID -> PREPARING;
 			case SHIPPED -> SHIPPED;
 			case CANCELED -> CANCELED;

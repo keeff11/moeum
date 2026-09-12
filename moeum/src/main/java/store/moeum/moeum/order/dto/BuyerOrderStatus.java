@@ -60,15 +60,23 @@ public enum BuyerOrderStatus {
 	/**
 	 * <b>2차금이 결제 단계보다 우선한다.</b> 잔금을 낼 수 있게 된 순간이 구매자가
 	 * 행동해야 하는 유일한 시점이라, 그게 가려지면 미납이 쌓인다.
+	 *
+	 * <b>잔금이 없는 묶음은 입고가 곧 배송 준비다</b> (D-046). 단독 판매의 진행 단계는
+	 * 결제완료 → 준비중 → 발송이고 <b>제작 중이라는 단계가 아예 없다</b> (domain.md 1절).
+	 * 그런데 아래 {@code progressOf} 는 ARRIVED 를 "다른 폼이 아직 입고 전" 으로 읽어
+	 * 제작 중으로 내린다 — 폼이 하나뿐인 단독 판매에는 맞지 않는 전제다.
 	 */
 	public static BuyerOrderStatus of(OrderGroup group) {
 		return switch (group.getStatus()) {
 			// CONFIRMING 은 선언만 돼 있고 지금 이 값을 넣는 코드가 없다.
 			// 승인 중이라는 뜻이니 구매자에게는 결제 대기와 같다
 			case PAY_PENDING, CONFIRMING -> PAYMENT_WAITING;
-			case PAID, SECOND_PENDING -> group.isSecondPaymentDue()
-					? SECOND_UNPAID
-					: progressOf(group);
+			case PAID, SECOND_PENDING -> {
+				if (group.isSecondPaymentDue()) {
+					yield SECOND_UNPAID;
+				}
+				yield group.isReadyToShipWithoutSecond() ? PREPARING : progressOf(group);
+			}
 			case SECOND_PAID -> PREPARING;
 			case SHIPPED -> SHIPPED;
 			case CANCELED -> CANCELED;
