@@ -384,7 +384,7 @@
       <span class="sep">/</span>
       <span>2026-09-12 기준</span>
       <span class="sep">/</span>
-      <span>main @ 35ef437</span>
+      <span>main @ 99f1b08</span>
     </div>
     <h1>도메인별 개발 현황</h1>
     <p class="lede">
@@ -395,12 +395,12 @@
 
     <div class="total">
       <div class="total-label">전체 진척 (로드맵 단계 비중 가중)</div>
-      <div class="total-num" id="totalNum">92<small>%</small></div>
+      <div class="total-num" id="totalNum">93<small>%</small></div>
       <div class="total-bar">
-        <div class="bar"><i style="width:92%"></i></div>
+        <div class="bar"><i style="width:93%"></i></div>
       </div>
       <div class="total-note">
-        <strong style="font-weight:500">09-09, 운영에서 100원이 실제로 결제되고 취소됐다.</strong> 연동키 수령 → 세션 발급 → 승인 <code style="font-family:'IBM Plex Mono',monospace;font-size:12.5px">captured</code> → 전액 환불까지 한 바퀴다. 샌드박스가 없어 미뤄 두었던 검증이라, 이걸로 결제·취소 도메인의 마지막 물음표가 지워졌다. 운영 IP 등록은 정말 필요 없었다. 검증 중에 두 가지가 드러나 같이 고쳤다 — <strong style="font-weight:500">point3 키가 컨테이너까지 전달되지 않던 것</strong>, 그리고 <strong style="font-weight:500">취소한 주문이 상태 조회에서 계속 결제 완료로 보이던 것</strong>(D-036). <strong style="font-weight:500">셀러 어드민은 G1 홈까지 붙어 한 바퀴가 돌아간다</strong> — 홈에서 처리할 주문을 보고(G1), 목록에서 고르고(G6), 잔금을 청구한다(S10). 세 화면이 같은 집계를 쓴다 (D-038). <strong style="font-weight:500">G10 결제 내역은 만들지 않기로 했다</strong> — 셀러가 남의 결제를 취소할 실질적 필요가 없고, 열면 셀러 계정이 곧 환불 권한이 된다. 남은 것은 <strong style="font-weight:500">프론트 SDK 연동</strong>, <strong style="font-weight:500">알림톡 계정·템플릿 심사</strong>(항목 9종 중 5종 미구현), 그리고 <strong style="font-weight:500">송장 등록</strong>이다.
+        <strong style="font-weight:500">09-09, 운영에서 100원이 실제로 결제되고 취소됐다.</strong> 연동키 수령 → 세션 발급 → 승인 <code style="font-family:'IBM Plex Mono',monospace;font-size:12.5px">captured</code> → 전액 환불까지 한 바퀴다. 샌드박스가 없어 미뤄 두었던 검증이라, 이걸로 결제·취소 도메인의 마지막 물음표가 지워졌다. 운영 IP 등록은 정말 필요 없었다. 검증 중에 두 가지가 드러나 같이 고쳤다 — <strong style="font-weight:500">point3 키가 컨테이너까지 전달되지 않던 것</strong>, 그리고 <strong style="font-weight:500">취소한 주문이 상태 조회에서 계속 결제 완료로 보이던 것</strong>(D-036). <strong style="font-weight:500">셀러 어드민은 G1 홈까지 붙어 한 바퀴가 돌아간다</strong> — 홈에서 처리할 주문을 보고(G1), 목록에서 고르고(G6), 잔금을 청구한다(S10). 세 화면이 같은 집계를 쓴다 (D-038). <strong style="font-weight:500">G10 결제 내역은 만들지 않기로 했다</strong> — 셀러가 남의 결제를 취소할 실질적 필요가 없고, 열면 셀러 계정이 곧 환불 권한이 된다. <strong style="font-weight:500">송장 등록과 배송조회가 붙어 발송까지 한 바퀴가 돌아간다</strong> — 셀러가 송장을 넣으면(D-047) 구매자가 배송 단계를 본다(D-048). <strong style="font-weight:500">주문의 진행 단계도 이제 실제로 올라간다</strong>(D-049) — 그 전에는 공동구매가 결제 직후부터 입고까지 계속 "결제 완료" 로만 보였다. 알림은 구매자향 7종이 전부 적재까지 끝났고(D-050) <strong style="font-weight:500">템플릿 승인만 남았다</strong> — 승인된 것은 결제완료 하나뿐이라 나머지는 쌓이기만 한다. 남은 것은 <strong style="font-weight:500">프론트 SDK 연동</strong>과 <strong style="font-weight:500">알림톡 템플릿 승인·수신번호</strong>다.
       </div>
     </div>
 
@@ -420,7 +420,7 @@
   <main class="rows" id="rows"></main>
 
   <footer>
-    <div><strong style="font-weight:500;color:var(--ink-2)">다음 한 걸음</strong> — ① <strong style="font-weight:500">프론트 SDK 연동</strong>. API 는 준비됐다(point3-api 6절). 함정 셋만 넘기면 된다 — <code style="font-family:'IBM Plex Mono',monospace;font-size:12.5px">orderId</code> 자리에 sessionId, <code style="font-family:'IBM Plex Mono',monospace;font-size:12.5px">setAmount</code> 는 1 고정, 그리고 <strong style="font-weight:500">successUrl 도달만으로는 결제가 끝나지 않는다</strong>(confirm 을 불러야 한다) → ② <strong style="font-weight:500">알림톡 수신번호 정하기</strong> — 결제완료 템플릿은 붙였는데(D-040) 구매자 본인 번호가 DB 에 없어 켜지 못하고 있다. 지금 켜면 선물 주문의 결제 알림이 수령인에게 간다 → ③ <strong style="font-weight:500">송장 등록</strong> — 알림톡 3번(발송 완료)이 이걸 기다리고, G6 의 발송 완료 탭이 항상 0건인 이유도 이것이다</div>
+    <div><strong style="font-weight:500;color:var(--ink-2)">다음 한 걸음</strong> — ① <strong style="font-weight:500">프론트 SDK 연동</strong>. API 는 준비됐다(point3-api 6절). 함정 셋만 넘기면 된다 — <code style="font-family:'IBM Plex Mono',monospace;font-size:12.5px">orderId</code> 자리에 sessionId, <code style="font-family:'IBM Plex Mono',monospace;font-size:12.5px">setAmount</code> 는 1 고정, 그리고 <strong style="font-weight:500">successUrl 도달만으로는 결제가 끝나지 않는다</strong>(confirm 을 불러야 한다) → ② <strong style="font-weight:500">알림톡 수신번호 정하기</strong> — 결제완료 템플릿은 붙였는데(D-040) 구매자 본인 번호가 DB 에 없어 켜지 못하고 있다. 지금 켜면 선물 주문의 결제 알림이 수령인에게 간다 → ③ <strong style="font-weight:500">알림톡 템플릿 승인</strong> — 구매자향 7종이 코드는 다 돼 있고 적재까지 되는데, 승인된 템플릿이 결제완료 하나뿐이라 나머지는 outbox 에 쌓이고 로그만 남는다. 템플릿 id 를 설정에 채우는 순간 나간다 — 코드는 손댈 것이 없다</div>
     <div>가중치는 로드맵 8단계의 작업량 비중으로 잡았다. 결제 22 · 주문 12 · 판매폼 10 · 취소 10 · 인증 8 · 인프라 8 · 셀러운영 8 · 셀러심사 6 · 장바구니 6 · 알림 6 · 구매자 4. 맨 아래 <strong style="font-weight:500">와이어프레임 대조</strong> 행은 같은 사실을 화면 쪽에서 다시 센 것이라 가중치가 없다 — 전체 진척에 두 번 들어가지 않는다.</div>
   </footer>
 </div>
@@ -544,7 +544,7 @@
         ["단독 판매 배송비 누락 수정", "D-046. 단독 판매는 2차금 단계가 없는데(second_type=NONE) 배송비를 그 없는 2차금으로 이연하고 있었다 — 결제창이 상품값만 띄우고 셀러가 배송비를 떠안았다. 2차금이 없는 묶음은 1차금에서 받는다. 유형이 아니라 deposit2Total 을 보므로 전액 선결제 공구도 같이 잡힌다. 응답에 firstPaymentAmount 를 실어 화면이 직접 더하지 않게 했다. <b>이미 결제된 건의 소급 청구는 미정</b>", "done"],
         ["단독 판매 배송비 환불 누락 수정", "D-046. 배송비를 1차금으로 옮기면서 환불 경로를 같이 안 고쳤다 — OrderRefundReader 가 배송비를 2차금에서만 빼고 있어서, 2차금이 없는 묶음은 배송비를 받아 놓고 취소해도 돌려주지 않았다. 화면도 '배송비는 환불되지 않는다' 고 안내했고 목표수량 미달 자동 취소까지 같았다. 청구를 가른 값(hasSecondPayment)으로 환불도 가른다. 2차금이 아직 청구 전이면 받은 적이 없으므로 더하지 않는다", "done"],
         ["단독 판매 발송 단계 수정", "D-046. 2차금 대상에서 빼고 나니 발송 대기로 보이는 화면이 없어졌다 — 발송 준비 중 판정이 SECOND_PAID 만 봤는데 단독 판매는 그 상태를 지나지 않는다. 셀러는 어느 탭에도 안 뜨고 구매자는 이미 도착한 물건을 '제작 중' 으로 봤다(단독에는 없는 단계다). 잔금이 없고 전부 입고됐으면 발송 준비 중이다. 배지 둘 + 쿼리 둘을 같이 고쳤다", "done"],
-        ["2차금 미수 추적 · 미납 배치", "추적과 수동 청구는 G6 미납 탭 + S10 으로 됐다 (D-035). 남은 것은 payment-flow 표의 1일 주기 자동 배치다", "part"],
+        ["2차금 미수 추적 · 미납 배치", "추적과 수동 청구는 G6 미납 탭 + S10 (D-035), 1일 주기 자동 독촉은 D-050 에서 붙였다 — 셀러의 수동 청구와 같은 second_charge 이력을 쓰고 쿨다운은 3일이다(수동은 24시간). 표를 나누면 구매자가 같은 독촉을 하루에 두 번 받는다", "done"],
         ["부분 취소 묶음의 2차금", "D-035. 폼 하나가 취소되면 2차금이 영영 안 열리고, 금액에서 취소분도 빠지지 않던 것을 고쳤다", "done"],
         ["프론트 SDK 연동 + 확인 중 화면", "PENDING 은 실패가 아니다. 재결제시키면 이중 결제가 된다", "todo"],
         ["실결제 검증", "09-09 운영에서 100원 결제→취소 한 바퀴 통과. 세션 발급 · captured 확정 · 전액 환불 · 재취소 차단까지", "done"],
@@ -571,14 +571,14 @@
       ]
     },
     {
-      name: "알림 · Outbox", pct: 70, weight: 6,
+      name: "알림 · Outbox", pct: 85, weight: 6,
       items: [
         ["outbox 스키마", "", "done"],
         ["Outbox 릴레이 배치", "D-027. next_attempt_at 하나가 백오프와 임대를 겸한다. SKIP LOCKED 로 분산", "done"],
         ["발송 항목 9종 확정", "와이어프레임 I. 8/26 팀 채택 — 구매자 1~6·8, 셀러 9·10. 7(배송지 수정 마감 임박)·11(2차금 미납 요약)은 제외됐다", "done"],
-        ["구현된 이벤트 5종", "ORDER_PAID(1) · SECOND_PAYMENT_DUE(2) · SECOND_PAID(5) · SHIPPED(3) · REFUND_COMPLETED. 발송 완료는 송장 등록이 적재한다(D-047). 이 중 실제로 나가는 것은 승인된 템플릿이 있는 ORDER_PAID 하나다", "done"],
-        ["미구현 4종", "4 진행 상태 변경 — 전이는 D-049 로 생겼고 적재만 남았다(마감·발주·제작중·입고) · 6 모집 성사/미달 · 8 2차금 미납 리마인드(DUE-110) · 9·10 셀러 알림. 3 발송 완료는 적재까지 됐고 템플릿 승인만 남았다 (D-047)", "todo"],
-        ["셀러 수신 경로", "OutboxEventType 이 전부 구매자향이다. 9·10 을 넣으려면 받는 쪽 구분이 먼저 있어야 한다", "todo"],
+        ["구현된 이벤트 9종", "ORDER_PAID(1) · SECOND_PAYMENT_DUE(2) · SHIPPED(3) · PROGRESS_CHANGED(4) · SECOND_PAID(5) · RECRUITMENT_SUCCEEDED/FAILED(6) · SECOND_PAYMENT_OVERDUE(8) · REFUND_COMPLETED. 4·6·8 은 D-050 에서 적재했다. <b>실제로 나가는 것은 템플릿이 승인된 ORDER_PAID 하나다</b> — 나머지는 로그만 남고 SENT 로 넘어간다. 템플릿 id 를 설정에 채우는 순간 나간다", "done"],
+        ["미구현 — 셀러향 2종", "9·10 셀러 알림만 남았다. 구매자향 7종(1·2·3·4·5·6·8)은 적재까지 끝났고 <b>템플릿 승인만 남았다</b>. 셀러향은 수신자 구분이 먼저다 — recipientOf 가 구매자 배송지 번호만 본다", "part"],
+        ["셀러 수신 경로", "OutboxEventType 이 전부 구매자향이다. 9·10 을 넣으려면 받는 쪽 구분이 먼저 있어야 한다 — 알림톡도 전화번호로 가고(카카오가 번호로 카톡 계정을 찾는다) recipientOf 는 구매자 배송지만 본다", "todo"],
         ["카카오 알림톡 연동 (SOLAPI)", "D-040. 결제완료 템플릿이 승인돼 붙였다. HMAC 서명 · 4xx/5xx 분리 · 건별 실패 검출까지. 200 인데 한 건도 안 나간 응답을 성공으로 치면 청구가 사라진다. 승인된 템플릿이 없는 이벤트는 예전처럼 로그만 남긴다", "done"],
         ["재시도 상한 + DEAD 처리", "8회 실패하면 DEAD + ERROR 로그. 알림이 곧 결제 요청이라 조용히 버리지 않는다", "done"],
         ["알림 적재 지점", "결제 확정 · 전 폼 입고 · 취소 완료. 전부 멱등 가드 안쪽이라 대사 배치가 다시 훑어도 안 쌓인다", "done"],
