@@ -32,7 +32,12 @@ public abstract class IntegrationTest {
 							"--character-set-server=utf8mb4",
 							"--collation-server=utf8mb4_0900_ai_ci",
 							"--default-time-zone=+09:00",
-							"--innodb-lock-wait-timeout=5"
+							"--innodb-lock-wait-timeout=5",
+							// 테스트 클래스마다 @DynamicPropertySource 가 다르면 스프링 컨텍스트가
+							// 따로 뜨고, 그때마다 Hikari 풀(기본 10)이 하나씩 더 생긴다. 컨텍스트가
+							// 열몇 개가 되면 MySQL 기본 상한 151 을 넘겨 "Too many connections" 로
+							// 뒤쪽 클래스가 통째로 실패한다 — 테스트 코드는 멀쩡한데 컨텍스트가 안 뜬다
+							"--max-connections=500"
 					)
 					.withReuse(true);
 

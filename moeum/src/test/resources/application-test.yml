@@ -7,10 +7,19 @@ spring:
     locations: classpath:db/migration
 
 moeum:
-  # 릴레이는 1초마다 도는데, 그대로 두면 테스트가 PENDING 을 확인하기 전에 SENT 로 넘어간다.
-  # 테스트는 relayOnce() 를 직접 부른다
+  # 배치는 테스트에서 스스로 돌지 않게 막는다. 테스트는 relayOnce() · closeOnce() 처럼
+  # 직접 부르므로 검증력은 그대로다.
+  #
+  # 릴레이(1초)는 테스트가 PENDING 을 확인하기 전에 SENT 로 넘겨 버려서 막았고,
+  # 나머지(60초)는 sale_form · orders 를 훑는 UPDATE 라 테스트의 같은 행과 물려
+  # 데드락을 낸다 — 10분짜리 suite 에서 열 번쯤 끼어들어 엉뚱한 클래스가 실패한다
   batch:
     outbox-delay: 3600000
+    sale-form-close-delay: 3600000
+    shortfall-delay: 3600000
+    hold-expiry-delay: 3600000
+    payment-reconcile-delay: 3600000
+    refund-reconcile-delay: 3600000
     orphan-sweep:
       # "-" 는 스케줄 비활성이다. 테스트에서 돌면 실제 S3 를 부른다 — 목록 조회와 삭제라 더 위험하다
       cron: "-"
