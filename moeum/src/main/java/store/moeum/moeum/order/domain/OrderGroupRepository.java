@@ -219,4 +219,30 @@ public interface OrderGroupRepository extends JpaRepository<OrderGroup, Long> {
 	SellerOrderCounts countSellerOrderTabs(@Param("sellerId") Long sellerId,
 	                                       @Param("saleFormId") Long saleFormId,
 	                                       @Param("keyword") String keyword);
+
+	/**
+	 * 2차금 미납 묶음 — 셀러를 가리지 않는다 (알림톡 8번 · D-050).
+	 *
+	 * 자동 독촉 배치가 쓴다. 셀러 목록의 SECOND_UNPAID 탭과 <b>같은 조건</b>이어야 한다 —
+	 * 갈라지면 셀러 화면에 없는 주문에 독촉이 나간다.
+	 *
+	 * 쿨다운은 여기서 보지 않는다. {@code second_charge} 의 마지막 청구 시각으로
+	 * 부르는 쪽이 거른다 — 셀러의 수동 청구(S10)와 같은 이력을 쓰기 때문이다.
+	 */
+	@Query("""
+			select g from OrderGroup g
+			 where g.status in (store.moeum.moeum.order.domain.OrderGroupStatus.PAID,
+			                    store.moeum.moeum.order.domain.OrderGroupStatus.SECOND_PENDING)
+			   and g.deposit2Total > 0
+			   and exists (select 1 from Order a
+			                where a.orderGroup = g and a.status = store.moeum.moeum.order.domain.OrderStatus.ARRIVED)
+			   and not exists (select 1 from Order n
+			                    where n.orderGroup = g
+			                      and n.status not in (
+			                            store.moeum.moeum.order.domain.OrderStatus.CANCELED,
+			                            store.moeum.moeum.order.domain.OrderStatus.EXPIRED,
+			                            store.moeum.moeum.order.domain.OrderStatus.ARRIVED))
+			 order by g.id
+			""")
+	List<OrderGroup> findSecondUnpaid(Pageable pageable);
 }

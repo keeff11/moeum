@@ -190,4 +190,20 @@ public interface SaleFormRepository extends JpaRepository<SaleForm, Long> {
 			   AND sold >= :qty
 			""", nativeQuery = true)
 	int restoreSold(@Param("formId") Long formId, @Param("qty") int qty);
+
+	/**
+	 * 마감 시각이 지난 판매 중인 폼의 id (D-050).
+	 *
+	 * {@link #closeExpired()} 가 벌크 UPDATE 라 <b>어느 폼이 마감됐는지 알려주지 않는다.</b>
+	 * 마감 알림을 보내려면 대상을 알아야 해서 UPDATE 전에 한 번 집는다.
+	 *
+	 * 두 쿼리의 조건이 같아야 한다 — 갈라지면 알림은 갔는데 마감이 안 됐거나 그 반대가 된다.
+	 */
+	@Query(value = """
+			SELECT id FROM sale_form
+			 WHERE status = 'SELLING'
+			   AND closes_at IS NOT NULL
+			   AND closes_at <= NOW(6)
+			""", nativeQuery = true)
+	List<Long> findExpiredSellingIds();
 }

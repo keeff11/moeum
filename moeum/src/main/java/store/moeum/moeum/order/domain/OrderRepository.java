@@ -134,4 +134,21 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
 			   AND f.status IN ('CLOSED', 'ENDED')
 			""", nativeQuery = true)
 	int closeRecruitingOfClosedForms();
+
+	/**
+	 * 이 폼의 알림 대상 주문. 묶음까지 fetch 한다 (D-050).
+	 *
+	 * <b>결제까지 간 주문만이다.</b> 결제 전(CREATED)·만료 건은 알릴 사실이 없고,
+	 * 주소도 없다. 취소된 주문은 넣는다 — 미달 취소 알림은 <b>취소된 사람</b>에게
+	 * 가야 하는 것이라 빼면 정작 받아야 할 사람이 빠진다.
+	 */
+	@Query("""
+			select o from Order o
+			  join fetch o.orderGroup
+			 where o.saleForm.id = :saleFormId
+			   and o.status not in (
+			         store.moeum.moeum.order.domain.OrderStatus.CREATED,
+			         store.moeum.moeum.order.domain.OrderStatus.EXPIRED)
+			""")
+	List<Order> findNotifiableBySaleForm(@Param("saleFormId") Long saleFormId);
 }

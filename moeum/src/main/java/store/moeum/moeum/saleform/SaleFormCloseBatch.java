@@ -5,8 +5,16 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
+import store.moeum.moeum.order.domain.Order;
+import store.moeum.moeum.order.domain.OrderGroup;
 import store.moeum.moeum.order.domain.OrderRepository;
+import store.moeum.moeum.outbox.OutboxRecorder;
+import store.moeum.moeum.outbox.domain.OutboxAggregate;
+import store.moeum.moeum.outbox.domain.OutboxEventType;
 import store.moeum.moeum.saleform.domain.SaleFormRepository;
+
+import java.util.List;
+import java.util.Map;
 
 /**
  * 마감 시각이 지난 공구를 CLOSED 로 넘긴다. 1분마다 돈다 (payment-flow 7절).
@@ -29,6 +37,7 @@ public class SaleFormCloseBatch {
 
 	private final SaleFormRepository saleFormRepository;
 	private final OrderRepository orderRepository;
+	private final OutboxRecorder outboxRecorder;
 
 	@Transactional
 	@Scheduled(fixedDelayString = "${moeum.batch.sale-form-close-delay:60000}")
@@ -50,11 +59,45 @@ public class SaleFormCloseBatch {
 	 */
 	@Transactional
 	public int closeOnce() {
+		// UPDATE 전에 대상을 집는다. 벌크 UPDATE 는 어느 폼이 마감됐는지 알려주지 않고,
+		// 마감 알림(알림톡 4번)을 보내려면 대상을 알아야 한다 (D-050)
+		List<Long> expiring = saleFormRepository.findExpiredSellingIds();
+
 		int closed = saleFormRepository.closeExpired();
-		if (closed > 0) {
-			int orders = orderRepository.closeRecruitingOfClosedForms();
-			log.info("모집 마감: 폼 {}건, 주문 {}건", closed, orders);
+		if (closed == 0) {
+			return 0;
+		}
+
+		int orders = orderRepository.closeRecruitingOfClosedForms();
+		log.info("모집 마감: 폼 {}건, 주문 {}건", closed, orders);
+
+		for (Long saleFormId : expiring) {
+			notifyClosed(saleFormId);
 		}
 		return closed;
+	}
+
+	/**
+	 * 마감을 구매자에게 알린다 (알림톡 4번 · D-050).
+	 *
+	 * <b>알림이 터져도 마감은 되돌리지 않는다.</b> 예외가 올라가면 이 트랜잭션이 롤백되어
+	 * 폼 마감 자체가 없던 일이 되고, 다음 주기에 같은 폼을 또 집는다 — 마감 시각이
+	 * 지난 채로 구매 버튼이 계속 켜져 있는 쪽이 알림 한 건보다 나쁘다.
+	 */
+	private void notifyClosed(Long saleFormId) {
+		try {
+			for (Order order : orderRepository.findNotifiableBySaleForm(saleFormId)) {
+				OrderGroup group = order.getOrderGroup();
+				outboxRecorder.record(OutboxAggregate.ORDER_GROUP, group.getId(),
+						OutboxEventType.PROGRESS_CHANGED,
+						Map.of(
+								"orderToken", group.getOrderToken(),
+								"buyerId", group.getBuyer().getId(),
+								"saleFormId", saleFormId,
+								"stage", "CLOSED"));
+			}
+		} catch (RuntimeException e) {
+			log.error("마감 알림 적재 실패(마감은 유지한다): saleFormId={}", saleFormId, e);
+		}
 	}
 }

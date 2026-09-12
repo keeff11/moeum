@@ -6,6 +6,11 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import store.moeum.moeum.order.domain.OrderRepository;
 import store.moeum.moeum.saleform.domain.SaleForm;
+import store.moeum.moeum.order.domain.Order;
+import store.moeum.moeum.order.domain.OrderGroup;
+import store.moeum.moeum.outbox.OutboxRecorder;
+import store.moeum.moeum.outbox.domain.OutboxAggregate;
+import store.moeum.moeum.outbox.domain.OutboxEventType;
 import store.moeum.moeum.saleform.domain.SaleFormRepository;
 import store.moeum.moeum.saleform.domain.ShortfallPolicy;
 
@@ -25,6 +30,7 @@ public class ShortfallWriter {
 
 	private final SaleFormRepository saleFormRepository;
 	private final OrderRepository orderRepository;
+	private final OutboxRecorder outboxRecorder;
 	private final Clock clock;
 
 	/**
@@ -66,5 +72,32 @@ public class ShortfallWriter {
 	 */
 	public record Claimed(Long saleFormId, boolean shortfall, ShortfallPolicy policy,
 	                      int sold, Integer targetQty) {
+	}
+
+	/**
+	 * 모집 결과를 알린다 (알림톡 6번 · D-050).
+	 *
+	 * <b>묶음마다 한 건이다.</b> 한 묶음에 이 폼의 주문이 하나뿐이라(uk_orders_group_form)
+	 * 주문 단위로 돌려도 중복이 나지 않는다.
+	 *
+	 * {@code shortfall} 을 payload 에 싣는 이유는 성사 안에 두 경우가 섞여서다 —
+	 * 목표를 채운 것과 미달이지만 PROCEED 로 진행하는 것. 문구가 갈릴 수 있게 남긴다.
+	 *
+	 * <b>취소된 주문도 대상이다.</b> 미달 취소 알림은 취소된 사람에게 가야 한다.
+	 */
+	@Transactional
+	public int notifyRecruitment(Long saleFormId, OutboxEventType eventType, boolean shortfall) {
+		List<Order> orders = orderRepository.findNotifiableBySaleForm(saleFormId);
+
+		for (Order order : orders) {
+			OrderGroup group = order.getOrderGroup();
+			outboxRecorder.record(OutboxAggregate.ORDER_GROUP, group.getId(), eventType,
+					java.util.Map.of(
+							"orderToken", group.getOrderToken(),
+							"buyerId", group.getBuyer().getId(),
+							"saleFormId", saleFormId,
+							"shortfall", shortfall));
+		}
+		return orders.size();
 	}
 }

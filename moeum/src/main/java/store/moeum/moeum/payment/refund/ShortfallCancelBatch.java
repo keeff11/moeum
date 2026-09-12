@@ -2,6 +2,7 @@ package store.moeum.moeum.payment.refund;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import store.moeum.moeum.outbox.domain.OutboxEventType;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import store.moeum.moeum.payment.refund.dto.OrderRefundResponse;
@@ -64,19 +65,52 @@ public class ShortfallCancelBatch {
 		return forms.size();
 	}
 
+	/**
+	 * 폼 하나를 처리하고 결과를 구매자에게 알린다 (알림톡 6번 · D-050).
+	 *
+	 * <b>알림은 구매자 기준으로 둘이다.</b> 목표 달성 여부가 아니라 "물건을 받는가" 로
+	 * 가른다 — 미달이어도 PROCEED 면 받으므로 성사와 같은 쪽이다. 받을 수 없는 것은
+	 * CANCEL 하나뿐이다.
+	 *
+	 * EXTEND 는 알리지 않는다. 연장 규칙이 기획 미확정이라 처리 자체를 안 하는데,
+	 * 결과가 안 정해진 상태에서 "연장됐다" 고 알릴 수는 없다.
+	 */
 	private void handle(ShortfallWriter.Claimed form) {
 		if (!form.shortfall()) {
+			notify(form, OutboxEventType.RECRUITMENT_SUCCEEDED, false);
 			return;
 		}
 		switch (form.policy()) {
-			case CANCEL -> cancelAll(form);
+			case CANCEL -> {
+				cancelAll(form);
+				notify(form, OutboxEventType.RECRUITMENT_FAILED, true);
+			}
 			case EXTEND -> log.warn(
 					// 몇 번까지 · 얼마나 미룰지가 기획 미확정이다 (domain.md). 임의로 정하지 않는다
 					"목표수량 미달인데 EXTEND 정책이다 — 연장 규칙이 아직 없어 수동 처리가 필요하다: "
 							+ "saleFormId={}, sold={}, target={}",
 					form.saleFormId(), form.sold(), form.targetQty());
-			case PROCEED -> log.info("목표수량 미달이지만 그대로 진행한다: saleFormId={}, sold={}, target={}",
-					form.saleFormId(), form.sold(), form.targetQty());
+			case PROCEED -> {
+				log.info("목표수량 미달이지만 그대로 진행한다: saleFormId={}, sold={}, target={}",
+						form.saleFormId(), form.sold(), form.targetQty());
+				notify(form, OutboxEventType.RECRUITMENT_SUCCEEDED, true);
+			}
+		}
+	}
+
+	/**
+	 * <b>알림이 터져도 처리는 끝난 것으로 둔다.</b> 여기서 예외가 올라가면
+	 * {@code markDone} 이 안 찍히고, 다음 주기가 같은 폼을 다시 집어 <b>이미 환불한 주문을
+	 * 또 취소한다.</b> 알림 한 건보다 이중 환불이 훨씬 나쁘다.
+	 */
+	private void notify(ShortfallWriter.Claimed form, OutboxEventType eventType, boolean shortfall) {
+		try {
+			int recorded = writer.notifyRecruitment(form.saleFormId(), eventType, shortfall);
+			log.info("모집 결과 알림 적재: saleFormId={}, type={}, {}건",
+					form.saleFormId(), eventType, recorded);
+		} catch (RuntimeException e) {
+			log.error("모집 결과 알림 적재 실패(처리는 계속한다): saleFormId={}, type={}",
+					form.saleFormId(), eventType, e);
 		}
 	}
 

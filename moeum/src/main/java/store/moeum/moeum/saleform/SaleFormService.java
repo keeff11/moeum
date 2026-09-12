@@ -186,6 +186,7 @@ public class SaleFormService {
 		int closed = closeOrders(saleFormId);
 		if (closed > 0) {
 			log.info("모집 마감: saleFormId={}, 주문 {}건", saleFormId, closed);
+			notifyProgress(saleFormId, "CLOSED");
 		}
 		return SaleFormDetailResponse.of(form, seller, imageUrlsOf(form));
 	}
@@ -228,8 +229,7 @@ public class SaleFormService {
 	 * <b>모집이 마감된 주문만 넘어간다.</b> 모집이 끝나야 몇 개를 만들지가 정해지고,
 	 * 그 전에 발주하면 발주서(D-045)의 수량과 어긋난다.
 	 *
-	 * 알림은 적재하지 않는다 — 진행 상태 변경 알림(항목 4)은 템플릿이 아직 없다.
-	 * 자리는 여기다.
+	 * 상태가 실제로 바뀐 경우에만 알린다 — 다시 눌렀을 때 같은 알림이 또 가면 안 된다.
 	 */
 	@Transactional
 	public int startProducing(String kakaoId, Long saleFormId) {
@@ -243,7 +243,40 @@ public class SaleFormService {
 			}
 		}
 		log.info("발주 처리: saleFormId={}, 주문 {}건", form.getId(), producing);
+		if (producing > 0) {
+			notifyProgress(saleFormId, "PRODUCING");
+		}
 		return producing;
+	}
+
+	/**
+	 * 진행 단계 변경을 알린다 (알림톡 4번 · D-050).
+	 *
+	 * <b>실제로 상태가 바뀐 경우에만 부른다.</b> 셀러가 같은 버튼을 다시 눌러도 같은
+	 * 알림이 또 가면 안 된다 — 부르는 쪽이 전이 건수로 가드한다.
+	 *
+	 * <b>입고는 여기로 오지 않는다.</b> 그 시점에는 2차금 청구 알림이 이미 나가고,
+	 * 그 문구가 "입고됐으니 잔금을 내라" 다. 둘 다 보내면 같은 사실을 두 번 받는다.
+	 *
+	 * 알림 적재가 터져도 전이는 되돌리지 않는다 — 이 트랜잭션 안이라 예외가 올라가면
+	 * 마감·발주 자체가 롤백된다. 그래서 잡는다.
+	 */
+	private void notifyProgress(Long saleFormId, String stage) {
+		try {
+			for (Order order : orderRepository.findNotifiableBySaleForm(saleFormId)) {
+				OrderGroup group = order.getOrderGroup();
+				outboxRecorder.record(OutboxAggregate.ORDER_GROUP, group.getId(),
+						OutboxEventType.PROGRESS_CHANGED,
+						java.util.Map.of(
+								"orderToken", group.getOrderToken(),
+								"buyerId", group.getBuyer().getId(),
+								"saleFormId", saleFormId,
+								"stage", stage));
+			}
+		} catch (RuntimeException e) {
+			log.error("진행 단계 알림 적재 실패(전이는 유지한다): saleFormId={}, stage={}",
+					saleFormId, stage, e);
+		}
 	}
 
 	/** 모집 중인 주문을 마감으로 넘긴다. 폼 마감과 같이 부른다 */
