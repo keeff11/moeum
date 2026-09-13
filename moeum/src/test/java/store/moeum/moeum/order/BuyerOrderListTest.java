@@ -123,7 +123,7 @@ class BuyerOrderListTest extends IntegrationTest {
 		place(buyer, groupForm, OrderGroupStatus.EXPIRED, OrderStatus.EXPIRED);
 		String paid = place(buyer, groupForm, OrderGroupStatus.PAID, OrderStatus.PAID);
 
-		// 15분 뒤 사라질 장바구니 세션이 "내 구매 목록" 에 쌓이면 안 된다
+		// 30분 뒤 사라질 장바구니 세션이 "내 구매 목록" 에 쌓이면 안 된다
 		assertThat(tokens()).containsExactly(paid);
 	}
 

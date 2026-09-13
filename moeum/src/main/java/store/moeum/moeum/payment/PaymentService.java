@@ -55,7 +55,7 @@ public class PaymentService {
 	 * 결제창을 띄울 세션을 만든다 (payment-flow 8~13번).
 	 *
 	 * 세션 생성이 실패하면 홀드는 그대로 살아 있다 — 사용자가 다시 시도할 수 있어야 하고,
-	 * 여기서 재고를 풀면 15분 타이머의 의미가 없어진다.
+	 * 여기서 재고를 풀면 30분 타이머의 의미가 없어진다.
 	 */
 	public PaySessionResponse pay(SessionUser user, String sessionToken) {
 		PaymentWriter.Prepared prepared = writer.prepareFirst(user.kakaoId(), sessionToken);

@@ -95,7 +95,7 @@ class CartClearOnPaidTest extends IntegrationTest {
 	@DisplayName("결제_전에는_장바구니가_그대로다")
 	void 홀드만으로는_안_빠진다() {
 		// 홀드 시점에 비우면 결제창을 닫은 구매자의 장바구니가 사라진다.
-		// 홀드는 15분 뒤 만료 배치가 걷어 가지만 장바구니는 되돌려 줄 방법이 없다
+		// 홀드는 30분 뒤 만료 배치가 걷어 가지만 장바구니는 되돌려 줄 방법이 없다
 		cartService.add(buyer(), new CartAddRequest(setup.optionId(), 2));
 
 		orderService.place(buyer(), order(setup.optionId(), 2));

@@ -294,7 +294,7 @@ class SellerHomeTest extends IntegrationTest {
 		place(standForm, OrderGroupStatus.CREATED, OrderStatus.CREATED);
 		String paid = place(standForm, OrderGroupStatus.PAID, OrderStatus.PAID);
 
-		// 15분 뒤 사라질 장바구니 세션이 홈에 쌓이면 안 된다
+		// 30분 뒤 사라질 장바구니 세션이 홈에 쌓이면 안 된다
 		assertThat(home().recentOrders()).extracting(SellerOrderPageResponse.SellerOrderItem::orderNo)
 				.containsExactly(paid);
 	}

@@ -51,7 +51,7 @@ public interface OrderGroupRepository extends JpaRepository<OrderGroup, Long> {
 	 * 구매자 주문 목록 (와이어프레임 B13).
 	 *
 	 * <b>{@code CREATED} 와 {@code EXPIRED} 는 뺀다.</b> 결제 전 장바구니 세션은 주문이 아니다 —
-	 * 15분 뒤 사라질 것이 "내 구매 목록" 에 쌓이면 안 된다. 셀러 목록과 같은 판단이다 (D-033).
+	 * 30분 뒤 사라질 것이 "내 구매 목록" 에 쌓이면 안 된다. 셀러 목록과 같은 판단이다 (D-033).
 	 *
 	 * <b>취소된 주문은 남긴다.</b> 셀러 목록과 같다 — 구매자도 자기가 취소한 내역을 봐야 한다.
 	 *
@@ -82,7 +82,7 @@ public interface OrderGroupRepository extends JpaRepository<OrderGroup, Long> {
 	 * 행 기준으로 잘려 페이지 크기가 틀어진다. default_batch_fetch_size 가 끌어온다.
 	 *
 	 * {@code CREATED} 와 {@code EXPIRED} 는 뺀다 — 결제 전 체크아웃 세션은 주문이 아니다.
-	 * 셀러에게 보여 주면 15분 뒤 사라질 것이 목록에 쌓인다.
+	 * 셀러에게 보여 주면 30분 뒤 사라질 것이 목록에 쌓인다.
 	 *
 	 * 네이티브로 쓰지 않은 이유는 넘기는 파라미터에 enum 이 없기 때문이다.
 	 * {@code findStorePage} 가 네이티브인 것은 enum 파라미터의 null 비교 때문이었고,

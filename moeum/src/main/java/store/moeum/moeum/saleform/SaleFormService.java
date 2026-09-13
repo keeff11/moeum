@@ -149,7 +149,7 @@ public class SaleFormService {
 	 * 일시중지 (SELLING → PAUSED). 구매 버튼만 막는다.
 	 *
 	 * <b>이미 잡힌 홀드는 풀지 않는다.</b> 결제 중인 구매자를 중간에 끊으면
-	 * 승인은 나가고 재고는 없는 상태가 된다. 그 홀드들은 15분 뒤 만료 배치가 정리한다.
+	 * 승인은 나가고 재고는 없는 상태가 된다. 그 홀드들은 30분 뒤 만료 배치가 정리한다.
 	 */
 	@Transactional
 	public SaleFormDetailResponse pause(String kakaoId, Long saleFormId) {

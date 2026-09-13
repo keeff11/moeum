@@ -145,7 +145,7 @@ class SellerOrderListTest extends IntegrationTest {
 		place(standForm, OrderGroupStatus.EXPIRED, OrderStatus.EXPIRED);
 		String paid = place(standForm, OrderGroupStatus.PAID, OrderStatus.PAID);
 
-		// 15분 뒤 사라질 장바구니 세션이 셀러 목록에 쌓이면 안 된다
+		// 30분 뒤 사라질 장바구니 세션이 셀러 목록에 쌓이면 안 된다
 		assertThat(orderNos()).containsExactly(paid);
 		assertThat(page().counts().all()).isEqualTo(1);
 	}

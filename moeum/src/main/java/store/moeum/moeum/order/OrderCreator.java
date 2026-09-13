@@ -47,8 +47,8 @@ import static store.moeum.moeum.global.jpa.JpaAuditingConfig.KST;
 @RequiredArgsConstructor
 public class OrderCreator {
 
-	/** 홀드 만료 15분 고정. 실패 지점별로 다르게 두지 않는다 (D-002) */
-	private static final int HOLD_MINUTES = 15;
+	/** 홀드 만료 30분 고정. 실패 지점별로 다르게 두지 않는다 (D-002) */
+	private static final int HOLD_MINUTES = 30;
 	private static final String SESSION_TOKEN_PREFIX = "cs_";
 	private static final SecureRandom RANDOM = new SecureRandom();
 

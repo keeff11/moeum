@@ -25,7 +25,7 @@ import java.time.LocalDateTime;
  * 이미 발송된 주문의 "어디로 보냈는가"가 같이 바뀌어, 분쟁이 났을 때 근거가 없다.
  *
  * 복사 시점은 /pay 다 — order_token · order_no 와 같은 자리다 (D-033).
- * CREATED 세션은 15분 뒤 사라지는 임시 자리라 배송지를 굳힐 이유가 없다.
+ * CREATED 세션은 30분 뒤 사라지는 임시 자리라 배송지를 굳힐 이유가 없다.
  *
  * carrier · trackingNo · shippedAt 은 송장 등록이 채운다 (D-047).
  */

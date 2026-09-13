@@ -28,7 +28,7 @@ public record SaleFormSummaryResponse(
 		@Schema(description = "판매할 총 수량", example = "100")
 		int stockMax,
 
-		@Schema(description = "결제 중이라 잡혀 있는 수량. 15분 안에 결제되지 않으면 풀린다",
+		@Schema(description = "결제 중이라 잡혀 있는 수량. 30분 안에 결제되지 않으면 풀린다",
 				example = "3")
 		int held,
 

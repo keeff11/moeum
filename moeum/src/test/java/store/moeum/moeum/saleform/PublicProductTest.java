@@ -141,7 +141,7 @@ class PublicProductTest extends IntegrationTest {
 
 		ProductAvailabilityResponse response = publicProductService.availability(formId);
 
-		// 홀드는 15분 뒤 만료될 수 있다. 세면 모집 숫자가 뒤로 간다
+		// 홀드는 30분 뒤 만료될 수 있다. 세면 모집 숫자가 뒤로 간다
 		assertThat(response.recruitedCount()).isEqualTo(3);
 		assertThat(response.recruitTarget()).isEqualTo(30);
 		assertThat(response.stock()).isEqualTo(5);
