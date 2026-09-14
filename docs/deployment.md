@@ -224,6 +224,55 @@ put LEGACY_DOMAIN "shop1.cloud"
 aws ssm get-parameter --region ap-northeast-2 --name /moeum/prod/ALLOWED_ORIGINS --with-decryption --query Parameter.Value --output text
 ```
 
+### 버킷 CORS 는 이 목록과 같이 고친다
+
+**`ALLOWED_ORIGINS` 를 고치면 S3 버킷 CORS 도 같이 고친다.** 둘은 같은 목록인데 사는 곳이
+달라 갈라진다. 이미지 업로드는 두 구간을 지나고 각 구간이 다른 목록을 본다 (D-022).
+
+```
+프론트 → API   POST /seller/sale-forms/images/upload-url   ← ALLOWED_ORIGINS 가 본다
+프론트 → S3    PUT (파일)                                   ← 버킷 CORS 가 본다
+```
+
+**한쪽만 등록되면 "URL 은 받아왔는데 업로드가 안 된다" 가 된다.** 실제로 그랬다 —
+`studio.moeum.store` 가 `ALLOWED_ORIGINS` 에만 있고 버킷에는 없어서 셀러 화면의 업로드가
+전부 막혔다. 브라우저 콘솔에는 CORS 오류로만 보이고 상태 코드가 안 나와 서명 문제와
+구분되지 않는다. 아래 OPTIONS 확인이 그 구분을 대신한다.
+
+`put-bucket-cors` 는 **규칙을 통째로 갈아엎는다.** `--overwrite` 같은 플래그가 없어도 그렇다.
+고치기 전에 현재 값을 읽어 거기에 더한다:
+
+```bash
+aws s3api get-bucket-cors --bucket moeum-images-prod --region ap-northeast-2
+```
+
+```bash
+aws s3api put-bucket-cors --bucket moeum-images-prod --region ap-northeast-2 --cors-configuration '{"CORSRules":[{"AllowedOrigins":["https://www.moeum.store","https://moeum.store","https://studio.moeum.store"],"AllowedMethods":["PUT"],"AllowedHeaders":["content-type","content-length"],"MaxAgeSeconds":3000}]}'
+```
+
+`ALLOWED_ORIGINS` 와 다른 점은 `https://api.moeum.store` 가 빠지는 것 하나다 —
+심사 화면은 이미지를 올리지 않는다. 읽기(GET)도 넣지 않는다. 공개 읽기라
+`<img>` 로 그냥 뜨고, CORS 는 스크립트가 바이트를 읽을 때만 필요하다.
+
+`AllowedHeaders` 가 둘뿐인 것은 서명에 들어가는 헤더가 그 둘이기 때문이다(D-022).
+프론트가 PUT 에 헤더를 더 얹으면 — 공통 axios 인스턴스의 `Authorization` 인터셉터가
+흔한 원인이다 — 프리플라이트가 거기서 막힌다. 그때는 헤더를 빼는 쪽이 맞다.
+목록을 넓혀도 서명이 어차피 거부한다.
+
+**확인은 브라우저 없이 한다.** 프리플라이트를 직접 쏘면 출처별로 답이 바로 나온다.
+
+```bash
+curl -s -i -X OPTIONS "https://moeum-images-prod.s3.ap-northeast-2.amazonaws.com/sale-forms/1/preflight-check.webp" -H "Origin: https://studio.moeum.store" -H "Access-Control-Request-Method: PUT" -H "Access-Control-Request-Headers: content-type"
+```
+
+`200` 과 `Access-Control-Allow-Origin` 이 나오면 통과다. 미등록 출처는 `403 AccessForbidden`
+(`CORSResponse: This CORS request is not allowed`) 이고, **프론트가 보는 "CORS 오류" 의
+정체가 이것이다.** 이 curl 이 200 인데도 업로드가 실패하면 CORS 가 아니라 서명 문제다 —
+`contentLength` 가 실제 파일 크기와 다르거나 `Content-Type` 이 발급값과 다른 경우다.
+
+실패한 프리플라이트는 캐시되지 않으므로 적용 즉시 반영된다. 반대로 **성공한 결과는
+`MaxAgeSeconds` 만큼(50분) 캐시된다** — 규칙을 좁힐 때는 바로 반영되지 않는다.
+
 ### 운영자 명단 (D-055)
 
 `/admin/*` 은 **앱이 직접 막는다.** 세션의 카카오 회원번호가 이 목록에 있어야 통과한다.

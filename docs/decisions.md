@@ -552,9 +552,23 @@ URL 유효 시간은 5분이다. 새어 나가도 그 시간만 쓸 수 있다.
 aws s3api create-bucket --bucket moeum-images --region ap-northeast-2 \
   --create-bucket-configuration LocationConstraint=ap-northeast-2
 
-# 프론트 도메인에서 PUT 할 수 있도록 CORS. 빠뜨리면 브라우저가 막는다
 # 인스턴스 역할에 PutObject 만 준다. 삭제·목록 권한은 주지 않는다
 ```
+
+**CORS 는 프론트 도메인마다 버킷에 등록해야 한다.** 실제 명령과 확인 방법은
+deployment.md 의 "버킷 CORS 는 이 목록과 같이 고친다" 에 둔다 — `ALLOWED_ORIGINS` 바로
+옆이어야 둘이 갈라지지 않는다.
+
+**여기 명령을 적어 두지 않아 한 번 데였다 (09-14).** 이 블록에 주석만 있고 명령이 없어서
+저장소만 보고 "CORS 미설정" 으로 진단했는데, 버킷에는 이미 걸려 있었고 진짜 원인은
+`studio.moeum.store` 만 목록에서 빠진 것이었다. **저장소 밖 작업일수록 명령을 적어 둔다** —
+안 적으면 다음 사람이 버킷을 읽는 대신 추측한다.
+
+이 구조가 헷갈리는 지점을 하나 만든다. 업로드가 두 구간을 지나고 **구간마다 다른 목록이
+출처를 본다.** 발급은 앱의 `ALLOWED_ORIGINS`, PUT 은 버킷 CORS 다. 한쪽만 등록되면
+"URL 은 받아왔는데 업로드가 안 된다" 가 되고, S3 의 거부 응답에는 CORS 헤더가 없어
+브라우저 콘솔에는 서명 오류도 CORS 오류로 뭉뚱그려 보인다. 둘을 가르려면 브라우저 밖에서
+OPTIONS 를 직접 쏜다 (deployment.md).
 
 Parameter Store 에 `S3_BUCKET`, `S3_PUBLIC_BASE_URL` 을 넣고 재배포하면 켜진다.
 

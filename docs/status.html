@@ -483,7 +483,7 @@
         ["공구 마감 배치", "closes_at 지난 SELLING → CLOSED. 상태 전이만 한다", "done"],
         ["상품 이미지 업로드", "D-022. presigned URL 로 브라우저가 S3 에 직접 올린다. DB 엔 키만", "done"],
         ["업로드 고아 파일 정리", "D-041. 매일 04시 배치가 DB 참조와 버킷을 대조해 지운다. 수명주기 규칙으로는 못 푼다 — 규칙은 DB 가 그 키를 쓰는지 모른다. 참조처는 ImageKeySource 구현체로 각 도메인이 내놓고, 유예 24시간 · 비율 30% · dry-run 세 겹으로 막는다. 켜는 것은 S3 버킷 항목이 받는다", "done"],
-        ["S3 버킷 · CORS · IAM", "moeum-images-prod. 공개 읽기는 sale-forms/* 에만. ⚠ 앱 권한이 PutObject 뿐이라 고아 청소(D-041)가 dry-run 에서 못 나온다 — versioning + 이전 버전 30일 만료를 켜고 ListBucket·DeleteObject 를 붙인 뒤 로그를 보고 ORPHAN_SWEEP_DRY_RUN=false 로 끈다. IAM 없이 돌면 403 인데 로그는 조용하다 (deployment.md)", "check"],
+        ["S3 버킷 · CORS · IAM", "moeum-images-prod. 공개 읽기는 sale-forms/* 에만. CORS 허용 출처에 studio.moeum.store 를 넣었다 (09-14) — ALLOWED_ORIGINS 에만 있고 버킷에는 없어서 셀러 화면 업로드가 전부 막혀 있었다. <b>두 목록은 같이 고친다</b>. ⚠ 앱 권한이 PutObject 뿐이라 고아 청소(D-041)가 dry-run 에서 못 나온다 — versioning + 이전 버전 30일 만료를 켜고 ListBucket·DeleteObject 를 붙인 뒤 로그를 보고 ORPHAN_SWEEP_DRY_RUN=false 로 끈다. IAM 없이 돌면 403 인데 로그는 조용하다 (deployment.md)", "check"],
         ["판매 시작 · 일시중지 · 수동 마감", "DRAFT → SELLING → PAUSED ↔ SELLING → CLOSED. 마감은 되돌릴 수 없다", "done"],
         ["목표수량 미달 자동 취소", "D-026. CANCEL·PROCEED 는 됐다. EXTEND 는 연장 규칙이 기획 미확정이라 보류", "part"],
         ["폼별 배송비", "D-053 · V13. sale_form.shipping_fee 를 nullable 로 두고 null 이면 셀러 기본값을 따른다. 0 은 '배송비 없음'. 상세 응답은 폼 값(shippingFee)과 적용값(appliedShippingFee)을 나눠 준다 — 수정이 전체 교체라 적용값을 도로 보내면 셀러 기본값을 따르던 폼이 굳는다. 구매자 상품 상세의 seller.shippingFee 도 폼 값을 반영한다", "done"],
