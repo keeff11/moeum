@@ -66,6 +66,7 @@ CREATE TABLE sale_form (
 
     ship_start_text  VARCHAR(100)     NULL COMMENT '8월 20일(월) 순차발송 — 서버가 포맷',
     min_order_amount INT          NOT NULL DEFAULT 0,
+    shipping_fee     INT              NULL COMMENT '폼별 배송비 (V13 · D-053). NULL 이면 seller.shipping_fee',
     description_json JSON             NULL COMMENT 'Lexical JSON (ADR 0001)',
     progress_public  TINYINT(1)   NOT NULL DEFAULT 1,
 
@@ -111,7 +112,11 @@ CREATE TABLE product (
 
 -- ---------------------------------------------------------------------
 -- 옵션 — 금액을 절대값으로 갖는다 (기준가 + 추가금 방식 아님)
--- 옵션 자체 재고는 없다. 배송비도 없다 (셀러 단위)
+-- 옵션 재고는 선택이다 (V14 · D-054). stock_max 가 NULL 이면 폼 재고만 따른다.
+-- 한 폼 안에서는 전부 NULL 이거나 전부 값이 있어야 하고, 값이 있으면
+-- sale_form.stock_max 는 옵션 합계로 서버가 계산한다.
+-- 확보는 sale_form 조건부 UPDATE 뒤에 옵션 조건부 UPDATE 를 id 오름차순으로 한 번 더 건다.
+-- 배송비는 없다 (폼 · 셀러 단위)
 -- ---------------------------------------------------------------------
 CREATE TABLE product_option (
     id              BIGINT       NOT NULL AUTO_INCREMENT,
@@ -119,11 +124,15 @@ CREATE TABLE product_option (
     name            VARCHAR(100) NOT NULL,
     deposit1_amount INT          NOT NULL COMMENT '1차금 절대값 — 주문 시 결제',
     deposit2_amount INT          NOT NULL DEFAULT 0 COMMENT '2차금 상품 잔금. 1차금이 전액이면 0',
+    stock_max       INT              NULL COMMENT '옵션 재고 상한. NULL 이면 폼 재고만 따른다',
+    held            INT          NOT NULL DEFAULT 0 COMMENT '결제 확정 전 선점 수량. 조건부 UPDATE 전용',
+    sold            INT          NOT NULL DEFAULT 0 COMMENT '판매 확정 수량. 조건부 UPDATE 전용',
     sort_order      INT          NOT NULL DEFAULT 0,
     PRIMARY KEY (id),
     KEY idx_option_product (product_id, sort_order),
     CONSTRAINT fk_option_product FOREIGN KEY (product_id) REFERENCES product (id),
-    CONSTRAINT ck_option_amount CHECK (deposit1_amount >= 0 AND deposit2_amount >= 0)
+    CONSTRAINT ck_option_amount CHECK (deposit1_amount >= 0 AND deposit2_amount >= 0),
+    CONSTRAINT ck_option_qty CHECK (held >= 0 AND sold >= 0)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 

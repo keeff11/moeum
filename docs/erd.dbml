@@ -35,6 +35,7 @@ Table "sale_form" {
   "closes_at" DATETIME(6)
   "extended_count" INT [not null, default: 0]
   "shortfall_policy" VARCHAR(10) [note: 'CANCEL, EXTEND, PROCEED']
+  "shipping_fee" INT [note: '폼별 배송비 (D-053). NULL 이면 seller.shipping_fee']
   "second_type" VARCHAR(20) [not null, default: 'NONE', note: 'SHIPPING_FEE, BALANCE, NONE']
   "second_amount" INT [note: 'BALANCE 는 입고 후 확정 → NULL 허용']
   "progress_public" TINYINT(1) [not null, default: 1]
@@ -46,7 +47,7 @@ Table "sale_form" {
     (status, closes_at) [name: "idx_sale_form_status"]
   }
 
-  Note: '판매 단위이자 재고 확보의 주체. 셀러가 링크 하나를 발급하면 이 행이 하나 생긴다. 가용 재고 = stock_max - held - sold 이며 확보는 조건부 UPDATE로 처리한다.'
+  Note: '판매 단위이자 재고 확보의 주체. 셀러가 링크 하나를 발급하면 이 행이 하나 생긴다. 가용 재고 = stock_max - held - sold 이며 확보는 조건부 UPDATE로 처리한다. 옵션 재고를 쓰는 폼은 stock_max 가 옵션 합계다 (D-054).'
 }
 
 Table "sale_form_history" {
@@ -84,14 +85,18 @@ Table "product_option" {
   "id" BIGINT [pk, not null, increment]
   "product_id" BIGINT [not null]
   "name" VARCHAR(100) [not null]
-  "extra_price" INT [not null, default: 0]
+  "deposit1_amount" INT [not null, note: '1차금 절대값']
+  "deposit2_amount" INT [not null, default: 0, note: '2차금 잔금. 1차금이 전액이면 0']
+  "stock_max" INT [note: '옵션 재고 상한 (D-054). NULL 이면 폼 재고만 따른다']
+  "held" INT [not null, default: 0, note: '선점 수량. 조건부 UPDATE 전용']
+  "sold" INT [not null, default: 0, note: '판매 확정 수량. 조건부 UPDATE 전용']
   "sort_order" INT [not null, default: 0]
 
   Indexes {
     (product_id, sort_order) [name: "idx_option_product"]
   }
 
-  Note: '상품 옵션과 추가금. 자체 재고는 갖지 않으며 결제 금액 계산과 발주서의 옵션별 수량 집계에 쓰인다.'
+  Note: '상품 옵션. 금액은 절대값이다. 옵션 재고는 선택이며, 있으면 폼 재고와 두 층으로 같이 움직인다 (D-054). 발주서의 옵션별 수량 집계에도 쓰인다.'
 }
 
 Table "buyer" {
