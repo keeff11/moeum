@@ -7,31 +7,90 @@
 <style>
   body { margin: 0; padding: 48px 24px; background: #F4F3F7; color: #1B1830;
          font: 15px/1.7 -apple-system, BlinkMacSystemFont, "Segoe UI", "Malgun Gothic", sans-serif; }
-  main { max-width: 560px; margin: 0 auto; background: #fff; border: 1px solid #DCD8E6;
+  main { max-width: 620px; margin: 0 auto; background: #fff; border: 1px solid #DCD8E6;
          border-radius: 12px; padding: 32px; }
   h1 { margin: 0 0 4px; font-size: 19px; }
-  p.sub { margin: 0 0 24px; color: #7C7791; font-size: 14px; }
+  p.sub { margin: 0 0 20px; color: #7C7791; font-size: 14px; }
+  h2 { font-size: 15px; margin: 28px 0 8px; }
   code { background: #EDEBF3; border-radius: 4px; padding: 2px 6px;
          font: 13px ui-monospace, Consolas, monospace; }
-  ul { padding-left: 18px; }
+  ul { padding-left: 18px; margin: 8px 0; }
   li { margin-bottom: 6px; }
+  .probe { border: 1px solid #E8E5EF; border-radius: 8px; padding: 14px 16px; background: #FAFAFD; }
+  .badge { display: inline-block; border-radius: 999px; padding: 2px 10px; font-size: 13px; font-weight: 600; }
+  .ok   { background: #DFF1E8; color: #1F8A5B; }
+  .risk { background: #FBE6E3; color: #C0392B; }
+  .wait { background: #EDEBF3; color: #7C7791; }
+  pre { margin: 10px 0 0; padding: 10px; background: #EDEBF3; border-radius: 6px;
+        overflow-x: auto; font: 12px ui-monospace, Consolas, monospace; }
+  .note { color: #7C7791; font-size: 13.5px; }
 </style>
 </head>
 <body>
 <main>
   <h1>셀러 심사 화면</h1>
-  <p class="sub">아직 배포 전입니다. 이 문구가 보이면 기본인증은 통과한 것입니다.</p>
+  <p class="sub">심사 UI가 들어올 자리입니다. <strong>API는 배포가 끝나 동작 중입니다.</strong></p>
 
-  <p>화면이 들어갈 자리는 <code>src/main/resources/static/admin/</code> 입니다.
-     API 와 같은 출처라 <code>fetch('/admin/sellers')</code> 처럼 상대경로로 부르면 됩니다 —
-     CORS 설정도 프리플라이트도 없습니다.</p>
+  <div class="probe">
+    <div><span id="badge" class="badge wait">확인 중…</span></div>
+    <div id="detail" class="note" style="margin-top:8px">
+      이 페이지에서 <code>GET /admin/sellers</code> 를 직접 불러 보는 중입니다.
+    </div>
+    <pre id="body" hidden></pre>
+  </div>
 
-  <p>쓸 수 있는 API 셋:</p>
+  <h2>쓸 수 있는 API 셋</h2>
   <ul>
     <li><code>GET /admin/sellers?status=PENDING&amp;page=0&amp;size=20</code></li>
     <li><code>POST /admin/sellers/{sellerId}/approve</code></li>
     <li><code>POST /admin/sellers/{sellerId}/reject</code></li>
   </ul>
+  <p class="note">이 페이지와 같은 출처라 <code>fetch('/admin/sellers')</code> 처럼 상대경로로 부르면 됩니다.
+     CORS 설정도 프리플라이트도 없습니다. 기본인증은 브라우저가 알아서 실어 보냅니다.</p>
+
+  <h2>화면을 올릴 때</h2>
+  <ul>
+    <li>빌드 산출물을 <code>moeum/src/main/resources/static/admin/</code> 에 넣습니다 (이 파일을 덮어쓰면 됩니다)</li>
+    <li>정적 서빙이라 SPA fallback 이 없습니다 — 해시 라우팅(<code>/admin/#/sellers</code>)이나 단일 페이지로 만들어 주세요</li>
+    <li><strong><code>/admin/sellers</code> 는 API 주소라 화면 라우트로 쓸 수 없습니다</strong></li>
+    <li>에셋 base 를 <code>/admin/</code> 으로 잡아 주세요. <code>/assets/app.js</code> 같은 절대경로는 404 입니다</li>
+  </ul>
 </main>
+
+<script>
+  var badge = document.getElementById('badge');
+  var detail = document.getElementById('detail');
+  var body = document.getElementById('body');
+
+  function show(cls, text, note, payload) {
+    badge.className = 'badge ' + cls;
+    badge.textContent = text;
+    detail.textContent = note;
+    if (payload !== undefined) {
+      body.hidden = false;
+      body.textContent = payload;
+    }
+  }
+
+  fetch('/admin/sellers?status=PENDING&size=5', { headers: { Accept: 'application/json' } })
+    .then(function (res) {
+      return res.text().then(function (raw) { return { status: res.status, ok: res.ok, raw: raw }; });
+    })
+    .then(function (r) {
+      if (!r.ok) {
+        show('risk', 'HTTP ' + r.status,
+             'API 가 오류를 돌려줬습니다. 아래 본문을 백엔드에 전달해 주세요.', r.raw.slice(0, 600));
+        return;
+      }
+      var data = JSON.parse(r.raw);
+      var total = (data.page && data.page.totalElements) || 0;
+      show('ok', 'API 정상 (HTTP 200)',
+           '대기 중(PENDING) 신청 ' + total + '건. 아래는 실제 응답입니다.',
+           JSON.stringify(data, null, 2).slice(0, 1200));
+    })
+    .catch(function (e) {
+      show('risk', '호출 실패', '네트워크 또는 파싱 오류: ' + e.message);
+    });
+</script>
 </body>
 </html>
