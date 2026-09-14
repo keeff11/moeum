@@ -7,8 +7,10 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.core.Ordered;
 import org.springframework.web.method.support.HandlerMethodArgumentResolver;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
-import org.springframework.web.servlet.config.annotation.ViewControllerRegistry;
+import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
+import store.moeum.moeum.global.auth.AdminAccounts;
+import store.moeum.moeum.global.auth.AdminOnlyInterceptor;
 import store.moeum.moeum.global.auth.AllowedOrigins;
 import store.moeum.moeum.global.auth.OriginValidationFilter;
 import store.moeum.moeum.global.auth.SessionUserArgumentResolver;
@@ -32,15 +34,24 @@ public class WebConfig implements WebMvcConfigurer {
 	private List<String> configuredOrigins;
 
 	/**
-	 * 어드민 화면은 API 와 같은 출처에서 서빙한다 (D-052).
+	 * 운영자 카카오 회원번호 명단 (D-055).
 	 *
-	 * 정적 리소스 핸들러는 디렉터리를 색인으로 풀어주지 않아 {@code /admin/} 이 404 가 된다.
-	 * 운영자가 {@code /admin/index.html} 을 끝까지 치게 만들 이유가 없어서 여기서 넘겨준다.
+	 * 비어 있으면 아무도 운영자가 아니다. 허용 출처 목록과 반대 방향으로 판단한다 —
+	 * 설정 하나 빠진 것이 승인 API 전면 개방이 되면 안 된다.
+	 */
+	@Value("${moeum.auth.admin-kakao-ids:}")
+	private List<String> configuredAdmins;
+
+	/**
+	 * 심사 API 는 경로로 막는다 (D-055).
+	 *
+	 * 컨트롤러 파라미터로 막으면 새 엔드포인트를 추가하면서 빠뜨릴 수 있고,
+	 * 그 순간 인증 없는 승인 API 가 열린다.
 	 */
 	@Override
-	public void addViewControllers(ViewControllerRegistry registry) {
-		registry.addRedirectViewController("/admin", "/admin/");
-		registry.addViewController("/admin/").setViewName("forward:/admin/index.html");
+	public void addInterceptors(InterceptorRegistry registry) {
+		registry.addInterceptor(new AdminOnlyInterceptor(AdminAccounts.of(configuredAdmins)))
+				.addPathPatterns("/admin/**");
 	}
 
 	@Override

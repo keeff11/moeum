@@ -100,6 +100,9 @@ moeum:
     cookie-secure: false
     # 비워 두면 Origin 검증을 하지 않는다. 프론트 개발 서버를 붙일 때 채운다
     allowed-origins: ${ALLOWED_ORIGINS:}
+    # 운영자 카카오 회원번호. 비워 두면 아무도 심사 API 를 못 부른다 (D-055).
+    # 로컬에서 만지려면 자기 kakaoId 를 넣는다 — GET /me 로 확인한다
+    admin-kakao-ids: ${ADMIN_KAKAO_IDS:}
   crypto:
     # 로컬 전용 개발 키. 환경변수가 있으면 그쪽을 쓴다
     seller-key: ${SELLER_CRYPTO_KEY:bW9ldW0tbG9jYWwtZGV2LWtleS1ETy1OT1QtVVNFISE=}
@@ -161,6 +164,9 @@ moeum:
     cookie-secure: true
     # CSRF 2차 방어 (api-spec 10-11). 운영에서는 반드시 채운다
     allowed-origins: ${ALLOWED_ORIGINS}
+    # 운영자 명단 (D-055). 기본값을 비워 둔다 — 파라미터가 없어도 앱은 뜼고
+    # 심사 API 만 닫힌다. 여기서 앱을 못 뜨게 만들면 설정 하나에 서비스 전체가 멈춘다
+    admin-kakao-ids: ${ADMIN_KAKAO_IDS:}
   crypto:
     # 32바이트 AES-256 키의 Base64. 환경변수로만 주입한다
     seller-key: ${SELLER_CRYPTO_KEY}

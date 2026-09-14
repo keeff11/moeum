@@ -10,7 +10,7 @@
 	# 계정은 Parameter Store 의 SWAGGER_PASSWORD_HASH (bcrypt) 로 주입한다 —
 	# 평문은 저장소에도 서버에도 두지 않는다.
 	#
-	# 심사 API 도 문서에 보이지만 계정은 따로다 — 아래 @admin 블록이 별도 해시를 쓴다.
+	# 심사 API 도 문서에 보이지만 호출은 앱이 막는다 (D-055). 세션 인증이라 계정이 따로 없다.
 	@swagger path /swagger-ui* /v3/api-docs*
 	handle @swagger {
 		basic_auth {
@@ -19,25 +19,16 @@
 		reverse_proxy app:8080
 	}
 
-	# 운영자용 심사 화면과 API (D-052).
+	# 운영자용 심사 API (D-055).
 	#
-	# 앱에는 여전히 운영자 인증이 없다. 여기 basic_auth 가 유일한 방어선이고,
-	# 뚫리면 신청자 개인정보(대표자 실명 · 사업자등록번호 · 연락처)가 통째로 나가고
-	# 누구나 셀러를 승인·반려할 수 있다. 계정 해시가 비는 일이 없어야 한다.
+	# 앱이 직접 지킨다 — 세션의 카카오 회원번호가 운영자 명단에 있어야 통과한다.
+	# 여기서 basic_auth 를 걸면 프론트가 자기 도메인에서 이 API 를 부를 수 없다.
+	# 브라우저 프리플라이트에는 Authorization 이 실리지 않아 401 이 되기 때문이다.
 	#
-	# 화면(/admin/index.html)도 이 블록 안이다. API 와 같은 출처라 CORS 도 프리플라이트도
-	# 생기지 않는다 — basic_auth 는 프리플라이트 OPTIONS 에 Authorization 이 실리지 않아
-	# 다른 출처의 화면에서는 애초에 동작하지 않는다.
-	#
-	# 스웨거와 계정을 공유하지 않는다. 그쪽은 프론트 개발자 전체가 쓰는 계정이고
-	# 이쪽은 셀러를 승인하는 권한이다.
-	#
-	# 슬래시 없는 /admin 도 같이 잡는다. 안 잡으면 그 주소만 인증 없이 404 가 나가 혼란스럽다.
+	# 이 블록을 굳이 남기는 이유는 순서다. 지우면 아래 기본 handle 로 떨어져 같은 곳으로
+	# 가지만, /admin/* 이 어디서 처리되는지 한눈에 보이지 않게 된다.
 	@admin path /admin /admin/*
 	handle @admin {
-		basic_auth {
-			admin {$ADMIN_PASSWORD_HASH}
-		}
 		reverse_proxy app:8080
 	}
 

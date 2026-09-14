@@ -8,6 +8,9 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
+import org.springframework.test.context.TestPropertySource;
+import store.moeum.moeum.global.auth.SessionKeys;
+import store.moeum.moeum.global.auth.SessionUser;
 import store.moeum.moeum.saleform.domain.SaleFormRepository;
 import store.moeum.moeum.seller.domain.ReviewStatus;
 import store.moeum.moeum.seller.domain.Seller;
@@ -36,7 +39,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  *   <li>수락하면 그 신청은 대기 목록에서 빠진다</li>
  * </ul>
  */
+@TestPropertySource(properties = "moeum.auth.admin-kakao-ids=kakao-admin-1")
 class SellerApplicantTest extends IntegrationTest {
+
+	/**
+	 * 심사 API 는 운영자 세션이 있어야 열린다 (D-055).
+	 * 접근 제어 자체를 보는 것은 {@link AdminAuthTest} 이고, 여기서는 통과한 뒤의 동작만 본다.
+	 */
+	private static final SessionUser ADMIN = new SessionUser("kakao-admin-1", "운영자");
 
 	@Autowired
 	private SellerService sellerService;
@@ -115,7 +125,7 @@ class SellerApplicantTest extends IntegrationTest {
 		apply("kakao-acct", "store-acct");
 
 		// 심사가 아니라 정산에 쓰는 값이다. 필요한 것만 꺼낸다
-		mockMvc.perform(get("/admin/sellers"))
+		mockMvc.perform(get("/admin/sellers").sessionAttr(SessionKeys.LOGIN_USER, ADMIN))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.items[0].settlementAccount").doesNotExist())
 				.andExpect(jsonPath("$.items[0].businessNo").value("1234567890"));
@@ -159,7 +169,8 @@ class SellerApplicantTest extends IntegrationTest {
 	void 수락() throws Exception {
 		Seller seller = apply("kakao-ok", "store-ok");
 
-		mockMvc.perform(post("/admin/sellers/{sellerId}/approve", seller.getId()))
+		mockMvc.perform(post("/admin/sellers/{sellerId}/approve", seller.getId())
+						.sessionAttr(SessionKeys.LOGIN_USER, ADMIN))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.reviewStatus").value("APPROVED"))
 				.andExpect(jsonPath("$.approvedAt").exists());
@@ -173,7 +184,8 @@ class SellerApplicantTest extends IntegrationTest {
 	@Test
 	@DisplayName("없는_셀러를_수락하면_404_다")
 	void 없는_셀러() throws Exception {
-		mockMvc.perform(post("/admin/sellers/{sellerId}/approve", 999999L))
+		mockMvc.perform(post("/admin/sellers/{sellerId}/approve", 999999L)
+						.sessionAttr(SessionKeys.LOGIN_USER, ADMIN))
 				.andExpect(status().isNotFound());
 	}
 
@@ -183,7 +195,7 @@ class SellerApplicantTest extends IntegrationTest {
 		apply("kakao-cache", "store-cache");
 
 		// 방금 승인한 건이 목록에 남아 있으면 두 번 승인하게 된다
-		mockMvc.perform(get("/admin/sellers"))
+		mockMvc.perform(get("/admin/sellers").sessionAttr(SessionKeys.LOGIN_USER, ADMIN))
 				.andExpect(status().isOk())
 				.andExpect(header().string("Cache-Control", "no-store"));
 	}

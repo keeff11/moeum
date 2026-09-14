@@ -53,21 +53,21 @@ class OpenApiDocsTest extends IntegrationTest {
 	}
 
 	/**
-	 * /admin/* 는 앱이 아니라 프록시가 지킨다 (D-052).
+	 * /admin/* 는 앱이 지킨다 (D-055).
 	 *
-	 * 앱에 인증 코드가 없어서 자동 생성에 맡기면 <b>인증 없는 공개 API</b> 로 문서에 나간다.
-	 * 프론트가 그걸 보고 미배포로 오인한 적이 있어 선언을 붙였다.
+	 * 인증 코드가 컨트롤러가 아닌 인터셉터에 있어서, 자동 생성에 맡기면
+	 * <b>인증 없는 공개 API</b> 로 문서에 나간다. 프론트가 그걸 보고 미배포로 오인한 적이 있다.
 	 */
 	@Test
-	@DisplayName("admin_경로에_기본인증_선언이_붙는다")
-	void admin_경로에_기본인증_선언이_붙는다() throws Exception {
+	@DisplayName("admin_경로에_인증과_403_이_명시된다")
+	void admin_경로에_인증과_403_이_명시된다() throws Exception {
 		mockMvc.perform(get("/v3/api-docs"))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.components.securitySchemes.adminBasicAuth.scheme").value("basic"))
-				.andExpect(jsonPath("$.paths['/admin/sellers'].get.security[0].adminBasicAuth").exists())
+				.andExpect(jsonPath("$.paths['/admin/sellers'].get.security[0].sessionCookie").exists())
 				.andExpect(jsonPath("$.paths['/admin/sellers'].get.responses.401").exists())
-				.andExpect(jsonPath("$.paths['/admin/sellers/{sellerId}/approve'].post.security[0].adminBasicAuth").exists())
-				.andExpect(jsonPath("$.paths['/admin/sellers/{sellerId}/reject'].post.security[0].adminBasicAuth").exists());
+				.andExpect(jsonPath("$.paths['/admin/sellers'].get.responses.403").exists())
+				.andExpect(jsonPath("$.paths['/admin/sellers/{sellerId}/approve'].post.responses.403").exists())
+				.andExpect(jsonPath("$.paths['/admin/sellers/{sellerId}/reject'].post.responses.403").exists());
 	}
 
 	@Test

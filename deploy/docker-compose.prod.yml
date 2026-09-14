@@ -51,6 +51,8 @@ services:
       # MySQL max-connections 100 안에서 앱이 쓸 몫
       DB_POOL_SIZE: "20"
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
+      # 운영자 카카오 회원번호. 비어 있으면 심사 API 만 닫히고 앱은 정상 기동한다 (D-055)
+      ADMIN_KAKAO_IDS: ${ADMIN_KAKAO_IDS:-}
       SELLER_CRYPTO_KEY: ${SELLER_CRYPTO_KEY}
       # 이미지 업로드. 버킷을 만들기 전에는 비어 있고, 그러면 업로드 기능만 꺼진다
       S3_BUCKET: ${S3_BUCKET:-}
@@ -107,11 +109,6 @@ services:
       # 스웨거 기본인증. 비어 있으면 Caddy 가 기동에 실패하므로 기본값을 둔다 —
       # 값이 없을 때 사이트 전체가 내려가는 것이 스웨거가 안 열리는 것보다 나쁘다.
       SWAGGER_PASSWORD_HASH: ${SWAGGER_PASSWORD_HASH:-$$2a$$14$$K9bLszttkZJGped7CxwyA.8a8VAiLRrH7Rg2beWsrFh8AoX1d7y1a}
-      # 운영자 심사 화면 · API 기본인증 (D-052). 스웨거와 계정을 공유하지 않는다.
-      # 기본값은 아무 비밀번호와도 맞지 않는 잠금이다 — 파라미터를 등록해야 열린다.
-      # 스웨거와 같은 이유로 기본값을 비우지 않는다. 값이 없으면 Caddy 가 기동에 실패해
-      # 사이트 전체가 내려간다.
-      ADMIN_PASSWORD_HASH: ${ADMIN_PASSWORD_HASH:-$$2a$$14$$Tc7jdGjAzk04zISvlSzzgiZ8SwdI9rzQfPQZysf1lgnApeEvkfxfx}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data

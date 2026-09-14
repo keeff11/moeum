@@ -18,6 +18,7 @@ import store.moeum.moeum.auth.dto.MeResponse;
 import store.moeum.moeum.auth.infra.KakaoOAuthClient;
 import store.moeum.moeum.auth.infra.KakaoProfile;
 import store.moeum.moeum.auth.infra.KakaoTokens;
+import store.moeum.moeum.global.auth.AdminAccounts;
 import store.moeum.moeum.global.auth.LoginUser;
 import store.moeum.moeum.global.auth.SessionKeys;
 import store.moeum.moeum.global.auth.SessionUser;
@@ -40,6 +41,7 @@ public class AuthController {
 
 	private final KakaoOAuthClient kakaoClient;
 	private final OAuthCookies cookies;
+	private final AdminAccounts adminAccounts;
 
 	/** 1단계 — state 발급 + returnTo 저장 후 카카오 동의 화면으로 302 */
 	@Operation(summary = "카카오 로그인 시작",
@@ -127,10 +129,10 @@ public class AuthController {
 	}
 
 	@Operation(summary = "내 정보",
-			description = "로그인하지 않았으면 401 이다. 로그인 여부 판단에 쓴다.")
+			description = "로그인하지 않았으면 401 이다. 로그인 여부 판단과 심사 화면 진입점 노출 판단에 쓴다.")
 	@GetMapping("/me")
 	public MeResponse me(@LoginUser SessionUser user) {
-		return MeResponse.from(user);
+		return MeResponse.from(user, adminAccounts.isAdmin(user));
 	}
 
 	/** state 비교는 길이가 달라도 조기 반환하지 않는다 */

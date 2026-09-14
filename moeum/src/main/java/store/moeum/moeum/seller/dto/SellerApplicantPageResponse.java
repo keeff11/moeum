@@ -21,8 +21,8 @@ import java.util.List;
  *
  * <b>이 응답에는 대표자 실명 · 사업자등록번호 · 연락처가 함께 실린다.</b> 사업자번호는
  * DB 에 암호화해서 넣는 값이라(Seller) 평문으로 나가는 경로가 여기 하나다.
- * 이 응답이 나가는 {@code /admin/*} 은 프록시 기본인증이 지킨다 (deploy/Caddyfile, D-052).
- * 앱에 운영자 인증이 없어 그 한 겹이 유일한 방어선이라는 점은 그대로다.
+ * 이 응답이 나가는 {@code /admin/*} 은 {@code AdminOnlyInterceptor} 가 지킨다 (D-055).
+ * 운영자 명단에 없는 세션은 403 이라 여기까지 오지 않는다.
  */
 @Schema(description = "셀러 심사 신청자 목록")
 public record SellerApplicantPageResponse(
