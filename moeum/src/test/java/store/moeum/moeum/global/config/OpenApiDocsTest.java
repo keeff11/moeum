@@ -52,6 +52,24 @@ class OpenApiDocsTest extends IntegrationTest {
 				.andExpect(jsonPath("$.paths['/me'].get").exists());
 	}
 
+	/**
+	 * /admin/* 는 앱이 아니라 프록시가 지킨다 (D-052).
+	 *
+	 * 앱에 인증 코드가 없어서 자동 생성에 맡기면 <b>인증 없는 공개 API</b> 로 문서에 나간다.
+	 * 프론트가 그걸 보고 미배포로 오인한 적이 있어 선언을 붙였다.
+	 */
+	@Test
+	@DisplayName("admin_경로에_기본인증_선언이_붙는다")
+	void admin_경로에_기본인증_선언이_붙는다() throws Exception {
+		mockMvc.perform(get("/v3/api-docs"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.components.securitySchemes.adminBasicAuth.scheme").value("basic"))
+				.andExpect(jsonPath("$.paths['/admin/sellers'].get.security[0].adminBasicAuth").exists())
+				.andExpect(jsonPath("$.paths['/admin/sellers'].get.responses.401").exists())
+				.andExpect(jsonPath("$.paths['/admin/sellers/{sellerId}/approve'].post.security[0].adminBasicAuth").exists())
+				.andExpect(jsonPath("$.paths['/admin/sellers/{sellerId}/reject'].post.security[0].adminBasicAuth").exists());
+	}
+
 	@Test
 	@DisplayName("공통_에러_응답이_모든_오퍼레이션에_붙는다")
 	void 공통_에러_응답이_모든_오퍼레이션에_붙는다() throws Exception {

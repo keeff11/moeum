@@ -40,7 +40,16 @@ public class OpenApiConfig {
 	}
 
 	private static final String SESSION_SCHEME = "sessionCookie";
+	private static final String ADMIN_SCHEME = "adminBasicAuth";
 	private static final String ERROR_SCHEMA_REF = "#/components/schemas/ErrorResponse";
+
+	/**
+	 * 운영자 전용 경로. 여기는 <b>앱이 아니라 프록시가</b> 지킨다 (D-052).
+	 *
+	 * 앱에 인증 코드가 없어서 자동 생성만으로는 "인증 없는 공개 API" 로 보인다.
+	 * 실제로는 Caddy 기본인증을 통과해야 닿으므로 문서에 그 사실을 드러낸다.
+	 */
+	private static final String ADMIN_PREFIX = "/admin";
 
 	/**
 	 * 로그인이 필요한 경로. 여기에 걸리는 오퍼레이션에만 401 과 인증 요구를 붙인다.
@@ -57,6 +66,12 @@ public class OpenApiConfig {
 				.name("MOEUM_SESSION")
 				.description("카카오 로그인 후 발급되는 httpOnly 세션 쿠키. JWT 가 아니다");
 
+		// 세션과 성격이 다르다. 카카오 로그인과 무관하고, 앱이 아니라 앞단 프록시가 본다 (D-052)
+		SecurityScheme adminBasicAuth = new SecurityScheme()
+				.type(SecurityScheme.Type.HTTP)
+				.scheme("basic")
+				.description("운영자 심사 API. 세션이 아니라 프록시 기본인증이다 — 카카오 로그인과 무관하다. 심사 화면은 이 API 와 같은 출처(/admin/)에서 서빙된다");
+
 		return new OpenAPI()
 				.info(new Info()
 						.title("moeum-api")
@@ -69,7 +84,9 @@ public class OpenApiConfig {
 								  이 화면의 Try it out 으로는 끝까지 진행되지 않는다.
 								- 실패 응답은 전부 `ErrorResponse` 한 가지 형식이다.
 								"""))
-				.components(new Components().addSecuritySchemes(SESSION_SCHEME, sessionCookie));
+				.components(new Components()
+						.addSecuritySchemes(SESSION_SCHEME, sessionCookie)
+						.addSecuritySchemes(ADMIN_SCHEME, adminBasicAuth));
 	}
 
 	/**
@@ -94,6 +111,10 @@ public class OpenApiConfig {
 						if (isSecured(path)) {
 							putIfAbsent(responses, "401", "로그인이 필요하다");
 							operation.addSecurityItem(new SecurityRequirement().addList(SESSION_SCHEME));
+						}
+						if (path.startsWith(ADMIN_PREFIX)) {
+							putIfAbsent(responses, "401", "운영자 기본인증이 필요하다. 앱이 아니라 프록시가 돌려주므로 본문은 ErrorResponse 가 아니다");
+							operation.addSecurityItem(new SecurityRequirement().addList(ADMIN_SCHEME));
 						}
 						tagIfMissing(operation, path);
 					}));
