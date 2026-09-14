@@ -224,32 +224,25 @@ put LEGACY_DOMAIN "shop1.cloud"
 aws ssm get-parameter --region ap-northeast-2 --name /moeum/prod/ALLOWED_ORIGINS --with-decryption --query Parameter.Value --output text
 ```
 
-### 운영자 심사 화면 계정 (D-052)
+### 운영자 명단 (D-055)
 
-`/admin/*` 은 화면과 API 가 모두 Caddy 기본인증 뒤에 있다. **앱에는 운영자 인증이 없어서
-이 한 겹이 유일한 방어선이다.** 뚫리면 신청자의 대표자 실명 · 사업자등록번호 · 연락처가
-통째로 나가고 누구나 셀러를 승인·반려할 수 있다.
-
-비밀번호는 저장소에도 셸 히스토리에도 남기지 않는다. 해시만 파라미터로 넣는다.
+`/admin/*` 은 **앱이 직접 막는다.** 세션의 카카오 회원번호가 이 목록에 있어야 통과한다.
+프록시 기본인증은 걷어냈다 — 그걸 걸면 프론트가 자기 도메인에서 이 API 를 부를 수 없다.
 
 ```bash
-# 비밀번호를 화면에 띄우지 않고 입력받아 bcrypt 해시만 얻는다
-docker run --rm -it caddy:2-alpine caddy hash-password
+put ADMIN_KAKAO_IDS "123456789,987654321"
 ```
 
-```bash
-read -rs ADMIN_HASH && put ADMIN_PASSWORD_HASH "$ADMIN_HASH" && unset ADMIN_HASH
-```
+**회원번호를 알아내는 방법:** 운영자가 `https://www.moeum.store` 에서 카카오로 한 번
+로그인한 뒤 `GET /me` 를 열면 `kakaoId` 가 보인다. 그 값을 쉼표로 이어 붙인다.
 
-계정 ID 는 `admin` 으로 고정이다(`deploy/Caddyfile`). 바꾸려면 Caddyfile 을 고친다.
+**비어 있으면 아무도 운영자가 아니다.** 파라미터가 없어도 앱은 정상 기동하고 심사 API 만
+닫힌다 — 설정 하나에 서비스 전체가 멈추지 않게 기본값을 비워 뒀다. 반대로 허용 출처
+목록처럼 "비어 있으면 검사를 거른다" 로 만들지는 않았다. 그랬다면 설정이 빠진 것이 곧
+승인 API 전면 개방이 된다.
 
-**스웨거 계정과 공유하지 않는다.** 그쪽은 프론트 개발자 전체가 쓰는 계정이고,
-이쪽은 셀러를 승인하는 권한이다. 파라미터를 등록하지 않으면 compose 의 기본 해시가
-쓰이는데 그 값은 **어떤 비밀번호와도 맞지 않는 잠금**이라 아무도 못 들어간다.
-기본값을 비우지 않는 이유는 스웨거와 같다 — 값이 없으면 Caddy 가 기동에 실패해
-사이트 전체가 내려간다.
-
-심사 화면 주소는 `https://api.moeum.store/admin/` 이다.
+명단을 바꾸려면 파라미터를 고치고 재배포한다. 테이블이 아니라 환경변수인 이유와
+되돌릴 조건은 D-055 에 적어 뒀다.
 
 `SELLER_CRYPTO_KEY` 는 **한 번 정하면 못 바꾼다.** 이 키로 암호화된 사업자번호·정산계좌를
 복호화할 수 없게 된다. 별도로 안전한 곳에 백업해 둔다.
