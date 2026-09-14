@@ -66,10 +66,10 @@ class SaleFormUpdateTest extends IntegrationTest {
 
 		this.formId = saleFormService.create(KAKAO_ID, new SaleFormCreateRequest(
 				"겨울 공동구매", "winter-form", SaleType.GROUP, 100, 30, 2,
-				null, CLOSES_AT, ShortfallPolicy.CANCEL, "8월 20일(월) 순차발송", 10000,
+				null, CLOSES_AT, ShortfallPolicy.CANCEL, "8월 20일(월) 순차발송", 10000, null,
 				null, true, List.of("https://cdn.example.com/1.jpg"),
 				List.of(new SaleFormCreateRequest.ProductRequest("머플러", 0,
-						List.of(new SaleFormCreateRequest.OptionRequest("옵션 A", 20000, 12000, 0))))));
+						List.of(new SaleFormCreateRequest.OptionRequest("옵션 A", 20000, 12000, null, 0))))));
 	}
 
 	@Test
@@ -227,7 +227,7 @@ class SaleFormUpdateTest extends IntegrationTest {
 
 		SaleFormUpdate build() {
 			return new SaleFormUpdate(title, stockMax, targetQty, 2, null, closesAt,
-					ShortfallPolicy.CANCEL, shipStartText, 10000, null, true, images);
+					ShortfallPolicy.CANCEL, shipStartText, 10000, null, null, true, images);
 		}
 	}
 }

@@ -1,10 +1,12 @@
 package store.moeum.moeum.saleform.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
+import store.moeum.moeum.saleform.domain.ProductOption;
 import store.moeum.moeum.saleform.domain.SaleForm;
 import store.moeum.moeum.saleform.domain.SaleType;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * 모집 현황 · 재고 (api-spec 2절). <b>휘발성이라 캐시하지 않는다 (no-store).</b>
@@ -30,8 +32,12 @@ public record ProductAvailabilityResponse(
 		Integer recruitTarget,
 
 		/** 살 수 있는 수량. stockMax - held - sold */
-		@Schema(description = "지금 살 수 있는 수량", example = "5")
+		@Schema(description = "지금 살 수 있는 수량(폼 전체)", example = "5")
 		int stock,
+
+		@Schema(description = "옵션별로 지금 살 수 있는 수량. 스티퍼 상한은 이 값을 쓴다 — "
+				+ "옵션 재고가 있으면 폼 재고와 옵션 재고 중 작은 쪽이고, 없으면 폼 재고와 같다")
+		List<OptionStock> options,
 
 		@Schema(description = "구매 버튼 활성 여부. SELLING 일 때만 살 수 있다")
 		PublicStatus status,
@@ -41,6 +47,16 @@ public record ProductAvailabilityResponse(
 		LocalDateTime fetchedAt
 ) {
 
+	@Schema(description = "옵션 하나의 재고")
+	public record OptionStock(
+			@Schema(description = "옵션 id", example = "31") Long id,
+			@Schema(description = "이 옵션을 지금 살 수 있는 수량", example = "3") int stock) {
+
+		static OptionStock from(ProductOption option) {
+			return new OptionStock(option.getId(), Math.max(option.availableQty(), 0));
+		}
+	}
+
 	public static ProductAvailabilityResponse of(SaleForm form, LocalDateTime now) {
 		boolean showProgress = (form.getSaleType() == SaleType.GROUP) && form.isProgressPublic();
 
@@ -48,6 +64,7 @@ public record ProductAvailabilityResponse(
 				showProgress ? form.getSold() : null,
 				showProgress ? form.getTargetQty() : null,
 				Math.max(form.remainingStock(), 0),
+				form.allOptions().stream().map(OptionStock::from).toList(),
 				PublicStatus.of(form, now),
 				now
 		);

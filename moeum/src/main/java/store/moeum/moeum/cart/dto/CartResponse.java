@@ -26,8 +26,8 @@ public record CartResponse(
 				example = "moeum-store")
 		String storeSlug,
 
-		@Schema(description = "셀러가 정한 기본 배송비. 무료배송 기준을 적용하기 전 값이다",
-				example = "3000")
+		@Schema(description = "무료배송 기준을 적용하기 전 기본 배송비. 담긴 폼에 폼별 배송비가 있으면 "
+				+ "그중 가장 큰 값, 없으면 셀러 기본값이다", example = "3000")
 		int shippingFee,
 
 		@Schema(description = "이 금액 이상이면 배송비 면제. 설정하지 않았으면 null", example = "50000")
@@ -94,7 +94,8 @@ public record CartResponse(
 			@Schema(description = "옵션 2차금(개당)", example = "12000")
 			int deposit2Amount,
 
-			@Schema(description = "조회 시점의 남은 재고. 참고값이라 주문 시점에 달라질 수 있다",
+			@Schema(description = "조회 시점에 이 옵션을 살 수 있는 수량. 옵션 재고가 있으면 폼 재고와 "
+					+ "옵션 재고 중 작은 쪽이다. 참고값이라 주문 시점에 달라질 수 있다",
 					example = "5")
 			int remainingStock,
 

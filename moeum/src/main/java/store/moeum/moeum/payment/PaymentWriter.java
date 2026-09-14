@@ -34,7 +34,7 @@ import store.moeum.moeum.payment.dto.PaymentResultResponse;
 import store.moeum.moeum.payment.infra.Point3Session;
 import store.moeum.moeum.payment.refund.RefundRepository;
 import store.moeum.moeum.payment.refund.RefundRequester;
-import store.moeum.moeum.saleform.domain.SaleFormRepository;
+import store.moeum.moeum.order.StockLedger;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -63,7 +63,7 @@ public class PaymentWriter {
 	private final OrderGroupRepository orderGroupRepository;
 	private final StockHoldRepository stockHoldRepository;
 	private final CartCleaner cartCleaner;
-	private final SaleFormRepository saleFormRepository;
+	private final StockLedger stockLedger;
 	private final RefundRepository refundRepository;
 	private final ShippingRepository shippingRepository;
 	private final BuyerAddressRepository buyerAddressRepository;
@@ -469,7 +469,7 @@ public class PaymentWriter {
 			if (!hold.commit()) {
 				continue;
 			}
-			int affected = saleFormRepository.commitHold(hold.getSaleForm().getId(), hold.getQty());
+			int affected = stockLedger.commit(hold);
 			if (affected == 0) {
 				// held 가 그만큼 없다. 데이터가 어긋난 상태라 조용히 넘기지 않는다
 				log.error("홀드 확정 실패: holdId={}, saleFormId={}, qty={}",
@@ -484,7 +484,7 @@ public class PaymentWriter {
 			if (!hold.release()) {
 				continue;
 			}
-			int affected = saleFormRepository.releaseHold(hold.getSaleForm().getId(), hold.getQty());
+			int affected = stockLedger.release(hold);
 			if (affected == 0) {
 				log.warn("홀드 해제 시 재고 반환 실패: holdId={}, saleFormId={}",
 						hold.getId(), hold.getSaleForm().getId());

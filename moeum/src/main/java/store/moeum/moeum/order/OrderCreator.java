@@ -16,11 +16,9 @@ import store.moeum.moeum.order.domain.StockHold;
 import store.moeum.moeum.order.domain.StockHoldRepository;
 import store.moeum.moeum.order.dto.OrderCreateRequest;
 import store.moeum.moeum.order.dto.OrderGroupResponse;
-import store.moeum.moeum.order.exception.OutOfStockException;
 import store.moeum.moeum.saleform.domain.ProductOption;
 import store.moeum.moeum.saleform.domain.ProductOptionRepository;
 import store.moeum.moeum.saleform.domain.SaleForm;
-import store.moeum.moeum.saleform.domain.SaleFormRepository;
 import store.moeum.moeum.seller.domain.Seller;
 
 import java.security.SecureRandom;
@@ -52,10 +50,10 @@ public class OrderCreator {
 	private static final String SESSION_TOKEN_PREFIX = "cs_";
 	private static final SecureRandom RANDOM = new SecureRandom();
 
-	private final SaleFormRepository saleFormRepository;
 	private final ProductOptionRepository optionRepository;
 	private final OrderGroupRepository orderGroupRepository;
 	private final StockHoldRepository stockHoldRepository;
+	private final StockLedger stockLedger;
 
 	@Transactional(propagation = Propagation.REQUIRES_NEW)
 	public OrderGroupResponse create(Buyer buyer, OrderCreateRequest request) {
@@ -66,21 +64,24 @@ public class OrderCreator {
 		// 판매 폼별로 묶는다. 재고 단위가 폼이라 같은 폼의 여러 옵션은 한 번에 확보해야 한다
 		Map<SaleForm, List<ProductOption>> byForm = groupByForm(options);
 
-		// 배송비는 일단 기본값으로 두고 항목을 다 담은 뒤 무료배송 기준을 적용한다
-		OrderGroup group = OrderGroup.create(newSessionToken(), buyer, seller, seller.getShippingFee());
-		LocalDateTime expiresAt = LocalDateTime.now(KST).plusMinutes(HOLD_MINUTES);
-
 		// ★ 판매 폼 id 오름차순. 두 구매자가 서로 반대 순서로 잠그면 데드락이 난다
 		List<SaleForm> forms = byForm.keySet().stream()
 				.sorted(Comparator.comparing(SaleForm::getId))
 				.toList();
+
+		// 배송비는 일단 기본값으로 두고 항목을 다 담은 뒤 무료배송 기준을 적용한다.
+		// 기본값은 담긴 폼들의 배송비 중 가장 큰 것이다 — 묶음당 1회라 하나만 받는다 (D-053)
+		int baseShippingFee = baseShippingFeeOf(forms, seller);
+		OrderGroup group = OrderGroup.create(newSessionToken(), buyer, seller, baseShippingFee);
+		LocalDateTime expiresAt = LocalDateTime.now(KST).plusMinutes(HOLD_MINUTES);
 
 		for (SaleForm form : forms) {
 			List<ProductOption> formOptions = byForm.get(form);
 			int totalQty = formOptions.stream().mapToInt(option -> qtyByOption.get(option.getId())).sum();
 
 			validatePerUserLimit(form, totalQty);
-			acquire(form, totalQty);
+			// ★ 폼 재고와 옵션 재고를 같이 확보한다. 어느 하나라도 0 이면 여기서 던진다
+			stockLedger.acquire(form, formOptions, qtyByOption);
 
 			Order order = Order.create(form);
 			for (ProductOption option : formOptions) {
@@ -91,7 +92,7 @@ public class OrderCreator {
 
 		// 배송비는 여기서야 확정된다. 무료배송 기준이 상품 총액을 보는데 그 합계는
 		// 위 반복문이 끝나야 나온다 — 생성 시점에는 0 원이라 늘 기준 미달로 판정됐을 것이다
-		group.applyShippingFee(seller.shippingFeeFor(group.productTotal()));
+		group.applyShippingFee(seller.shippingFeeFor(group.productTotal(), baseShippingFee));
 
 		validateMinOrderAmount(forms, group);
 		orderGroupRepository.saveAndFlush(group);
@@ -106,19 +107,14 @@ public class OrderCreator {
 	}
 
 	/**
-	 * ★ 재고 확보. 조건부 UPDATE 한 방이고, 영향 행 0이면 품절 또는 마감이다.
-	 *
-	 * 여기서 예외를 던지면 이미 확보한 앞선 폼들도 함께 롤백된다.
-	 * 배송비가 묶음당 1회라 일부만 성공시키면 배송비를 나눌 방법이 없다 (D-009).
+	 * 묶음의 기본 배송비. 폼별 배송비가 있으면 그것, 없으면 셀러 기본값이고,
+	 * 여러 폼이면 그중 가장 큰 값이다 (D-053). 무료배송 기준은 나중에 따로 적용한다.
 	 */
-	private void acquire(SaleForm form, int qty) {
-		int affected = saleFormRepository.hold(form.getId(), qty);
-
-		if (affected == 0) {
-			log.info("재고 확보 실패: saleFormId={}, qty={}", form.getId(), qty);
-			throw new OutOfStockException(form.getId(),
-					"'" + form.getTitle() + "' 의 재고가 부족하거나 판매가 마감되었습니다.");
-		}
+	private static int baseShippingFeeOf(List<SaleForm> forms, Seller seller) {
+		return forms.stream()
+				.mapToInt(SaleForm::appliedShippingFee)
+				.max()
+				.orElse(seller.getShippingFee());
 	}
 
 	/** 같은 옵션이 여러 번 실려 오면 합친다. 그래야 폼 단위 확보 수량이 정확해진다 */

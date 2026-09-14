@@ -222,7 +222,7 @@ class SaleFormServiceTest extends IntegrationTest {
 	}
 
 	private static SaleFormCreateRequest.OptionRequest option(String name, int deposit1, int deposit2) {
-		return new SaleFormCreateRequest.OptionRequest(name, deposit1, deposit2, 0);
+		return new SaleFormCreateRequest.OptionRequest(name, deposit1, deposit2, null, 0);
 	}
 
 	/** 테스트마다 한 항목만 바꿔 보내려고 둔 빌더 */
@@ -273,7 +273,7 @@ class SaleFormServiceTest extends IntegrationTest {
 		SaleFormCreateRequest build() {
 			return new SaleFormCreateRequest(
 					"겨울 공동구매", slug, saleType, stockMax, targetQty, 2,
-					null, closesAt, shortfallPolicy, "8월 20일(월) 순차발송", 10000,
+					null, closesAt, shortfallPolicy, "8월 20일(월) 순차발송", 10000, null,
 					null, true, List.of("https://cdn.example.com/1.jpg"),
 					List.of(new SaleFormCreateRequest.ProductRequest("머플러", 0, options))
 			);

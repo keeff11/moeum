@@ -15,8 +15,10 @@ import java.util.List;
 /**
  * 판매 폼 상세.
  *
- * 배송비는 폼이 아니라 셀러가 갖는다(스키마 v3 — 한 셀러 주문은 배송비 1회).
- * 그래서 옵션마다 붙이지 않고 폼 수준에 한 번만 실어 보낸다.
+ * 배송비는 묶음당 1회라 옵션마다 붙이지 않고 폼 수준에 한 번만 실어 보낸다.
+ * 폼에 정한 값(shippingFee)과 실제 적용값(appliedShippingFee)을 나눠 준다 —
+ * 수정이 전체 교체(PUT)라, 셀러 기본값을 따르는 폼에 적용값을 도로 보내면
+ * 그 순간 폼 값으로 굳어 버린다 (D-053).
  */
 public record SaleFormDetailResponse(
 		@Schema(description = "판매 폼 id", example = "12")
@@ -80,11 +82,20 @@ public record SaleFormDetailResponse(
 		@Schema(description = "노출 순서대로의 이미지 주소. 저장된 키를 읽기용 주소로 바꿔 준다")
 		List<String> images,
 
-		@Schema(description = "배송비. 묶음당 1회이고 2차금에서 청구된다", example = "3000")
-		int shippingFee,
+		@Schema(description = "이 폼에 정한 배송비. 셀러 기본값을 따르면 null. 수정(PUT)할 때는 이 값을 "
+				+ "그대로 돌려보낸다", example = "3000")
+		Integer shippingFee,
 
-		@Schema(description = "이 금액 이상이면 배송비 면제. 설정하지 않았으면 null", example = "50000")
+		@Schema(description = "실제로 적용되는 배송비. 폼 값이 없으면 셀러 기본값이다. 묶음당 1회이고 "
+				+ "공동구매는 2차금, 단독 판매는 1차금에 합산된다", example = "3000")
+		int appliedShippingFee,
+
+		@Schema(description = "이 금액 이상이면 배송비 면제. 셀러 설정이다. 없으면 null", example = "50000")
 		Integer freeShippingOver,
+
+		@Schema(description = "옵션 재고를 쓰는 폼인가. true 면 stockMax 는 옵션 재고의 합이고 "
+				+ "옵션 재고 수정 API 로만 바뀐다", example = "true")
+		boolean optionStock,
 
 		@Schema(description = "상품과 옵션 목록")
 		List<ProductResponse> products,
@@ -128,9 +139,22 @@ public record SaleFormDetailResponse(
 			@Schema(description = "2차금. 입고 후 청구되는 잔금", example = "12000")
 			int deposit2Amount,
 
-			@Schema(description = "옵션 총액(1차금+2차금). 배송비는 셀러 단위라 들어 있지 않다",
+			@Schema(description = "옵션 총액(1차금+2차금). 배송비는 들어 있지 않다",
 					example = "32000")
 			int optionAmount,
+
+			@Schema(description = "옵션 재고 상한. 옵션 재고를 쓰지 않는 폼이면 null", example = "50")
+			Integer stock,
+
+			@Schema(description = "이 옵션에서 결제 중이라 잡혀 있는 수량", example = "1")
+			int held,
+
+			@Schema(description = "이 옵션에서 결제가 끝난 수량", example = "12")
+			int sold,
+
+			@Schema(description = "이 옵션에서 지금 팔 수 있는 수량. 옵션 재고를 쓰지 않으면 null "
+					+ "— 그때는 폼의 remainingStock 을 본다", example = "37")
+			Integer remainingStock,
 
 			@Schema(description = "노출 순서. 작을수록 먼저", example = "0")
 			int sortOrder
@@ -143,6 +167,10 @@ public record SaleFormDetailResponse(
 					option.getDeposit1Amount(),
 					option.getDeposit2Amount(),
 					option.totalAmount(),
+					option.getStockMax(),
+					option.getHeld(),
+					option.getSold(),
+					option.remainingStock(),
 					option.getSortOrder()
 			);
 		}
@@ -170,8 +198,10 @@ public record SaleFormDetailResponse(
 				form.getDescriptionJson(),
 				form.isProgressPublic(),
 				imageUrls,
-				seller.getShippingFee(),
+				form.getShippingFee(),
+				form.appliedShippingFee(),
 				seller.getFreeShippingOver(),
+				form.hasOptionStock(),
 				form.getProducts().stream().map(ProductResponse::from).toList(),
 				form.getCreatedAt(),
 				form.getUpdatedAt()

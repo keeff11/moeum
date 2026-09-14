@@ -207,9 +207,9 @@ class SaleFormLifecycleTest extends IntegrationTest {
 		return saleFormService.create(KAKAO_ID, new SaleFormCreateRequest(
 				"겨울 공동구매", "winter-" + System.nanoTime(), SaleType.GROUP, 100, 30, 2,
 				null, LocalDateTime.now().plusDays(7), ShortfallPolicy.CANCEL,
-				"8월 20일(월) 순차발송", 10000, null, true,
+				"8월 20일(월) 순차발송", 10000, null, null, true,
 				List.of("sale-forms/1/a.jpg"),
 				List.of(new SaleFormCreateRequest.ProductRequest("머플러", 0,
-						List.of(new SaleFormCreateRequest.OptionRequest("옵션 A", 20000, 12000, 0))))));
+						List.of(new SaleFormCreateRequest.OptionRequest("옵션 A", 20000, 12000, null, 0))))));
 	}
 }

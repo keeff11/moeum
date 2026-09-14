@@ -17,7 +17,7 @@ import store.moeum.moeum.payment.domain.PaymentRepository;
 import store.moeum.moeum.payment.domain.PaymentPhase;
 import store.moeum.moeum.payment.domain.PaymentStatus;
 import store.moeum.moeum.saleform.domain.SaleForm;
-import store.moeum.moeum.saleform.domain.SaleFormRepository;
+import store.moeum.moeum.order.StockLedger;
 import store.moeum.moeum.saleform.domain.SaleFormStatus;
 import store.moeum.moeum.saleform.domain.SaleType;
 
@@ -44,7 +44,7 @@ public class RefundWriter {
 	private final RefundRepository refundRepository;
 	private final PaymentRepository paymentRepository;
 	private final OrderRepository orderRepository;
-	private final SaleFormRepository saleFormRepository;
+	private final StockLedger stockLedger;
 	private final OutboxRecorder outboxRecorder;
 	private final Clock clock;
 
@@ -195,7 +195,7 @@ public class RefundWriter {
 			log.info("재고를 되돌리지 않는다 (발주 완료): saleFormId={}, qty={}", form.getId(), order.getQty());
 			return;
 		}
-		int affected = saleFormRepository.restoreSold(form.getId(), order.getQty());
+		int affected = stockLedger.restoreSold(order);
 		if (affected == 0) {
 			// sold 가 그만큼 없다. 데이터가 어긋난 상태라 조용히 넘기지 않는다
 			log.error("재고 되돌리기 실패: saleFormId={}, qty={}", form.getId(), order.getQty());

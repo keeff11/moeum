@@ -121,6 +121,46 @@ public class OrderFixture {
 				saved.getOptions().get(0).getId(), saved.getOptions().get(1).getId());
 	}
 
+	/**
+	 * 옵션 재고를 쓰는 단독 판매 폼 (D-054). 옵션 A · B 에 각각 재고가 있고
+	 * 폼 재고는 그 합이다 — 서비스가 계산하는 것과 같은 모양으로 만든다.
+	 */
+	@Transactional
+	public Setup soloSaleFormWithOptionStock(int stockA, int stockB) {
+		Seller seller = sellerRepository.save(Seller.builder()
+				.kakaoId("kakao-optstock-seller-" + System.nanoTime())
+				.storeSlug("optstock-store-" + System.nanoTime())
+				.shippingFee(3000)
+				.build());
+		seller.approve();
+
+		long unique = System.nanoTime();
+
+		SaleForm form = SaleForm.builder()
+				.seller(seller)
+				.title("옵션 재고 단독 판매 " + unique)
+				.slug("optstock-" + unique)
+				.saleType(SaleType.SOLO)
+				.stockMax(stockA + stockB)
+				.minOrderAmount(0)
+				.build();
+
+		Product product = Product.builder().name("상품").sortOrder(0).build();
+		product.addOption(ProductOption.builder()
+				.name("옵션 A").deposit1Amount(32000).deposit2Amount(0).stockMax(stockA).sortOrder(0).build());
+		product.addOption(ProductOption.builder()
+				.name("옵션 B").deposit1Amount(45000).deposit2Amount(0).stockMax(stockB).sortOrder(1).build());
+		form.addProduct(product);
+
+		saleFormRepository.saveAndFlush(form);
+		jdbcTemplate.update("UPDATE sale_form SET status = ? WHERE id = ?",
+				SaleFormStatus.SELLING.name(), form.getId());
+
+		Product saved = form.getProducts().get(0);
+		return new Setup(seller.getId(), form.getId(),
+				saved.getOptions().get(0).getId(), saved.getOptions().get(1).getId());
+	}
+
 	/** 같은 셀러의 두 번째 폼. 여러 폼을 한 묶음에 담는 테스트용 */
 	@Transactional
 	public Setup saleFormOfSameSeller(Setup existing, int stockMax) {

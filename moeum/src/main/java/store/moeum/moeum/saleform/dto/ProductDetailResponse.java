@@ -81,16 +81,19 @@ public record ProductDetailResponse(
 					example = "moeum-store")
 			String storeSlug,
 
-			@Schema(description = "배송비. 묶음당 1회이고 2차금에서 청구된다", example = "3000") int shippingFee,
+			@Schema(description = "이 상품에 적용되는 배송비. 폼에 정한 값이 있으면 그것, 없으면 셀러 기본값이다. "
+					+ "묶음당 1회이고 공동구매는 2차금, 단독 판매는 1차금에 합산된다", example = "3000")
+			int shippingFee,
 			@Schema(description = "이 금액 이상이면 배송비 면제. 없으면 null", example = "50000")
 			Integer freeShippingOver) {
 
-		static SellerResponse from(Seller seller) {
+		/** @param appliedShippingFee 폼 값을 반영한 배송비. 셀러 필드를 그대로 쓰지 않는다 (D-053) */
+		static SellerResponse from(Seller seller, int appliedShippingFee) {
 			return new SellerResponse(
 					seller.getId(),
 					seller.displayName(),
 					seller.getStoreSlug(),
-					seller.getShippingFee(),
+					appliedShippingFee,
 					seller.getFreeShippingOver()
 			);
 		}
@@ -156,7 +159,7 @@ public record ProductDetailResponse(
 				form.getSaleType(),
 				form.getTitle(),
 				imageUrls,
-				SellerResponse.from(form.getSeller()),
+				SellerResponse.from(form.getSeller(), form.appliedShippingFee()),
 				form.getMinOrderAmount(),
 				form.getShipStartText(),
 				form.getClosesAt(),

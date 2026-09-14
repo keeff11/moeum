@@ -183,9 +183,17 @@ public class Seller extends BaseTimeEntity {
 
 	/** 주문 묶음 금액 기준 배송비. 무료 기준을 넘으면 0 */
 	public int shippingFeeFor(int orderAmount) {
+		return shippingFeeFor(orderAmount, shippingFee);
+	}
+
+	/**
+	 * 기본 배송비를 바꿔 끼운 판. 폼별 배송비(D-053)가 있으면 그 값이 {@code baseFee} 로 온다.
+	 * 무료배송 기준은 셀러 단위라 그대로 여기서 본다.
+	 */
+	public int shippingFeeFor(int orderAmount, int baseFee) {
 		if (freeShippingOver != null && orderAmount >= freeShippingOver) {
 			return 0;
 		}
-		return shippingFee;
+		return baseFee;
 	}
 }

@@ -116,6 +116,13 @@ public class SaleForm extends BaseTimeEntity {
 	@Column(name = "min_order_amount", nullable = false)
 	private int minOrderAmount;
 
+	/**
+	 * 폼별 배송비 (D-053). null 이면 셀러 기본 배송비를 따른다.
+	 * 0 은 null 이 아니다 — "이 폼은 배송비를 받지 않는다" 는 명시적 값이다.
+	 */
+	@Column(name = "shipping_fee")
+	private Integer shippingFee;
+
 	/** 상세 설명 Lexical JSON (ADR 0001) */
 	@JdbcTypeCode(SqlTypes.JSON)
 	@Column(name = "description_json")
@@ -148,7 +155,7 @@ public class SaleForm extends BaseTimeEntity {
 	private SaleForm(Seller seller, String title, String slug, SaleType saleType, int stockMax,
 	                 Integer targetQty, Integer maxPerUser, LocalDateTime opensAt, LocalDateTime closesAt,
 	                 ShortfallPolicy shortfallPolicy, String shipStartText, int minOrderAmount,
-	                 String descriptionJson, Boolean progressPublic) {
+	                 Integer shippingFee, String descriptionJson, Boolean progressPublic) {
 		this.seller = seller;
 		this.title = title;
 		this.slug = slug;
@@ -163,6 +170,7 @@ public class SaleForm extends BaseTimeEntity {
 		this.shortfallPolicy = shortfallPolicy;
 		this.shipStartText = shipStartText;
 		this.minOrderAmount = minOrderAmount;
+		this.shippingFee = shippingFee;
 		this.descriptionJson = descriptionJson;
 		this.progressPublic = (progressPublic == null) || progressPublic;
 	}
@@ -297,6 +305,52 @@ public class SaleForm extends BaseTimeEntity {
 		return held + sold;
 	}
 
+	// ---------------------------------------------------------------- 배송비 (D-053)
+
+	/** 이 폼에 실제로 적용되는 배송비. 폼 값이 없으면 셀러 기본값이다 */
+	public int appliedShippingFee() {
+		return (shippingFee != null) ? shippingFee : seller.getShippingFee();
+	}
+
+	// ---------------------------------------------------------------- 옵션 재고 (D-054)
+
+	/** 모든 옵션 */
+	public List<ProductOption> allOptions() {
+		return products.stream().flatMap(product -> product.getOptions().stream()).toList();
+	}
+
+	/**
+	 * 옵션 재고 모드인가. <b>옵션 전부에 재고가 있어야 한다</b> — 반만 있는 상태는
+	 * 생성 · 수정에서 막는다. 이 모드에서는 폼 재고가 옵션 합계로 계산된다.
+	 */
+	public boolean hasOptionStock() {
+		List<ProductOption> options = allOptions();
+		return !options.isEmpty() && options.stream().allMatch(ProductOption::hasStock);
+	}
+
+	/** 옵션 재고 합계. 옵션 재고 모드에서만 의미가 있다 */
+	public int optionStockSum() {
+		return allOptions().stream().mapToInt(ProductOption::getStockMax).sum();
+	}
+
+	/**
+	 * 옵션 재고 모드면 폼 재고를 옵션 합계로 맞춘다. 옵션 재고를 고친 뒤 부른다.
+	 *
+	 * @return 실제로 바뀌었으면 변경 이력, 아니면 null
+	 */
+	public FieldChange syncStockMaxToOptions() {
+		if (!hasOptionStock()) {
+			return null;
+		}
+		int sum = optionStockSum();
+		if (sum == stockMax) {
+			return null;
+		}
+		FieldChange change = new FieldChange("stockMax", stockMax, sum);
+		this.stockMax = sum;
+		return change;
+	}
+
 	/**
 	 * 수정 가능한 필드만 반영하고, 실제로 바뀐 것들을 돌려준다.
 	 * 호출자가 그 목록으로 sale_form_history 를 남긴다.
@@ -310,9 +364,11 @@ public class SaleForm extends BaseTimeEntity {
 		Integer newTargetQty = group ? update.targetQty() : null;
 		ShortfallPolicy newShortfallPolicy = group ? update.shortfallPolicy() : null;
 		boolean newProgressPublic = (update.progressPublic() == null) || update.progressPublic();
+		// 옵션 재고 모드면 폼 재고는 옵션 합계다. 보낸 값이 있어도 따르지 않는다 (D-054)
+		int newStockMax = hasOptionStock() ? optionStockSum() : update.stockMax();
 
 		record(changes, "title", title, update.title());
-		record(changes, "stockMax", stockMax, update.stockMax());
+		record(changes, "stockMax", stockMax, newStockMax);
 		record(changes, "targetQty", targetQty, newTargetQty);
 		record(changes, "maxPerUser", maxPerUser, update.maxPerUser());
 		record(changes, "opensAt", opensAt, update.opensAt());
@@ -320,13 +376,14 @@ public class SaleForm extends BaseTimeEntity {
 		record(changes, "shortfallPolicy", shortfallPolicy, newShortfallPolicy);
 		record(changes, "shipStartText", shipStartText, update.shipStartText());
 		record(changes, "minOrderAmount", minOrderAmount, update.minOrderAmount());
+		record(changes, "shippingFee", shippingFee, update.shippingFee());
 		record(changes, "descriptionJson", descriptionJson, update.descriptionJson());
 		record(changes, "progressPublic", progressPublic, newProgressPublic);
 		List<String> newImages = (update.images() == null) ? List.of() : update.images();
 		record(changes, "images", String.join(",", imageKeys()), String.join(",", newImages));
 
 		this.title = update.title();
-		this.stockMax = update.stockMax();
+		this.stockMax = newStockMax;
 		this.targetQty = newTargetQty;
 		this.maxPerUser = update.maxPerUser();
 		this.opensAt = update.opensAt();
@@ -334,6 +391,7 @@ public class SaleForm extends BaseTimeEntity {
 		this.shortfallPolicy = newShortfallPolicy;
 		this.shipStartText = update.shipStartText();
 		this.minOrderAmount = update.minOrderAmount();
+		this.shippingFee = update.shippingFee();
 		this.descriptionJson = update.descriptionJson();
 		this.progressPublic = newProgressPublic;
 		replaceImages(newImages);

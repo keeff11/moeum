@@ -38,10 +38,11 @@ public record SaleFormCreateRequest(
 		@NotNull(message = "판매 유형은 필수입니다")
 		SaleType saleType,
 
-		@Schema(description = "판매할 총 수량", requiredMode = Schema.RequiredMode.REQUIRED,
+		@Schema(description = "판매할 총 수량. 옵션마다 stock 을 넣었으면 비운다 — 서버가 옵션 합계로 "
+				+ "계산하고, 보낸 값은 무시된다. 옵션에 stock 이 없으면 필수다",
 				example = "100")
 		@Min(value = 1, message = "1 이상이어야 합니다")
-		int stockMax,
+		Integer stockMax,
 
 		@Schema(description = "목표 수량(모집 68/100 의 100). 공동구매는 필수, 단독 판매는 무시된다",
 				example = "100")
@@ -71,6 +72,13 @@ public record SaleFormCreateRequest(
 		@Schema(description = "최소 주문 금액. 0이면 제한 없음", example = "10000")
 		@Min(value = 0, message = "0 이상이어야 합니다")
 		int minOrderAmount,
+
+		@Schema(description = "이 폼의 배송비. 비우면 셀러가 가입할 때 등록한 기본 배송비를 따른다. "
+				+ "0 은 '배송비 없음' 이다. 주문 묶음당 1회이고, 한 묶음에 배송비가 다른 폼이 섞이면 "
+				+ "가장 큰 값 하나만 받는다. 무료배송 기준은 셀러 설정을 따른다",
+				example = "3000")
+		@Min(value = 0, message = "0 이상이어야 합니다")
+		Integer shippingFee,
 
 		@Schema(description = "상품 상세 설명. Lexical 에디터가 만든 JSON 문자열을 그대로 넣는다")
 		String descriptionJson,
@@ -111,7 +119,8 @@ public record SaleFormCreateRequest(
 	) {
 	}
 
-	@Schema(description = "옵션 하나. 가격은 절대값이다 — 기준가에 더하는 추가금이 아니다")
+	@Schema(description = "옵션 하나. 가격은 절대값이다 — 기준가에 더하는 추가금이 아니다. "
+			+ "공동구매는 1차금·2차금, 단독 판매는 1차금만(2차금은 0)")
 	public record OptionRequest(
 
 			@Schema(description = "옵션 이름", requiredMode = Schema.RequiredMode.REQUIRED,
@@ -124,9 +133,17 @@ public record SaleFormCreateRequest(
 			@Min(value = 0, message = "0 이상이어야 합니다")
 			int deposit1Amount,
 
-			@Schema(description = "2차금. 입고 후 청구되는 잔금. 1차금이 전액이면 0", example = "12000")
+			@Schema(description = "2차금. 입고 후 청구되는 잔금. 1차금이 전액이면 0. 단독 판매는 0 이어야 한다",
+					example = "12000")
 			@Min(value = 0, message = "0 이상이어야 합니다")
 			int deposit2Amount,
+
+			@Schema(description = "옵션 재고. 옵션마다 따로 팔 수량이 정해져 있을 때 넣는다. "
+					+ "한 폼 안에서는 전부 넣거나 전부 비워야 한다. 전부 넣으면 폼의 stockMax 는 "
+					+ "이 값들의 합으로 계산된다. 비우면 폼 재고만 따른다",
+					example = "50")
+			@Min(value = 0, message = "0 이상이어야 합니다")
+			Integer stock,
 
 			@Schema(description = "노출 순서. 작을수록 먼저 나온다", example = "0")
 			@Min(value = 0, message = "0 이상이어야 합니다")

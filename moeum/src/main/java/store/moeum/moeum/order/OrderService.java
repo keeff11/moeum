@@ -23,7 +23,6 @@ import store.moeum.moeum.order.domain.StockHold;
 import store.moeum.moeum.order.domain.StockHoldRepository;
 import store.moeum.moeum.order.dto.OrderCreateRequest;
 import store.moeum.moeum.order.dto.OrderGroupResponse;
-import store.moeum.moeum.saleform.domain.SaleFormRepository;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -37,7 +36,7 @@ public class OrderService {
 	private final CheckoutResumer checkoutResumer;
 	private final OrderGroupRepository orderGroupRepository;
 	private final StockHoldRepository stockHoldRepository;
-	private final SaleFormRepository saleFormRepository;
+	private final StockLedger stockLedger;
 	private final BuyerService buyerService;
 
 	/**
@@ -133,7 +132,7 @@ public class OrderService {
 			if (!hold.release()) {
 				continue;
 			}
-			saleFormRepository.releaseHold(hold.getSaleForm().getId(), hold.getQty());
+			stockLedger.release(hold);
 			released++;
 		}
 		if (released > 0) {

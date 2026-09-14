@@ -34,6 +34,7 @@ import store.moeum.moeum.seller.SellerService;
 import store.moeum.moeum.seller.domain.Seller;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 
 import static store.moeum.moeum.global.jpa.JpaAuditingConfig.KST;
@@ -70,7 +71,8 @@ public class SaleFormService {
 				.title(request.title())
 				.slug(request.slug())
 				.saleType(request.saleType())
-				.stockMax(request.stockMax())
+				// 옵션마다 재고가 있으면 폼 재고는 그 합계다 (D-054)
+				.stockMax(stockMaxOf(request))
 				// SOLO 는 목표수량이라는 개념이 없다. 요청에 실려 와도 버린다
 				.targetQty(group ? request.targetQty() : null)
 				.maxPerUser(request.maxPerUser())
@@ -80,6 +82,7 @@ public class SaleFormService {
 				.shortfallPolicy(group ? request.shortfallPolicy() : null)
 				.shipStartText(request.shipStartText())
 				.minOrderAmount(request.minOrderAmount())
+				.shippingFee(request.shippingFee())
 				.descriptionJson(request.descriptionJson())
 				.progressPublic(request.progressPublic())
 				.build();
@@ -97,6 +100,7 @@ public class SaleFormService {
 						.name(optionRequest.name())
 						.deposit1Amount(optionRequest.deposit1Amount())
 						.deposit2Amount(optionRequest.deposit2Amount())
+						.stockMax(optionRequest.stock())
 						.sortOrder(optionRequest.sortOrder())
 						.build());
 			}
@@ -345,11 +349,21 @@ public class SaleFormService {
 		Seller seller = sellerService.getByKakaoId(kakaoId);
 		SaleForm form = findOwned(seller, saleFormId);
 
-		validateGroupRules(form.getSaleType(), command.targetQty(), command.closesAt(), command.stockMax());
+		// 옵션 재고 모드면 폼 재고는 옵션 합계다. 보낸 값을 쓰지 않는다 (D-054)
+		int stockMax;
+		if (form.hasOptionStock()) {
+			stockMax = form.optionStockSum();
+		} else if (command.stockMax() != null) {
+			stockMax = command.stockMax();
+		} else {
+			throw new BusinessException(ErrorCode.INVALID_SALE_FORM, "재고 수량(stockMax)은 필수입니다.");
+		}
+
+		validateGroupRules(form.getSaleType(), command.targetQty(), command.closesAt(), stockMax);
 		validateSchedule(command.opensAt(), command.closesAt());
 
 		// 이미 팔렸거나 선점된 수량 밑으로 재고를 줄이면 초과 판매가 된다
-		if (command.stockMax() < form.committedQty()) {
+		if (stockMax < form.committedQty()) {
 			throw new BusinessException(ErrorCode.INVALID_SALE_FORM,
 					"이미 판매·선점된 수량(" + form.committedQty() + "개)보다 적게 줄일 수 없습니다.");
 		}
@@ -362,6 +376,59 @@ public class SaleFormService {
 							change.oldValue(), change.newValue(), seller.getId()))
 					.toList());
 		}
+
+		return SaleFormDetailResponse.of(form, seller, imageUrlsOf(form));
+	}
+
+	/**
+	 * 옵션 재고 수정 (D-054). 상품·옵션은 수정 대상이 아니지만 재고만은 예외다 —
+	 * 재입고를 반영할 길이 없으면 옵션 재고를 쓰는 폼은 다 팔린 뒤 새 폼을 만들어야 한다.
+	 *
+	 * 옵션 재고 모드인 폼만 받는다. 폼 재고 모드에서는 판매 폼 수정의 stockMax 가 그 역할이고,
+	 * 여기서 한 옵션에만 재고를 넣으면 반만 있는 상태가 된다.
+	 *
+	 * 옵션이 바뀌면 폼 재고도 합계로 따라간다. 둘 다 이력에 남긴다.
+	 */
+	@Transactional
+	public SaleFormDetailResponse updateOptionStock(String kakaoId, Long saleFormId, Long optionId, int stock) {
+		Seller seller = sellerService.getByKakaoId(kakaoId);
+		SaleForm form = findOwned(seller, saleFormId);
+
+		if (!form.hasOptionStock()) {
+			throw new BusinessException(ErrorCode.INVALID_SALE_FORM,
+					"옵션 재고를 쓰지 않는 폼입니다. 재고는 판매 폼 수정(stockMax)으로 바꿔 주세요.");
+		}
+		ProductOption option = form.allOptions().stream()
+				.filter(candidate -> candidate.getId().equals(optionId))
+				.findFirst()
+				.orElseThrow(() -> new BusinessException(ErrorCode.OPTION_NOT_FOUND));
+
+		// 이미 팔렸거나 선점된 수량 밑으로 줄이면 초과 판매가 된다
+		if (stock < option.committedQty()) {
+			throw new BusinessException(ErrorCode.INVALID_SALE_FORM,
+					"'" + option.getName() + "' 은 이미 판매·선점된 수량(" + option.committedQty()
+							+ "개)보다 적게 줄일 수 없습니다.");
+		}
+
+		Integer before = option.getStockMax();
+		if (!option.changeStock(stock)) {
+			return SaleFormDetailResponse.of(form, seller, imageUrlsOf(form));
+		}
+
+		// 합계가 목표수량 밑으로 내려가면 공동구매가 성립하지 않는다 — 폼 수정과 같은 검사
+		int newStockMax = form.optionStockSum();
+		if (form.getTargetQty() != null && form.getTargetQty() > newStockMax) {
+			throw new BusinessException(ErrorCode.INVALID_SALE_FORM, "목표수량이 재고보다 클 수 없습니다.");
+		}
+
+		List<SaleFormHistory> histories = new ArrayList<>();
+		histories.add(SaleFormHistory.of(form.getId(), "optionStock:" + optionId, before, stock, seller.getId()));
+		FieldChange stockMaxChange = form.syncStockMaxToOptions();
+		if (stockMaxChange != null) {
+			histories.add(SaleFormHistory.of(form.getId(), stockMaxChange.field(),
+					stockMaxChange.oldValue(), stockMaxChange.newValue(), seller.getId()));
+		}
+		saleFormHistoryRepository.saveAll(histories);
 
 		return SaleFormDetailResponse.of(form, seller, imageUrlsOf(form));
 	}
@@ -388,7 +455,8 @@ public class SaleFormService {
 	}
 
 	private void validate(SaleFormCreateRequest request) {
-		validateGroupRules(request.saleType(), request.targetQty(), request.closesAt(), request.stockMax());
+		validateOptionStock(request);
+		validateGroupRules(request.saleType(), request.targetQty(), request.closesAt(), stockMaxOf(request));
 		validateSchedule(request.opensAt(), request.closesAt());
 
 		if (request.saleType() == SaleType.SOLO) {
@@ -401,6 +469,45 @@ public class SaleFormService {
 						"단독 판매는 2차금을 둘 수 없습니다. deposit2Amount 는 0이어야 합니다.");
 			}
 		}
+	}
+
+	/**
+	 * 옵션 재고는 전부 넣거나 전부 비워야 한다 (D-054). 반만 있으면 "재고 없는 옵션" 이
+	 * 폼 재고를 다 먹어도 되는지 아닌지가 정해지지 않는다.
+	 *
+	 * 옵션 재고가 없으면 폼 재고(stockMax)가 있어야 한다.
+	 */
+	private void validateOptionStock(SaleFormCreateRequest request) {
+		List<SaleFormCreateRequest.OptionRequest> options = optionsOf(request);
+		long withStock = options.stream().filter(option -> option.stock() != null).count();
+
+		if (withStock != 0 && withStock != options.size()) {
+			throw new BusinessException(ErrorCode.INVALID_SALE_FORM,
+					"옵션 재고(stock)는 모든 옵션에 넣거나 모두 비워야 합니다.");
+		}
+		if (withStock == 0 && request.stockMax() == null) {
+			throw new BusinessException(ErrorCode.INVALID_SALE_FORM,
+					"재고 수량(stockMax)은 필수입니다. 옵션마다 재고를 넣으려면 옵션의 stock 에 넣어 주세요.");
+		}
+		if (withStock != 0 && stockMaxOf(request) < 1) {
+			throw new BusinessException(ErrorCode.INVALID_SALE_FORM, "옵션 재고 합계는 1 이상이어야 합니다.");
+		}
+	}
+
+	/** 옵션 재고가 전부 있으면 그 합계, 아니면 보낸 stockMax. {@link #validateOptionStock} 뒤에 부른다 */
+	private static int stockMaxOf(SaleFormCreateRequest request) {
+		List<SaleFormCreateRequest.OptionRequest> options = optionsOf(request);
+		boolean optionStock = !options.isEmpty()
+				&& options.stream().allMatch(option -> option.stock() != null);
+		return optionStock
+				? options.stream().mapToInt(SaleFormCreateRequest.OptionRequest::stock).sum()
+				: request.stockMax();
+	}
+
+	private static List<SaleFormCreateRequest.OptionRequest> optionsOf(SaleFormCreateRequest request) {
+		return request.products().stream()
+				.flatMap(product -> product.options().stream())
+				.toList();
 	}
 
 	/**

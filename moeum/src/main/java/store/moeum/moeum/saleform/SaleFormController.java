@@ -23,6 +23,7 @@ import store.moeum.moeum.order.PurchaseOrderService;
 import store.moeum.moeum.global.auth.SessionUser;
 import store.moeum.moeum.saleform.dto.ImageUploadUrlRequest;
 import store.moeum.moeum.saleform.dto.ImageUploadUrlResponse;
+import store.moeum.moeum.saleform.dto.OptionStockRequest;
 import store.moeum.moeum.saleform.dto.SaleFormCreateRequest;
 import store.moeum.moeum.saleform.dto.SaleFormDetailResponse;
 import store.moeum.moeum.saleform.dto.SaleFormHistoryResponse;
@@ -104,6 +105,25 @@ public class SaleFormController {
 	                                     @Parameter(description = "판매 폼 id", example = "12") @PathVariable Long saleFormId,
 	                                     @Valid @RequestBody SaleFormUpdateRequest request) {
 		return saleFormService.update(user.kakaoId(), saleFormId, request.toCommand());
+	}
+
+	/**
+	 * 옵션 재고 수정 (D-054). 상품·옵션은 수정 대상이 아니지만 재고만 예외다 — 재입고 때문이다.
+	 */
+	@Operation(summary = "옵션 재고 수정",
+			description = """
+					옵션 하나의 재고 상한을 바꾼다. 폼의 stockMax 는 옵션 합계로 따라 바뀐다.
+
+					★ 옵션 재고를 쓰는 폼(상세의 optionStock=true)만 받는다. 아니면 400 이다 —
+					  그 폼은 판매 폼 수정의 stockMax 로 재고를 바꾼다.
+					★ 이미 팔리거나 잡힌 수량보다 적게 줄일 수 없다.
+					""")
+	@PutMapping("/{saleFormId}/options/{optionId}/stock")
+	public SaleFormDetailResponse updateOptionStock(@LoginUser SessionUser user,
+			@Parameter(description = "판매 폼 id", example = "12") @PathVariable Long saleFormId,
+			@Parameter(description = "옵션 id", example = "31") @PathVariable Long optionId,
+			@Valid @RequestBody OptionStockRequest request) {
+		return saleFormService.updateOptionStock(user.kakaoId(), saleFormId, optionId, request.stock());
 	}
 
 	/**

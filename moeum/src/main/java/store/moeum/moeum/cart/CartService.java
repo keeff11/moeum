@@ -142,14 +142,20 @@ public class CartService {
 				.allMatch(item -> item.status() == CartResponse.ItemStatus.AVAILABLE);
 
 		// 주문 생성이 쓰는 것과 같은 기준이다. 여기서 다르게 계산하면 화면에 "무료배송" 이라
-		// 떠 놓고 2차금에서 배송비가 붙는다
-		int estimatedShippingFee = seller.shippingFeeFor(deposit1Total + deposit2Total);
+		// 떠 놓고 2차금에서 배송비가 붙는다. 기본값은 담긴 폼들의 배송비 중 가장 큰 것 (D-053)
+		int baseShippingFee = cart.getItems().stream()
+				.map(CartItem::getSaleForm)
+				.distinct()
+				.mapToInt(SaleForm::appliedShippingFee)
+				.max()
+				.orElse(seller.getShippingFee());
+		int estimatedShippingFee = seller.shippingFeeFor(deposit1Total + deposit2Total, baseShippingFee);
 
 		// sellerName 에 슬러그를 넣고 있었다. 상점 이름을 지은 셀러도 장바구니에서만
 		// 주소 문자열로 보였다 — 이름은 displayName(), 주소는 storeSlug 로 따로 내려보낸다
 		return new CartResponse(
 				cart.getId(), seller.getId(), seller.displayName(), seller.getStoreSlug(),
-				seller.getShippingFee(), seller.getFreeShippingOver(), estimatedShippingFee,
+				baseShippingFee, seller.getFreeShippingOver(), estimatedShippingFee,
 				deposit1Total, deposit2Total, orderable, items);
 	}
 
@@ -169,7 +175,7 @@ public class CartService {
 				item.getQty(),
 				option.getDeposit1Amount(),
 				option.getDeposit2Amount(),
-				Math.max(form.remainingStock(), 0),
+				Math.max(option.availableQty(), 0),
 				statusOf(item, form, now));
 	}
 
@@ -183,13 +189,15 @@ public class CartService {
 		if (closed) {
 			return CartResponse.ItemStatus.CLOSED;
 		}
-		if (form.remainingStock() <= 0) {
+		// 옵션 재고가 있으면 폼 재고와 옵션 재고 중 작은 쪽이 상한이다 (D-054)
+		int available = item.getOption().availableQty();
+		if (available <= 0) {
 			return CartResponse.ItemStatus.SOLD_OUT;
 		}
 		if (form.getMaxPerUser() != null && item.getQty() > form.getMaxPerUser()) {
 			return CartResponse.ItemStatus.MAX_PER_USER_EXCEEDED;
 		}
-		if (item.getQty() > form.remainingStock()) {
+		if (item.getQty() > available) {
 			return CartResponse.ItemStatus.NOT_ENOUGH_STOCK;
 		}
 		return CartResponse.ItemStatus.AVAILABLE;

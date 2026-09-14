@@ -22,9 +22,12 @@ public record SaleFormUpdateRequest(
 		@Size(max = 200, message = "200자를 넘을 수 없습니다")
 		String title,
 
-		@Schema(description = "판매할 총 수량. 이미 팔린 수량보다 적게 줄일 수 없다", example = "100")
+		@Schema(description = "판매할 총 수량. 이미 팔린 수량보다 적게 줄일 수 없다. "
+				+ "옵션 재고를 쓰는 폼은 옵션 합계가 쓰이므로 이 값을 보지 않는다 — 옵션 재고는 "
+				+ "옵션 재고 수정 API 로 고친다. 옵션 재고가 없는 폼은 필수다",
+				example = "100")
 		@Min(value = 1, message = "1 이상이어야 합니다")
-		int stockMax,
+		Integer stockMax,
 
 		@Schema(description = "목표 수량. 단독 판매는 무시된다", example = "100")
 		@Min(value = 1, message = "1 이상이어야 합니다")
@@ -51,6 +54,11 @@ public record SaleFormUpdateRequest(
 		@Min(value = 0, message = "0 이상이어야 합니다")
 		int minOrderAmount,
 
+		@Schema(description = "이 폼의 배송비. 비우면 셀러 기본 배송비를 따른다. 전체 교체라 유지하려면 "
+				+ "상세 응답의 shippingFee 를 그대로 다시 보낸다", example = "3000")
+		@Min(value = 0, message = "0 이상이어야 합니다")
+		Integer shippingFee,
+
 		@Schema(description = "상품 상세 설명. Lexical 에디터 JSON 문자열")
 		String descriptionJson,
 
@@ -65,6 +73,7 @@ public record SaleFormUpdateRequest(
 
 	public SaleFormUpdate toCommand() {
 		return new SaleFormUpdate(title, stockMax, targetQty, maxPerUser, opensAt, closesAt,
-				shortfallPolicy, shipStartText, minOrderAmount, descriptionJson, progressPublic, images);
+				shortfallPolicy, shipStartText, minOrderAmount, shippingFee, descriptionJson,
+				progressPublic, images);
 	}
 }

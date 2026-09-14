@@ -7,7 +7,6 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 import store.moeum.moeum.order.domain.StockHold;
 import store.moeum.moeum.order.domain.StockHoldRepository;
-import store.moeum.moeum.saleform.domain.SaleFormRepository;
 
 import java.util.List;
 
@@ -30,7 +29,7 @@ public class HoldExpiryBatch {
 	private static final int BATCH_SIZE = 100;
 
 	private final StockHoldRepository stockHoldRepository;
-	private final SaleFormRepository saleFormRepository;
+	private final StockLedger stockLedger;
 
 	@Transactional
 	@Scheduled(fixedDelayString = "${moeum.batch.hold-expiry-delay:60000}")
@@ -56,7 +55,7 @@ public class HoldExpiryBatch {
 			if (!hold.release()) {
 				continue;
 			}
-			int affected = saleFormRepository.releaseHold(hold.getSaleForm().getId(), hold.getQty());
+			int affected = stockLedger.release(hold);
 			if (affected == 0) {
 				// held 가 이미 그만큼 없다. 데이터가 어긋난 상태라 조용히 넘기지 않는다
 				log.warn("홀드 회수 시 재고 반환 실패: holdId={}, saleFormId={}, qty={}",
