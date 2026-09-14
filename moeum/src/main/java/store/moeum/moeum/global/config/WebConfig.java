@@ -7,6 +7,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.core.Ordered;
 import org.springframework.web.method.support.HandlerMethodArgumentResolver;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
+import org.springframework.web.servlet.config.annotation.ViewControllerRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 import store.moeum.moeum.global.auth.AllowedOrigins;
 import store.moeum.moeum.global.auth.OriginValidationFilter;
@@ -29,6 +30,18 @@ public class WebConfig implements WebMvcConfigurer {
 	 */
 	@Value("${moeum.auth.allowed-origins:}")
 	private List<String> configuredOrigins;
+
+	/**
+	 * 어드민 화면은 API 와 같은 출처에서 서빙한다 (D-052).
+	 *
+	 * 정적 리소스 핸들러는 디렉터리를 색인으로 풀어주지 않아 {@code /admin/} 이 404 가 된다.
+	 * 운영자가 {@code /admin/index.html} 을 끝까지 치게 만들 이유가 없어서 여기서 넘겨준다.
+	 */
+	@Override
+	public void addViewControllers(ViewControllerRegistry registry) {
+		registry.addRedirectViewController("/admin", "/admin/");
+		registry.addViewController("/admin/").setViewName("forward:/admin/index.html");
+	}
 
 	@Override
 	public void addArgumentResolvers(List<HandlerMethodArgumentResolver> resolvers) {

@@ -21,11 +21,15 @@ import store.moeum.moeum.seller.dto.SellerResponse;
  *
  * <b>운영자 인증을 앱에 붙이지 않는다 (D-039).</b> 셀러 가입이 오면 기획측이 사람 눈으로
  * 확인하고 허가하는 방식으로 정했다. 그래서 여기 필요한 것은 신청자 목록과 수락 두 가지고,
- * 접근 제어는 프록시가 맡는다 — {@code /admin/*} 은 {@code deploy/Caddyfile} 이 404 로
- * 막는다. <b>이 API 를 밖에서 부를 수 있게 하려면 Caddy 를 먼저 손봐야 한다.</b>
- * 지금 상태로는 인스턴스 안에서만 호출된다.
+ * 접근 제어는 프록시가 맡는다 — {@code /admin/*} 은 {@code deploy/Caddyfile} 의
+ * {@code basic_auth} 가 지킨다 (D-052).
+ *
+ * <b>이 클래스는 자기가 열려 있다고 가정한다.</b> 세션도 역할도 보지 않으므로,
+ * 그 기본인증이 뚫리면 신청자 개인정보가 통째로 나가고 누구나 셀러를 승인·반려할 수 있다.
+ * 심사 화면은 {@code static/admin/} 에 같은 출처로 두고, 계정 해시는
+ * Parameter Store 의 {@code ADMIN_PASSWORD_HASH} 다.
  */
-@Tag(name = "셀러 심사(관리자)", description = "신청자 목록 · 수동 승인 · 반려. 프록시가 외부 호출을 막는다")
+@Tag(name = "셀러 심사(관리자)", description = "신청자 목록 · 수동 승인 · 반려. 프록시 기본인증이 지킨다")
 @RestController
 @RequestMapping("/admin/sellers")
 @RequiredArgsConstructor
