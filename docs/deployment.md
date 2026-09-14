@@ -207,10 +207,49 @@ put MYSQL_PASSWORD "$(openssl rand -base64 24)"
 put SELLER_CRYPTO_KEY "$(openssl rand -base64 32)"
 put KAKAO_CLIENT_ID "카카오-REST-API-키"
 put KAKAO_REDIRECT_URI "https://api.moeum.store/auth/kakao/callback"
-put ALLOWED_ORIGINS "https://www.moeum.store,https://moeum.store"
+put ALLOWED_ORIGINS "https://www.moeum.store,https://moeum.store,https://studio.moeum.store,https://api.moeum.store"
 put DOMAIN "api.moeum.store"
 put LEGACY_DOMAIN "shop1.cloud"
 ```
+
+`ALLOWED_ORIGINS` 에 API 자기 자신(`https://api.moeum.store`)이 들어 있는 것은 오타가 아니다.
+심사 화면이 그 출처에서 돌기 때문이다 — 아래 D-052 항목을 보라. 목록의 **첫 항목이 로그인 후
+기본 복귀 지점**이라 `www` 를 맨 앞에 둔다.
+
+**이 값은 여기 적힌 것과 실제 파라미터가 어긋난 적이 있다.** `studio.moeum.store` 가 운영에는
+등록돼 있는데 문서에는 빠져 있어서, 프론트 문의를 "미등록" 으로 잘못 진단할 뻔했다.
+`--overwrite` 로 통째로 덮어쓰는 값이라 **고치기 전에 반드시 현재 값을 읽는다**:
+
+```bash
+aws ssm get-parameter --region ap-northeast-2 --name /moeum/prod/ALLOWED_ORIGINS --with-decryption --query Parameter.Value --output text
+```
+
+### 운영자 심사 화면 계정 (D-052)
+
+`/admin/*` 은 화면과 API 가 모두 Caddy 기본인증 뒤에 있다. **앱에는 운영자 인증이 없어서
+이 한 겹이 유일한 방어선이다.** 뚫리면 신청자의 대표자 실명 · 사업자등록번호 · 연락처가
+통째로 나가고 누구나 셀러를 승인·반려할 수 있다.
+
+비밀번호는 저장소에도 셸 히스토리에도 남기지 않는다. 해시만 파라미터로 넣는다.
+
+```bash
+# 비밀번호를 화면에 띄우지 않고 입력받아 bcrypt 해시만 얻는다
+docker run --rm -it caddy:2-alpine caddy hash-password
+```
+
+```bash
+read -rs ADMIN_HASH && put ADMIN_PASSWORD_HASH "$ADMIN_HASH" && unset ADMIN_HASH
+```
+
+계정 ID 는 `admin` 으로 고정이다(`deploy/Caddyfile`). 바꾸려면 Caddyfile 을 고친다.
+
+**스웨거 계정과 공유하지 않는다.** 그쪽은 프론트 개발자 전체가 쓰는 계정이고,
+이쪽은 셀러를 승인하는 권한이다. 파라미터를 등록하지 않으면 compose 의 기본 해시가
+쓰이는데 그 값은 **어떤 비밀번호와도 맞지 않는 잠금**이라 아무도 못 들어간다.
+기본값을 비우지 않는 이유는 스웨거와 같다 — 값이 없으면 Caddy 가 기동에 실패해
+사이트 전체가 내려간다.
+
+심사 화면 주소는 `https://api.moeum.store/admin/` 이다.
 
 `SELLER_CRYPTO_KEY` 는 **한 번 정하면 못 바꾼다.** 이 키로 암호화된 사업자번호·정산계좌를
 복호화할 수 없게 된다. 별도로 안전한 곳에 백업해 둔다.
