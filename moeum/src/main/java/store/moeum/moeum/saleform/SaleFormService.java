@@ -29,6 +29,7 @@ import store.moeum.moeum.saleform.domain.SaleType;
 import store.moeum.moeum.saleform.dto.SaleFormCreateRequest;
 import store.moeum.moeum.saleform.dto.SaleFormDetailResponse;
 import store.moeum.moeum.saleform.dto.SaleFormHistoryResponse;
+import store.moeum.moeum.saleform.dto.SaleFormProgressResponse;
 import store.moeum.moeum.saleform.dto.SaleFormSummaryResponse;
 import store.moeum.moeum.seller.SellerService;
 import store.moeum.moeum.seller.domain.Seller;
@@ -337,6 +338,25 @@ public class SaleFormService {
 		Seller seller = sellerService.getByKakaoId(kakaoId);
 		SaleForm owned = findOwned(seller, saleFormId);
 		return SaleFormDetailResponse.of(owned, seller, imageUrlsOf(owned));
+	}
+
+	/**
+	 * 판매 진행 현황 (S9 · D-058).
+	 *
+	 * <b>발주·입고 버튼의 결과를 볼 곳이다.</b> 전이 API 는 "몇 건 넘어갔다" 만 주고, 폼
+	 * 상세는 폼의 상태·재고만 말한다 — 진행 단계는 주문에 있어서(D-049) 어느 쪽에도 없었다.
+	 *
+	 * 소유권 확인을 {@code findOwned} 로 하는 이유는 상세·수정과 규칙이 같아야 하기
+	 * 때문이다. 남의 폼 id 를 넣으면 "없음" 으로 답한다.
+	 */
+	@Transactional(readOnly = true)
+	public SaleFormProgressResponse progress(String kakaoId, Long saleFormId) {
+		Seller seller = sellerService.getByKakaoId(kakaoId);
+		SaleForm form = findOwned(seller, saleFormId);
+
+		return SaleFormProgressResponse.of(form,
+				orderRepository.countStagesBySaleForm(saleFormId),
+				LocalDateTime.now(KST));
 	}
 
 	/**

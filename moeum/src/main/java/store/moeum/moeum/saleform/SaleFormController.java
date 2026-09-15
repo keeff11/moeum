@@ -27,6 +27,7 @@ import store.moeum.moeum.saleform.dto.OptionStockRequest;
 import store.moeum.moeum.saleform.dto.SaleFormCreateRequest;
 import store.moeum.moeum.saleform.dto.SaleFormDetailResponse;
 import store.moeum.moeum.saleform.dto.SaleFormHistoryResponse;
+import store.moeum.moeum.saleform.dto.SaleFormProgressResponse;
 import store.moeum.moeum.saleform.dto.SaleFormUpdateRequest;
 import store.moeum.moeum.saleform.dto.SaleFormSummaryResponse;
 
@@ -162,22 +163,32 @@ public class SaleFormController {
 	 */
 	@Operation(summary = "입고 처리",
 			description = """
-					이 폼의 결제 완료 주문을 입고 상태로 넘긴다. 응답은 처리된 주문 수다.
+					이 폼의 결제 완료 주문을 입고 상태로 넘긴다. 응답은 처리된 주문 수와
+					처리 후의 진행 현황(progress)이다 — 화면을 다시 그리는 데 조회 API 를
+					따로 부를 필요가 없다.
 
 					묶음의 모든 폼이 입고돼야 그 구매자의 2차금 청구가 열리고, 그때 알림이 나간다.
 					""")
 	@PostMapping("/{saleFormId}/arrive")
 	public ArrivedResponse arrive(@LoginUser SessionUser user,
 			@Parameter(description = "판매 폼 id", example = "12") @PathVariable Long saleFormId) {
-		return new ArrivedResponse(saleFormService.markArrived(user.kakaoId(), saleFormId));
+		int arrived = saleFormService.markArrived(user.kakaoId(), saleFormId);
+		return new ArrivedResponse(arrived, saleFormService.progress(user.kakaoId(), saleFormId));
 	}
 
-	/** @param arrivedOrders 이번에 입고 처리된 주문 수 */
+	/**
+	 * @param arrivedOrders 이번에 입고 처리된 주문 수
+	 * @param progress 처리 후의 진행 현황
+	 */
 	@Schema(description = "입고 처리 결과")
 	public record ArrivedResponse(
 			@Schema(description = "이번에 입고 상태로 넘어간 주문 수. 이미 입고된 건은 세지 않는다",
 					example = "3")
-			int arrivedOrders) {
+			int arrivedOrders,
+
+			@Schema(description = "처리 후의 진행 현황. 화면을 다시 그리는 데 쓴다 — "
+					+ "조회 API 를 따로 부를 필요가 없다")
+			SaleFormProgressResponse progress) {
 	}
 
 	/**
@@ -189,7 +200,7 @@ public class SaleFormController {
 	@Operation(summary = "발주 · 제작 시작",
 			description = """
 					모집이 마감된 이 판매의 주문을 '제작 중' 으로 넘긴다. 구매자 화면의 진행
-					배지가 이 값을 본다.
+					배지가 이 값을 본다. 응답에 처리 후의 진행 현황(progress)이 같이 온다.
 
 					★ 마감된 주문만 넘어간다. 모집이 끝나야 몇 개를 만들지가 정해지고,
 					  그 전에 발주하면 발주서의 수량과 어긋난다.
@@ -199,14 +210,43 @@ public class SaleFormController {
 	@PostMapping("/{saleFormId}/producing")
 	public ProducingResponse startProducing(@LoginUser SessionUser user,
 			@Parameter(description = "판매 폼 id", example = "12") @PathVariable Long saleFormId) {
-		return new ProducingResponse(saleFormService.startProducing(user.kakaoId(), saleFormId));
+		int producing = saleFormService.startProducing(user.kakaoId(), saleFormId);
+		return new ProducingResponse(producing, saleFormService.progress(user.kakaoId(), saleFormId));
 	}
 
 	@Schema(description = "발주 처리 결과")
 	public record ProducingResponse(
 			@Schema(description = "이번에 제작 중으로 넘어간 주문 수. 이미 제작 중인 건은 세지 않는다",
 					example = "5")
-			int producingOrders) {
+			int producingOrders,
+
+			@Schema(description = "처리 후의 진행 현황. 화면을 다시 그리는 데 쓴다 — "
+					+ "조회 API 를 따로 부를 필요가 없다")
+			SaleFormProgressResponse progress) {
+	}
+
+	/**
+	 * 판매 진행 현황 (S9 · D-058).
+	 *
+	 * 발주·입고를 누른 뒤 화면을 다시 그릴 때, 그리고 상세 화면을 열 때 부른다.
+	 */
+	@Operation(summary = "판매 진행 현황",
+			description = """
+					이 판매가 지금 어느 단계이고 단계마다 주문이 몇 건인지 준다. 발주·입고
+					버튼의 결과가 여기에 반영된다.
+
+					★ 지금 단계(stage)는 살아 있는 주문 중 가장 덜 진행된 것이다.
+					  한 건이라도 남아 있으면 판매가 그 단계를 벗어난 것이 아니다.
+					★ 숫자는 주문 수다. 수량이 아니다 — 한 주문이 3개를 사도 단계는 한 번만 움직인다.
+					★ 타임라인(stages)의 칸은 판매 유형마다 다르다. 단독 판매는 모집·발주가 없어
+					  결제 완료 → 배송 준비 중 → 발송 셋이다.
+					★ 버튼은 producibleOrders · arrivableOrders 가 0이면 끈다.
+					★ 결제 전·만료 주문은 세지 않는다. 취소는 canceledOrders 로 따로 준다.
+					""")
+	@GetMapping("/{saleFormId}/progress")
+	public SaleFormProgressResponse progress(@LoginUser SessionUser user,
+			@Parameter(description = "판매 폼 id", example = "12") @PathVariable Long saleFormId) {
+		return saleFormService.progress(user.kakaoId(), saleFormId);
 	}
 
 	@Operation(summary = "판매 폼 수정 이력",

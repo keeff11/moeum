@@ -10,11 +10,15 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import store.moeum.moeum.global.auth.SessionUser;
+import store.moeum.moeum.global.error.BusinessException;
 import store.moeum.moeum.order.dto.BuyerOrderStatus;
 import store.moeum.moeum.order.dto.OrderCreateRequest;
 import store.moeum.moeum.payment.PaymentService;
 import store.moeum.moeum.saleform.SaleFormCloseBatch;
 import store.moeum.moeum.saleform.SaleFormService;
+import store.moeum.moeum.saleform.dto.SaleFormProgressResponse;
+import store.moeum.moeum.saleform.dto.SaleFormProgressResponse.StageStep;
+import store.moeum.moeum.saleform.dto.SaleStage;
 import store.moeum.moeum.seller.domain.SellerRepository;
 import store.moeum.moeum.support.IntegrationTest;
 import store.moeum.moeum.support.OrderFixture;
@@ -26,6 +30,7 @@ import static com.github.tomakehurst.wiremock.client.WireMock.post;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * 주문의 진행 단계 (D-049).
@@ -209,7 +214,134 @@ class OrderProgressTest extends IntegrationTest {
 		assertThat(saleFormService.markArrived(sellerKakaoId, setup.saleFormId())).isEqualTo(1);
 	}
 
+	// ---------------------------------------------------------------- 진행 현황 (S9 · D-058)
+
+	@Test
+	@DisplayName("주문이_없어도_타임라인은_모집_중에_서_있다")
+	void 현황_주문_없음() {
+		// 아직 아무도 안 샀어도 판매는 모집 중이다. 여기가 비면 셀러는 단계를 볼 곳이 없다
+		SaleFormProgressResponse progress = progress();
+
+		assertThat(progress.stage()).isEqualTo(SaleStage.RECRUITING);
+		assertThat(progress.totalOrders()).isZero();
+		assertThat(progress.stages()).extracting(StageStep::stage)
+				.containsExactly(SaleStage.RECRUITING, SaleStage.CLOSED, SaleStage.PRODUCING,
+						SaleStage.ARRIVED, SaleStage.SHIPPED);
+	}
+
+	@Test
+	@DisplayName("발주를_누르면_현황이_제작_중으로_넘어간다")
+	void 현황_발주() {
+		// 셀러가 버튼을 누른 뒤 무엇이 달라졌는지 볼 곳이 이 API 다
+		pay();
+		saleFormService.close(sellerKakaoId, setup.saleFormId());
+
+		assertThat(progress().stage()).isEqualTo(SaleStage.CLOSED);
+		assertThat(progress().producibleOrders()).isEqualTo(1);
+
+		saleFormService.startProducing(sellerKakaoId, setup.saleFormId());
+
+		SaleFormProgressResponse after = progress();
+		assertThat(after.stage()).isEqualTo(SaleStage.PRODUCING);
+		assertThat(after.producibleOrders()).isZero();
+		assertThat(after.arrivableOrders()).isEqualTo(1);
+		assertThat(stepOf(after, SaleStage.PRODUCING).orders()).isEqualTo(1);
+		assertThat(stepOf(after, SaleStage.PRODUCING).current()).isTrue();
+		assertThat(stepOf(after, SaleStage.CLOSED).reached()).isTrue();
+		assertThat(stepOf(after, SaleStage.ARRIVED).reached()).isFalse();
+	}
+
+	@Test
+	@DisplayName("입고를_누르면_현황이_입고로_넘어가고_입고_대상이_없어진다")
+	void 현황_입고() {
+		pay();
+
+		SaleFormProgressResponse after = arrive();
+
+		assertThat(after.stage()).isEqualTo(SaleStage.ARRIVED);
+		assertThat(after.arrivableOrders()).isZero();
+		assertThat(stepOf(after, SaleStage.ARRIVED).orders()).isEqualTo(1);
+	}
+
+	@Test
+	@DisplayName("현황은_가장_덜_진행된_주문의_단계를_말한다")
+	void 현황_가장_덜_진행된_것() {
+		// 가장 앞선 것으로 잡으면 한 건만 발송해도 타임라인이 발송으로 뛴다.
+		// 셀러가 봐야 하는 것은 아직 처리하지 않은 쪽이다
+		pay();
+		pay();
+		jdbcTemplate.update("UPDATE orders SET status = 'SHIPPED' "
+				+ "WHERE id = (SELECT id FROM (SELECT MIN(id) AS id FROM orders) t)");
+
+		SaleFormProgressResponse progress = progress();
+
+		assertThat(progress.stage()).isEqualTo(SaleStage.RECRUITING);
+		assertThat(progress.totalOrders()).isEqualTo(2);
+		assertThat(stepOf(progress, SaleStage.SHIPPED).orders()).isEqualTo(1);
+		assertThat(stepOf(progress, SaleStage.SHIPPED).reached()).isFalse();
+	}
+
+	@Test
+	@DisplayName("취소된_주문은_단계에_서지_않고_따로_세어_준다")
+	void 현황_취소() {
+		// 몇 건이 빠졌는지는 셀러가 알아야 발주 수량과 대조할 수 있다
+		pay();
+		pay();
+		jdbcTemplate.update("UPDATE orders SET status = 'CANCELED' "
+				+ "WHERE id = (SELECT id FROM (SELECT MIN(id) AS id FROM orders) t)");
+
+		SaleFormProgressResponse progress = progress();
+
+		assertThat(progress.totalOrders()).isEqualTo(1);
+		assertThat(progress.canceledOrders()).isEqualTo(1);
+		assertThat(stepOf(progress, SaleStage.RECRUITING).orders()).isEqualTo(1);
+	}
+
+	@Test
+	@DisplayName("단독_판매의_타임라인에는_모집과_발주가_없다")
+	void 현황_단독() {
+		// 없는 칸을 회색으로 세워 두면 셀러는 영영 켜지지 않는 단계를 기다린다
+		fixture.clean();
+		fixture.buyerWithAddress("kakao-payer", "김서연");
+		setup = fixture.soloSaleForm(10);
+		sellerKakaoId = sellerRepository.findById(setup.sellerId()).orElseThrow().getKakaoId();
+		pay();
+
+		SaleFormProgressResponse progress = progress();
+
+		assertThat(progress.stages()).extracting(StageStep::stage)
+				.containsExactly(SaleStage.PAID, SaleStage.ARRIVED, SaleStage.SHIPPED);
+		assertThat(progress.stage()).isEqualTo(SaleStage.PAID);
+		// 받을 잔금이 없어 입고가 곧 배송 준비다 (D-046)
+		assertThat(stepOf(progress, SaleStage.ARRIVED).label()).isEqualTo("배송 준비 중");
+	}
+
+	@Test
+	@DisplayName("남의_판매_현황은_볼_수_없다")
+	void 현황_남의_폼() {
+		assertThatThrownBy(() -> saleFormService.progress("kakao-not-seller", setup.saleFormId()))
+				.isInstanceOf(BusinessException.class);
+	}
+
 	// ---------------------------------------------------------------- 도우미
+
+	private SaleFormProgressResponse progress() {
+		return saleFormService.progress(sellerKakaoId, setup.saleFormId());
+	}
+
+	/** 입고 처리 후의 현황. 실제 API 도 처리 결과에 현황을 실어 준다 */
+	private SaleFormProgressResponse arrive() {
+		saleFormService.markArrived(sellerKakaoId, setup.saleFormId());
+		return progress();
+	}
+
+	private static StageStep stepOf(SaleFormProgressResponse progress, SaleStage stage) {
+		return progress.stages().stream()
+				.filter(step -> step.stage() == stage)
+				.findFirst()
+				.orElseThrow(() -> new AssertionError("타임라인에 없는 단계다: " + stage));
+	}
+
 
 	private void pay() {
 		String sessionToken = orderService.place(buyer(), order()).sessionToken();

@@ -151,4 +151,36 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
 			         store.moeum.moeum.order.domain.OrderStatus.EXPIRED)
 			""")
 	List<Order> findNotifiableBySaleForm(@Param("saleFormId") Long saleFormId);
+
+	/**
+	 * 판매 상세의 단계 타임라인 — 이 폼의 주문을 진행 단계별로 한 번에 센다 (D-058).
+	 *
+	 * <b>셀러가 발주·입고를 누른 뒤 무엇이 달라졌는지 볼 곳이 여기다.</b> 전이 API 는
+	 * "몇 건 넘어갔다" 만 주고 지금 어느 단계에 몇 건이 서 있는지는 말하지 않는다.
+	 *
+	 * <b>CREATED · EXPIRED 는 세지 않는다.</b> 결제되지 않은 홀드라 진행 단계에 올라온
+	 * 적이 없다 — 세면 타임라인 첫 칸이 결제 전 주문까지 품은 숫자가 된다.
+	 * <b>CANCELED 는 따로 센다.</b> 단계 어디에도 서 있지 않지만, 몇 건이 빠졌는지는
+	 * 셀러가 알아야 발주 수량(D-045)과 대조할 수 있다.
+	 */
+	@Query("""
+			select new store.moeum.moeum.order.domain.SaleFormStageCounts(
+			       count(case when o.status = store.moeum.moeum.order.domain.OrderStatus.PAID
+			                  then 1 end),
+			       count(case when o.status = store.moeum.moeum.order.domain.OrderStatus.RECRUITING
+			                  then 1 end),
+			       count(case when o.status = store.moeum.moeum.order.domain.OrderStatus.CLOSED
+			                  then 1 end),
+			       count(case when o.status = store.moeum.moeum.order.domain.OrderStatus.PRODUCING
+			                  then 1 end),
+			       count(case when o.status = store.moeum.moeum.order.domain.OrderStatus.ARRIVED
+			                  then 1 end),
+			       count(case when o.status = store.moeum.moeum.order.domain.OrderStatus.SHIPPED
+			                  then 1 end),
+			       count(case when o.status = store.moeum.moeum.order.domain.OrderStatus.CANCELED
+			                  then 1 end))
+			  from Order o
+			 where o.saleForm.id = :saleFormId
+			""")
+	SaleFormStageCounts countStagesBySaleForm(@Param("saleFormId") Long saleFormId);
 }
