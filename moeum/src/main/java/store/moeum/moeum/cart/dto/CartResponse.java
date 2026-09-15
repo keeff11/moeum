@@ -106,7 +106,7 @@ public record CartResponse(
 
 	@Schema(description = """
 			AVAILABLE=주문 가능 · NOT_ENOUGH_STOCK=담은 수량이 재고보다 많음 · SOLD_OUT=품절
-			· CLOSED=마감 · MAX_PER_USER_EXCEEDED=1인당 구매 상한 초과""")
+			· CLOSED=마감 · PAUSED=셀러가 일시중지 · MAX_PER_USER_EXCEEDED=1인당 구매 상한 초과""")
 	public enum ItemStatus {
 		/** 주문 가능 */
 		AVAILABLE,
@@ -114,8 +114,14 @@ public record CartResponse(
 		NOT_ENOUGH_STOCK,
 		/** 재고 0 */
 		SOLD_OUT,
-		/** 마감됐거나 판매 중이 아니다 */
+		/** 마감됐다. 끝난 판매다 */
 		CLOSED,
+		/**
+		 * 셀러가 잠시 멈췄다. 주문은 막히지만 <b>끝난 판매가 아니다</b> —
+		 * CLOSED 로 묶어 '마감' 이라 보여 주면 다시 살 수 있는 항목을 지우게 된다.
+		 * 상세 화면의 {@code PublicStatus.PAUSED} 와 같은 뜻이다
+		 */
+		PAUSED,
 		/** 1인당 구매 상한을 넘었다 */
 		MAX_PER_USER_EXCEEDED
 	}

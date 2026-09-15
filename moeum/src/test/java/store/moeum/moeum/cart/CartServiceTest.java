@@ -123,6 +123,34 @@ class CartServiceTest extends IntegrationTest {
 	}
 
 	@Test
+	@DisplayName("담아둔_사이_일시중지되면_마감이_아니라_일시중지로_표시된다")
+	void 담아둔_사이_일시중지되면_마감이_아니라_일시중지로_표시된다() {
+		OrderFixture.Setup setup = fixture.saleForm(10, null);
+		cartService.add(BUYER, new CartAddRequest(setup.optionId(), 2));
+
+		jdbcTemplate.update("UPDATE sale_form SET status = 'PAUSED' WHERE id = ?", setup.saleFormId());
+
+		CartResponse cart = cartService.findMine(BUYER).get(0);
+		// CLOSED 로 접으면 재개될 판매를 '마감' 으로 보여 주게 된다 — 상세 화면과 같은 말을 해야 한다
+		assertThat(cart.items().get(0).status()).isEqualTo(CartResponse.ItemStatus.PAUSED);
+		assertThat(cart.orderable()).isFalse();
+	}
+
+	@Test
+	@DisplayName("일시중지여도_재고가_남아_있으면_품절이_아니다")
+	void 일시중지여도_재고가_남아_있으면_품절이_아니다() {
+		OrderFixture.Setup setup = fixture.saleForm(10, null);
+		cartService.add(BUYER, new CartAddRequest(setup.optionId(), 2));
+
+		jdbcTemplate.update("UPDATE sale_form SET status = 'PAUSED', sold = 10 WHERE id = ?",
+				setup.saleFormId());
+
+		CartResponse cart = cartService.findMine(BUYER).get(0);
+		// 일시중지가 품절보다 앞선다. PublicStatus.of 와 같은 순서다
+		assertThat(cart.items().get(0).status()).isEqualTo(CartResponse.ItemStatus.PAUSED);
+	}
+
+	@Test
 	@DisplayName("남은_재고보다_많이_담으면_상태로_표시된다")
 	void 남은_재고보다_많이_담으면_상태로_표시된다() {
 		OrderFixture.Setup setup = fixture.saleForm(10, null);

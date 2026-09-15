@@ -182,8 +182,16 @@ public class CartService {
 	/**
 	 * 조회 시점의 참고 상태다. 여기서 AVAILABLE 이라도 주문이 성공한다는 보장은 없다 —
 	 * 판정은 주문 생성의 조건부 UPDATE 한 곳에서만 한다.
+	 *
+	 * 갈래 순서는 상세 화면의 {@link store.moeum.moeum.saleform.dto.PublicStatus#of} 와 맞춘다.
+	 * 여기서만 다르게 접으면 같은 폼이 상세에서는 '일시중지', 장바구니에서는 '마감' 으로 보인다.
 	 */
 	private CartResponse.ItemStatus statusOf(CartItem item, SaleForm form, LocalDateTime now) {
+		// PAUSED 를 먼저 골라낸다. !=SELLING 으로 한꺼번에 접으면 여기 걸려 CLOSED 가 된다 —
+		// 일시중지는 셀러가 재개할 수 있는 판매라 '마감' 으로 보이면 담아둔 것을 지워 버린다
+		if (form.getStatus() == SaleFormStatus.PAUSED) {
+			return CartResponse.ItemStatus.PAUSED;
+		}
 		boolean closed = form.getStatus() != SaleFormStatus.SELLING
 				|| (form.getClosesAt() != null && !form.getClosesAt().isAfter(now));
 		if (closed) {
