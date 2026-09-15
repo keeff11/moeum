@@ -7,6 +7,8 @@ import org.springframework.transaction.annotation.Transactional;
 import store.moeum.moeum.buyer.domain.Buyer;
 import store.moeum.moeum.buyer.domain.BuyerAddress;
 import store.moeum.moeum.buyer.domain.BuyerAddressRepository;
+import store.moeum.moeum.buyer.domain.BuyerRefundAccount;
+import store.moeum.moeum.buyer.domain.BuyerRefundAccountRepository;
 import store.moeum.moeum.buyer.domain.BuyerRepository;
 import store.moeum.moeum.saleform.domain.Product;
 import store.moeum.moeum.saleform.domain.ProductOption;
@@ -26,6 +28,7 @@ public class OrderFixture {
 	private final SaleFormRepository saleFormRepository;
 	private final BuyerRepository buyerRepository;
 	private final BuyerAddressRepository buyerAddressRepository;
+	private final BuyerRefundAccountRepository refundAccountRepository;
 	private final JdbcTemplate jdbcTemplate;
 
 	public record Setup(Long sellerId, Long saleFormId, Long optionId, Long secondOptionId) {
@@ -37,7 +40,7 @@ public class OrderFixture {
 		for (String table : new String[]{
 				"second_charge", "payment_event", "refund", "payment", "outbox",
 				"stock_hold", "order_item", "orders", "shipping", "order_group",
-				"cart_item", "cart", "wishlist", "buyer_address", "buyer",
+				"cart_item", "cart", "wishlist", "buyer_address", "buyer_refund_account", "buyer",
 				"sale_form_history", "sale_form_image", "product_option", "product", "sale_form", "seller"}) {
 			jdbcTemplate.execute("DELETE FROM " + table);
 		}
@@ -55,9 +58,10 @@ public class OrderFixture {
 	}
 
 	/**
-	 * 구매자와 배송지를 미리 만들어 둔다.
+	 * 구매자와 배송지 · 환불 계좌를 미리 만들어 둔다.
 	 *
 	 * <b>/pay 가 배송지를 요구한다</b> (D-033) — 없으면 SHIPPING_ADDRESS_REQUIRED 로 막힌다.
+	 * <b>환불 계좌도 같이 요구한다</b> (D-057) — 없으면 REFUND_ACCOUNT_REQUIRED 다.
 	 * 결제까지 가는 테스트는 place() 전에 이걸 한 번 불러야 한다.
 	 *
 	 * @return 수령인 이름. 셀러 화면에 찍히는 값이라 카카오 닉네임과 다르다
@@ -75,6 +79,14 @@ public class OrderFixture {
 					.postalCode("06236")
 					.address1("서울 강남구 테헤란로 1")
 					.address2("2층")
+					.build());
+		}
+		if (refundAccountRepository.findByBuyerId(buyer.getId()).isEmpty()) {
+			refundAccountRepository.save(BuyerRefundAccount.builder()
+					.buyer(buyer)
+					.bank("국민은행")
+					.accountNo("1002123456789")
+					.holderName(recipientName)
 					.build());
 		}
 		return recipientName;

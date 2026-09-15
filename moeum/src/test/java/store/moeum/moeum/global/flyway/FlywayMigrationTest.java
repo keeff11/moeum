@@ -29,7 +29,8 @@ class FlywayMigrationTest extends IntegrationTest {
 			"shipping", "outbox",
 			"sale_form_image",   // V3
 			"wishlist",          // V8
-			"second_charge"      // V11
+			"second_charge",     // V11
+			"buyer_refund_account" // V15
 	);
 
 	/**

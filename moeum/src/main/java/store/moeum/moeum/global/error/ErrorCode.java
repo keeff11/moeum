@@ -35,6 +35,8 @@ public enum ErrorCode {
 	// --- 구매자 ---
 	BUYER_NOT_FOUND(HttpStatus.NOT_FOUND, "구매자 정보를 찾을 수 없습니다."),
 	ADDRESS_REQUIRED(HttpStatus.BAD_REQUEST, "배송지를 먼저 등록해 주세요."),
+	/** 1차금 결제의 선행 조건이다. 판매 유형을 가리지 않는다 (D-057) */
+	REFUND_ACCOUNT_REQUIRED(HttpStatus.BAD_REQUEST, "환불 계좌를 먼저 등록해 주세요."),
 
 	// --- 장바구니 ---
 	OPTION_NOT_FOUND(HttpStatus.NOT_FOUND, "상품 옵션을 찾을 수 없습니다."),

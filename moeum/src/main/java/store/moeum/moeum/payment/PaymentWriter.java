@@ -10,6 +10,7 @@ import store.moeum.moeum.global.error.ErrorCode;
 import store.moeum.moeum.buyer.domain.BuyerAddress;
 import store.moeum.moeum.cart.CartCleaner;
 import store.moeum.moeum.buyer.domain.BuyerAddressRepository;
+import store.moeum.moeum.buyer.domain.BuyerRefundAccountRepository;
 import store.moeum.moeum.global.jpa.JpaAuditingConfig;
 import store.moeum.moeum.order.domain.Order;
 import store.moeum.moeum.order.domain.OrderGroup;
@@ -67,6 +68,7 @@ public class PaymentWriter {
 	private final RefundRepository refundRepository;
 	private final ShippingRepository shippingRepository;
 	private final BuyerAddressRepository buyerAddressRepository;
+	private final BuyerRefundAccountRepository refundAccountRepository;
 
 	/**
 	 * 세션 생성 직전 준비 (payment-flow 9번).
@@ -86,6 +88,7 @@ public class PaymentWriter {
 		}
 		requireHoldsAlive(group);
 		requireShippingAddress(group);
+		requireRefundAccount(group);
 
 		int amount = group.firstPaymentAmount();
 		Payment payment = paymentRepository
@@ -205,6 +208,22 @@ public class PaymentWriter {
 	private void requireShippingAddress(OrderGroup group) {
 		if (!buyerAddressRepository.existsByBuyerId(group.getBuyer().getId())) {
 			throw new BusinessException(ErrorCode.SHIPPING_ADDRESS_REQUIRED);
+		}
+	}
+
+	/**
+	 * 환불 계좌가 없으면 결제 세션을 만들기 전에 막는다 (D-057).
+	 *
+	 * <b>판매 유형을 가리지 않는다.</b> 단독(재고) 판매도 같이 받는다 — 결제 수단으로
+	 * 되돌리지 못하는 환불(정산 후 환불 · S14)은 유형과 무관하게 생긴다. 그때 계좌를
+	 * 다시 받으려 하면 연락이 닿지 않는 구매자가 남는다.
+	 *
+	 * 스냅샷은 뜨지 않는다. 배송지와 달리 <b>돈을 보내는 시점의 계좌</b>가 맞는 값이라
+	 * 마스터 한 벌만 본다 ({@link store.moeum.moeum.buyer.domain.BuyerRefundAccount}).
+	 */
+	private void requireRefundAccount(OrderGroup group) {
+		if (!refundAccountRepository.existsByBuyerId(group.getBuyer().getId())) {
+			throw new BusinessException(ErrorCode.REFUND_ACCOUNT_REQUIRED);
 		}
 	}
 
