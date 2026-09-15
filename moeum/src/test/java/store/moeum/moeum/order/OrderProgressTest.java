@@ -224,9 +224,12 @@ class OrderProgressTest extends IntegrationTest {
 
 		assertThat(progress.stage()).isEqualTo(SaleStage.RECRUITING);
 		assertThat(progress.totalOrders()).isZero();
+		// 화면의 단계 스트립 여섯 칸 그대로다
 		assertThat(progress.stages()).extracting(StageStep::stage)
-				.containsExactly(SaleStage.RECRUITING, SaleStage.CLOSED, SaleStage.PRODUCING,
-						SaleStage.ARRIVED, SaleStage.SHIPPED);
+				.containsExactly(SaleStage.RECRUITING, SaleStage.CLOSED, SaleStage.ORDERED,
+						SaleStage.PRODUCING, SaleStage.ARRIVED, SaleStage.SHIPPED);
+		assertThat(progress.stages()).extracting(StageStep::label)
+				.containsExactly("모집중", "마감", "발주", "제작중", "입고·2차금", "발송");
 	}
 
 	@Test
@@ -238,6 +241,8 @@ class OrderProgressTest extends IntegrationTest {
 
 		assertThat(progress().stage()).isEqualTo(SaleStage.CLOSED);
 		assertThat(progress().producibleOrders()).isEqualTo(1);
+		assertThat(stepOf(progress(), SaleStage.ORDERED).reached()).isFalse();
+		assertThat(stepOf(progress(), SaleStage.ORDERED).orders()).isZero();
 
 		saleFormService.startProducing(sellerKakaoId, setup.saleFormId());
 
@@ -249,6 +254,11 @@ class OrderProgressTest extends IntegrationTest {
 		assertThat(stepOf(after, SaleStage.PRODUCING).current()).isTrue();
 		assertThat(stepOf(after, SaleStage.CLOSED).reached()).isTrue();
 		assertThat(stepOf(after, SaleStage.ARRIVED).reached()).isFalse();
+		// 발주와 제작중은 같은 전이의 두 칸이다 — 지나온 칸에 0건이 찍히면
+		// 셀러는 발주가 빠진 줄로 읽는다
+		assertThat(stepOf(after, SaleStage.ORDERED).reached()).isTrue();
+		assertThat(stepOf(after, SaleStage.ORDERED).current()).isFalse();
+		assertThat(stepOf(after, SaleStage.ORDERED).orders()).isEqualTo(1);
 	}
 
 	@Test

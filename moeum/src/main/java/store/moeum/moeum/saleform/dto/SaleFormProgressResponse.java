@@ -23,6 +23,9 @@ import java.util.Map;
  * <b>단계 숫자는 주문 수다.</b> 재고 수량(sold)이 아니다 — 한 주문이 3개를 사도 단계는
  * 한 번만 움직인다. 수량은 상세와 발주서(D-045)가 말한다.
  *
+ * <b>발주와 제작 중은 같은 전이의 두 칸이라 건수가 같다</b> ({@link SaleStage#ORDERED}).
+ * 그래서 <b>칸 건수를 더하지 않는다</b> — 전체 주문 수는 {@code totalOrders} 다.
+ *
  * <b>2차금 청구 대상 건수는 여기서 세지 않는다.</b> 그것은 묶음 단위이고 이미 주문 목록의
  * 탭 배지({@code countSellerOrderTabs})가 판매 폼별로 세고 있다 — 같은 숫자를 두 군데서
  * 따로 세면 갈라지고, 그때 셀러는 어느 쪽을 믿을지 모른다 (D-038).
@@ -44,13 +47,15 @@ public record SaleFormProgressResponse(
 		SaleFormStatus formStatus,
 
 		@Schema(description = "지금 단계. 살아 있는 주문 중 <b>가장 덜 진행된</b> 것의 단계다 — "
-				+ "한 건이라도 남아 있으면 판매가 그 단계를 벗어난 것이 아니다")
+				+ "한 건이라도 남아 있으면 판매가 그 단계를 벗어난 것이 아니다. "
+				+ "ORDERED(발주)는 여기 오지 않는다 — 제작 중과 같은 전이의 표시용 칸이다")
 		SaleStage stage,
 
 		@Schema(description = "지금 단계의 표시 문구", example = "마감")
 		String stageLabel,
 
-		@Schema(description = "타임라인. 이 판매 유형이 밟는 단계가 순서대로 온다")
+		@Schema(description = "타임라인. 이 판매 유형이 밟는 단계가 화면의 스트립 순서 그대로 온다. "
+				+ "공동구매 여섯 칸, 단독 판매 세 칸")
 		List<StageStep> stages,
 
 		@Schema(description = "살아 있는 주문 수. 결제 전·만료·취소는 빠진다", example = "8")
@@ -80,10 +85,12 @@ public record SaleFormProgressResponse(
 			@Schema(description = "단계")
 			SaleStage stage,
 
-			@Schema(description = "표시 문구", example = "발주·제작 중")
+			@Schema(description = "표시 문구. 화면의 단계 스트립에 찍는 말 그대로다", example = "제작중")
 			String label,
 
-			@Schema(description = "지금 이 단계에 서 있는 주문 수", example = "8")
+			@Schema(description = "지금 이 단계에 서 있는 주문 수. <b>발주 칸은 제작중 칸과 같은 "
+					+ "값이다</b>(같은 전이의 두 칸) — 칸 건수를 더하지 말고 totalOrders 를 쓴다",
+					example = "8")
 			int orders,
 
 			@Schema(description = "여기까지 왔는가. 지금 단계이거나 그보다 앞이면 true",
@@ -98,8 +105,10 @@ public record SaleFormProgressResponse(
 	                                          LocalDateTime countedAt) {
 		SaleType saleType = form.getSaleType();
 		List<SaleStage> timeline = SaleStage.timelineOf(saleType);
-		Map<SaleStage, Integer> orders = ordersByStage(counts, saleType);
-		SaleStage stage = currentStage(form, timeline, orders);
+		// 주문이 실제로 서 있는 단계. 발주 칸은 여기에 없다 — 현재 단계를 고를 때
+		// 제작 중과 같은 건수로 걸려 늘 발주가 뽑힌다
+		Map<SaleStage, Integer> standing = ordersByStage(counts, saleType);
+		SaleStage stage = currentStage(form, timeline, standing);
 
 		return new SaleFormProgressResponse(
 				form.getId(),
@@ -108,7 +117,7 @@ public record SaleFormProgressResponse(
 				form.getStatus(),
 				stage,
 				stage.labelOf(saleType),
-				steps(timeline, orders, stage, saleType),
+				steps(timeline, standing, stage, saleType),
 				(int) counts.live(),
 				(int) counts.canceled(),
 				(int) counts.closed(),
@@ -117,7 +126,7 @@ public record SaleFormProgressResponse(
 				countedAt);
 	}
 
-	private static List<StageStep> steps(List<SaleStage> timeline, Map<SaleStage, Integer> orders,
+	private static List<StageStep> steps(List<SaleStage> timeline, Map<SaleStage, Integer> standing,
 	                                     SaleStage stage, SaleType saleType) {
 		int currentIndex = timeline.indexOf(stage);
 		List<StageStep> steps = new ArrayList<>(timeline.size());
@@ -127,11 +136,23 @@ public record SaleFormProgressResponse(
 			steps.add(new StageStep(
 					step,
 					step.labelOf(saleType),
-					orders.getOrDefault(step, 0),
+					ordersAt(step, standing),
 					i <= currentIndex,
 					i == currentIndex));
 		}
 		return steps;
+	}
+
+	/**
+	 * 칸에 찍을 건수.
+	 *
+	 * <b>발주 칸은 제작 중 칸의 건수를 그대로 비춘다.</b> 화면은 발주와 제작 중이 두
+	 * 칸이지만 셀러가 누르는 버튼은 하나(발주·제작 시작)고 주문 상태도 PRODUCING 하나다
+	 * (D-049). 0으로 두면 <b>지나온 칸에 0건이 찍혀</b> 셀러는 발주가 빠진 줄로 읽는다.
+	 */
+	private static int ordersAt(SaleStage step, Map<SaleStage, Integer> standing) {
+		SaleStage source = step == SaleStage.ORDERED ? SaleStage.PRODUCING : step;
+		return standing.getOrDefault(source, 0);
 	}
 
 	/**
@@ -146,9 +167,10 @@ public record SaleFormProgressResponse(
 	 * 어느 단계인지 볼 곳이 없다.
 	 */
 	private static SaleStage currentStage(SaleForm form, List<SaleStage> timeline,
-	                                      Map<SaleStage, Integer> orders) {
+	                                      Map<SaleStage, Integer> standing) {
 		for (SaleStage stage : timeline) {
-			if (orders.getOrDefault(stage, 0) > 0) {
+			// 발주 칸에는 주문이 서지 않는다 — standing 에 없어 그대로 지나간다
+			if (standing.getOrDefault(stage, 0) > 0) {
 				return stage;
 			}
 		}

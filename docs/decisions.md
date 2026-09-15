@@ -2692,9 +2692,9 @@ boolean closed = form.getStatus() != SaleFormStatus.SELLING || ...;
 
 ```jsonc
 {
-  "stage": "PRODUCING", "stageLabel": "발주·제작 중",
-  "stages": [ { "stage": "RECRUITING", "label": "모집 중", "orders": 0,
-                "reached": true, "current": false }, ... ],
+  "stage": "PRODUCING", "stageLabel": "제작중",
+  "stages": [ { "stage": "RECRUITING", "label": "모집중", "orders": 0,
+                "reached": true, "current": false }, ... ],   // 화면의 여섯 칸 그대로
   "totalOrders": 8, "canceledOrders": 1,
   "producibleOrders": 0,   // '발주·제작 시작' 이 넘길 건수. 0이면 버튼을 끈다
   "arrivableOrders": 8     // '입고 처리' 가 넘길 건수
@@ -2722,12 +2722,23 @@ boolean closed = form.getStatus() != SaleFormStatus.SELLING || ...;
 숫자가 어긋나는 창**이 생긴다. 기존 필드(`producingOrders` · `arrivedOrders`)는 그대로
 두어 지금 붙어 있는 화면이 깨지지 않는다.
 
-### '발주' 와 '제작중' 은 한 단계다
+### 타임라인은 화면의 여섯 칸 그대로 준다
 
-화면의 스트립은 여섯 칸(모집중 · 마감 · 발주 · 제작중 · 입고·2차금 · 발송)인데 API 는
-다섯을 준다. 셀러가 누르는 버튼이 하나(발주·제작 시작)이고 그 전이도
-`CLOSED → PRODUCING` 하나뿐이다 (D-049). **없는 구분을 API 가 지어내면 영영 켜지지 않는
-칸이 생긴다** — 프론트가 두 칸을 그리고 싶으면 `PRODUCING` 하나로 둘을 같이 칠한다.
+처음에는 API 가 다섯 칸을 주고 '발주'·'제작중' 두 칸은 프론트가 `PRODUCING` 하나로
+같이 칠하게 두려 했다. 셀러가 누르는 버튼이 하나(발주·제작 시작)이고 그 전이도
+`CLOSED → PRODUCING` 하나뿐이라 (D-049) 서버에 없는 구분이기 때문이다.
+
+**뒤집어서 화면대로 여섯 칸을 준다** (모집중 · 마감 · 발주 · 제작중 · 입고·2차금 · 발송).
+"한 상태를 두 칸에 칠한다" 는 규칙이 화면에 있으면 **단계가 하나 늘 때 서버와 화면을 같이
+고쳐야 하고**, 칸을 합치고 쪼개는 코드가 화면마다 생긴다. 문구(`label`)도 스트립에 찍는
+말 그대로 내려보내, 프론트가 단계를 다시 이름 짓지 않게 했다.
+
+없는 구분을 지어낸 대가는 세 가지 규칙으로 막는다.
+
+- **`stage` 로는 `ORDERED` 가 오지 않는다.** 주문이 서 있는 단계가 아니라 표시용 칸이다
+- **발주 칸의 건수는 제작중 칸과 같다.** 0으로 두면 **지나온 칸에 0건이 찍혀** 셀러가
+  발주가 빠진 줄로 읽는다
+- 그래서 **칸 건수를 더하면 안 된다.** 전체 주문 수는 `totalOrders` 다
 
 단독 판매는 칸이 셋이다 (`PAID → ARRIVED → SHIPPED`). 모집·발주가 없고(domain.md 1절)
 받을 잔금도 없어(D-046) 입고가 곧 '배송 준비 중' 이라 **문구도 유형에 따라 다르게 준다.**
@@ -2744,4 +2755,4 @@ boolean closed = form.getStatus() != SaleFormStatus.SELLING || ...;
 센다** — 몇 건이 빠졌는지는 셀러가 알아야 발주 수량과 대조할 수 있다.
 
 **남은 것:** 프론트가 `/progress` 를 붙이고, 발주·입고 응답의 `progress` 로 화면을 다시
-그린다. 단계 스트립의 '발주'·'제작중' 두 칸은 `PRODUCING` 하나로 받는다.
+그린다. 단계 스트립은 `stages` 를 순서대로 그리면 되고, 칸 건수를 더하지 않는다.
