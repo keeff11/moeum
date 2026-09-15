@@ -44,6 +44,8 @@ public enum ErrorCode {
 	// --- 주문 · 재고 ---
 	OUT_OF_STOCK(HttpStatus.CONFLICT, "품절되었습니다."),
 	SALE_CLOSED(HttpStatus.CONFLICT, "판매가 마감되었습니다."),
+	// 마감과 가르는 이유는 되돌아올 수 있어서다. 마감 안내를 띄우면 다시 열릴 판매를 접게 한다
+	SALE_PAUSED(HttpStatus.CONFLICT, "판매자가 잠시 판매를 멈췄습니다."),
 	MAX_PER_USER_EXCEEDED(HttpStatus.CONFLICT, "1인당 구매 가능 수량을 넘었습니다."),
 	MULTIPLE_SELLERS(HttpStatus.BAD_REQUEST, "한 번에 한 셀러의 상품만 주문할 수 있습니다."),
 	ORDER_GROUP_NOT_FOUND(HttpStatus.NOT_FOUND, "주문을 찾을 수 없습니다."),

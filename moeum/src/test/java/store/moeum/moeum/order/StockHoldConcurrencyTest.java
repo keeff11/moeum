@@ -125,6 +125,24 @@ class StockHoldConcurrencyTest extends IntegrationTest {
 	}
 
 	@Test
+	@DisplayName("일시중지된_폼을_주문하면_품절이_아니라_일시중지로_거절한다")
+	void 일시중지된_폼을_주문하면_품절이_아니라_일시중지로_거절한다() {
+		OrderFixture.Setup setup = fixture.saleForm(10, null);
+		jdbcTemplate.update("UPDATE sale_form SET status = 'PAUSED' WHERE id = ?", setup.saleFormId());
+
+		SessionUser buyer = new SessionUser("kakao-paused", "일시중지");
+
+		// 화면 분기는 메시지가 아니라 code 로 한다 — OUT_OF_STOCK 이면 품절 안내가 뜬다
+		assertThatThrownBy(() -> orderService.place(buyer, order(setup.optionId(), 1)))
+				.isInstanceOf(OutOfStockException.class)
+				.extracting(e -> ((BusinessException) e).errorCode())
+				.isEqualTo(ErrorCode.SALE_PAUSED);
+
+		// 재고는 움직이지 않는다. 그리고 타입이 같아야 재시도 제외 규칙을 그대로 탄다
+		assertThat(intOf("SELECT held FROM sale_form WHERE id = ?", setup.saleFormId())).isZero();
+	}
+
+	@Test
 	@DisplayName("여러_폼을_담으면_하나만_품절이어도_전체_롤백된다")
 	void 여러_폼을_담으면_하나만_품절이어도_전체_롤백된다() {
 		OrderFixture.Setup plenty = fixture.saleForm(100, null);

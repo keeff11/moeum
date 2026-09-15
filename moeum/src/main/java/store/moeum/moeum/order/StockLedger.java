@@ -3,6 +3,7 @@ package store.moeum.moeum.order;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
+import store.moeum.moeum.global.error.ErrorCode;
 import store.moeum.moeum.order.domain.Order;
 import store.moeum.moeum.order.domain.OrderItem;
 import store.moeum.moeum.order.domain.StockHold;
@@ -11,6 +12,7 @@ import store.moeum.moeum.saleform.domain.ProductOption;
 import store.moeum.moeum.saleform.domain.ProductOptionRepository;
 import store.moeum.moeum.saleform.domain.SaleForm;
 import store.moeum.moeum.saleform.domain.SaleFormRepository;
+import store.moeum.moeum.saleform.domain.SaleFormStatus;
 
 import java.util.Comparator;
 import java.util.List;
@@ -54,7 +56,14 @@ public class StockLedger {
 
 		int affected = saleFormRepository.hold(form.getId(), totalQty);
 		if (affected == 0) {
-			log.info("재고 확보 실패: saleFormId={}, qty={}", form.getId(), totalQty);
+			log.info("재고 확보 실패: saleFormId={}, qty={}, status={}",
+					form.getId(), totalQty, form.getStatus());
+			// 일시중지는 따로 말한다. hold 의 WHERE 가 status='SELLING' 이라 여기 같이 떨어지는데,
+			// '마감되었습니다' 로 답하면 셀러가 곧 다시 열 판매를 구매자가 끝난 것으로 본다
+			if (form.getStatus() == SaleFormStatus.PAUSED) {
+				throw new OutOfStockException(ErrorCode.SALE_PAUSED, form.getId(),
+						"'" + form.getTitle() + "' 은 판매자가 잠시 판매를 멈췄습니다.");
+			}
 			throw new OutOfStockException(form.getId(),
 					"'" + form.getTitle() + "' 의 재고가 부족하거나 판매가 마감되었습니다.");
 		}
