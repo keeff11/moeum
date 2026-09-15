@@ -21,7 +21,13 @@ public interface RefundRepository extends JpaRepository<Refund, Long> {
 	@Query("select r from Refund r where r.id = :id")
 	Optional<Refund> findByIdForUpdate(@Param("id") Long id);
 
-	/** 이미 환불된 누적. 세금 안분의 기준이다 */
+	/**
+	 * 이미 환불된 누적. 세금 안분의 기준이다.
+	 *
+	 * <b>정산 후 직접 이체건({@code settled_manual})은 빼고 센다</b> (D-059). 그 돈은
+	 * 셀러 계좌에서 나갔지 point3 세션에서 나간 것이 아니다 — 여기 섞으면 point3 쪽
+	 * 취소 가능 잔액을 실제보다 적게 보고 남은 금액을 못 돌려주게 된다.
+	 */
 	@Query("""
 			select new store.moeum.moeum.payment.refund.RefundedTotals(
 			         coalesce(sum(r.amount), 0L),
@@ -30,8 +36,15 @@ public interface RefundRepository extends JpaRepository<Refund, Long> {
 			  from Refund r
 			 where r.paymentId = :paymentId
 			   and r.status = store.moeum.moeum.payment.refund.RefundStatus.COMPLETED
+			   and r.settledManual = false
 			""")
 	RefundedTotals sumCompleted(@Param("paymentId") Long paymentId);
+
+	/**
+	 * 셀러 결제 내역(G10)이 쓴다. 줄마다 취소 상태를 찍어야 하는데 한 결제씩 부르면
+	 * 목록 크기만큼 조회가 나간다 — 한 번에 끌어와 결제 id 로 접는다.
+	 */
+	List<Refund> findByPaymentIdIn(List<Long> paymentIds);
 
 	/**
 	 * 이 묶음에서 확정된 취소의 요청 주체. 최근 것이 앞에 온다.

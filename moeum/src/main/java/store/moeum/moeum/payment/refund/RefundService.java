@@ -164,8 +164,15 @@ public class RefundService {
 		}
 	}
 
+	/**
+	 * point3 로 나갈 사유. <b>refund 행에 저장한 값을 그대로 보낸다.</b>
+	 *
+	 * 예전에는 "구매자 요청" 으로 굳어 있었는데, 셀러도 취소할 수 있게 되면서(D-059)
+	 * point3 쪽 내역에 누가 건 취소인지가 전부 구매자로 남게 됐다.
+	 */
 	private static String reasonOf(RefundWriter.Prepared prepared) {
-		return "구매자 요청";
+		String reason = prepared.reason();
+		return (reason == null || reason.isBlank()) ? "주문 취소" : reason;
 	}
 
 	// ---------------------------------------------------------------- 결과

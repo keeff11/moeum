@@ -80,7 +80,8 @@ public class RefundWriter {
 				Refund.request(paymentId, orderId, newIdempotencyKey(), tax, reason, requester));
 
 		log.info("취소 요청 준비: refundId={}, paymentId={}, amount={}", refund.getId(), paymentId, tax.amount());
-		return new Prepared(refund.getId(), payment.getSessionId(), tax, refund.getIdempotencyKey());
+		return new Prepared(refund.getId(), payment.getSessionId(), tax,
+				refund.getIdempotencyKey(), refund.getReason());
 	}
 
 	/**
@@ -97,13 +98,44 @@ public class RefundWriter {
 		if (!refund.markCompleted(point3RefundId)) {
 			return false;
 		}
+		applyCancellation(refund);
+		return true;
+	}
 
+	/**
+	 * 정산 후 직접 이체를 마쳤다고 셀러가 표시한다 (S14 · D-059).
+	 *
+	 * <b>{@link #complete} 와 뒷정리가 같아야 한다.</b> 돈이 나간 경로만 다를 뿐 구매자
+	 * 입장에서는 똑같이 취소된 주문이다 — 재고를 되돌리고 주문을 취소로 내리고 알림을
+	 * 내보내는 것까지 같은 코드를 탄다. 갈라지면 "환불은 받았는데 주문은 살아 있는" 건이 남는다.
+	 *
+	 * @return 이번 호출로 처리됐으면 true. false 면 이미 처리된 건이라 아무것도 하지 않았다
+	 */
+	@Transactional(propagation = Propagation.REQUIRES_NEW)
+	public boolean completeManually(Long refundId) {
+		Refund refund = refundRepository.findByIdForUpdate(refundId)
+				.orElseThrow(() -> new BusinessException(ErrorCode.REFUND_NOT_FOUND));
+
+		if (!refund.markManuallyRefunded(LocalDateTime.now(clock))) {
+			return false;
+		}
+		applyCancellation(refund);
+		return true;
+	}
+
+	/**
+	 * 환불이 확정된 뒤의 뒷정리 — 재고 되돌림 · 주문 취소 · 알림.
+	 *
+	 * <b>반드시 멱등 가드 안쪽에서만 부른다.</b> 두 번 불리면 재고가 두 번 돌아가고
+	 * 알림이 쌓인다.
+	 */
+	private void applyCancellation(Refund refund) {
 		Payment payment = paymentRepository.findById(refund.getPaymentId())
 				.orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_NOT_FOUND));
 		if (payment.getPhase() == PaymentPhase.SECOND) {
 			// 하나의 주문 취소가 1차금·2차금 두 건의 환불로 나간다. 여기서 또 정리하면
 			// 재고가 두 번 돌아간다 — 재고와 주문 상태는 1차금 쪽에서만 건드린다
-			return true;
+			return;
 		}
 
 		List<Order> targets = targetsOf(refund, payment);
@@ -112,14 +144,12 @@ public class RefundWriter {
 		targets.forEach(order -> order.cancel(now));
 		payment.getOrderGroup().cancelIfAllOrdersCanceled(now);
 
-		// 멱등 가드 안쪽이다. 밖으로 빼면 대사 배치가 확정된 취소를 다시 훑을 때마다 알림이 쌓인다
 		outboxRecorder.record(OutboxAggregate.ORDER_GROUP, payment.getOrderGroup().getId(),
 				OutboxEventType.REFUND_COMPLETED,
 				java.util.Map.of(
 						"orderToken", payment.getOrderGroup().getOrderToken(),
 						"buyerId", payment.getOrderGroup().getBuyer().getId(),
 						"amount", refund.getAmount()));
-		return true;
 	}
 
 	/**
@@ -226,7 +256,9 @@ public class RefundWriter {
 
 	// ---------------------------------------------------------------- 반환 타입
 
-	public record Prepared(Long refundId, String sessionId, RefundTax tax, String idempotencyKey) {
+	/** @param reason point3 로 그대로 나가는 사유. 셀러 취소인지 구매자 취소인지가 여기 남는다 */
+	public record Prepared(Long refundId, String sessionId, RefundTax tax,
+	                       String idempotencyKey, String reason) {
 	}
 
 	public record RefundSnapshot(Long refundId, String sessionId, String point3RefundId, int amount) {

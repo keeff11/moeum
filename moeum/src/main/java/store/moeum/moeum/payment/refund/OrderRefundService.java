@@ -55,6 +55,22 @@ public class OrderRefundService {
 	}
 
 	/**
+	 * 셀러가 결제 내역(G10)에서 거는 취소 (D-059).
+	 *
+	 * <b>구매자 취소와 같은 엔진·같은 구간 정책을 탄다.</b> 다른 것은 소유권을 보는 쪽과
+	 * {@code requested_by} 뿐이다 — 돌려준 돈은 되돌릴 수 없어서, 누가 걸었는지가
+	 * refund 행에 남아야 나중에 따질 수 있다.
+	 *
+	 * @param sellerId 세션에서 꺼낸 셀러
+	 * @param orderNo  화면 카드에 찍힌 주문번호
+	 * @param orderId  폼 하나만 취소하면 그 주문 id, 남은 폼 전부면 null
+	 */
+	public OrderRefundResponse refundBySeller(Long sellerId, String orderNo, Long orderId, String reason) {
+		RefundPlan plan = reader.sellerPlan(sellerId, orderNo, orderId);
+		return execute(plan, note(reason, "판매자 취소"), RefundRequester.SELLER);
+	}
+
+	/**
 	 * 시스템이 거는 주문 취소 — 목표수량 미달 등 (D-026).
 	 *
 	 * <b>소유권도 취소 구간도 보지 않는다.</b> 구매자 잘못이 아니라 폼이 성립하지 않은 것이다.

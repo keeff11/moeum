@@ -13,6 +13,8 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import store.moeum.moeum.global.jpa.BaseTimeEntity;
 
+import java.time.LocalDateTime;
+
 /**
  * 취소 한 건. point3 의 환불 항목 하나에 대응한다.
  *
@@ -78,6 +80,16 @@ public class Refund extends BaseTimeEntity {
 	@Column(name = "settled_manual", nullable = false)
 	private boolean settledManual;
 
+	/**
+	 * 셀러가 계좌로 직접 이체를 마쳤다고 표시한 시각 (S14 · D-059).
+	 *
+	 * <b>{@code settledManual} 만으로는 처리 여부를 알 수 없다.</b> 그 값은 "시스템으로는
+	 * 취소할 수 없다" 까지만 말한다 — 접수된 건이 실제로 구매자에게 돌아갔는지는
+	 * 여기가 비었는가로 가른다. 비어 있으면 셀러가 해야 할 일이 남아 있는 것이다.
+	 */
+	@Column(name = "manual_refunded_at")
+	private LocalDateTime manualRefundedAt;
+
 	private Refund(Long paymentId, Long orderId, String idempotencyKey,
 	               RefundTax tax, String reason, RefundRequester requestedBy) {
 		this.paymentId = paymentId;
@@ -135,6 +147,36 @@ public class Refund extends BaseTimeEntity {
 	public void markSettledManual() {
 		this.settledManual = true;
 		markFailed("정산 완료 — 셀러 직접 환불");
+	}
+
+	/** 셀러가 손으로 처리해야 할 환불이 남아 있는가 (S14 의 '환불 대기') */
+	public boolean isManualPending() {
+		return settledManual && manualRefundedAt == null;
+	}
+
+	/**
+	 * 셀러가 계좌로 직접 이체를 마쳤다 (S14 · D-059).
+	 *
+	 * <b>돈이 실제로 나갔는지는 우리가 확인할 수 없다.</b> point3 를 거치지 않는 이체라
+	 * 이 표시는 셀러의 자기 신고다 — 그래서 되돌릴 수 없는 한 방향 전이로 두고,
+	 * 누가 언제 눌렀는지를 {@code manual_refunded_at} 에 남긴다.
+	 *
+	 * <b>멱등하다.</b> 두 번 눌러도 재고가 두 번 돌아가면 안 된다.
+	 *
+	 * @return 이번 호출로 처리됐으면 true. false 면 이미 끝난 건이다
+	 * @throws IllegalStateException 정산 후 환불 접수건이 아닐 때
+	 */
+	public boolean markManuallyRefunded(LocalDateTime at) {
+		if (!settledManual) {
+			throw new IllegalStateException(
+					"정산 후 환불 접수건이 아니다. 시스템 취소로 처리할 건이다 (id=" + id + ")");
+		}
+		if (manualRefundedAt != null) {
+			return false;
+		}
+		this.manualRefundedAt = at;
+		this.status = RefundStatus.COMPLETED;
+		return true;
 	}
 
 	/** point3 가 준 항목 id 를 붙인다. 미확정 409 응답에도 실려 올 수 있다 */

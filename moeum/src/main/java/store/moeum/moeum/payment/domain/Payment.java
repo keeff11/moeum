@@ -215,6 +215,19 @@ public class Payment extends BaseTimeEntity {
 		return phase == PaymentPhase.FIRST;
 	}
 
+	/**
+	 * 셀러·구매자가 같이 부를 결제번호 — 주문번호 뒤에 차수를 붙인다 (G10 · D-059).
+	 *
+	 * <b>따로 채번하지 않는다.</b> 결제는 묶음 × 차수라 주문번호와 차수만으로 유일하고
+	 * (uk_payment_group_phase), 번호를 하나 더 만들면 셀러가 화면에서 본 번호와
+	 * 문의할 때 부르는 번호가 갈라진다.
+	 *
+	 * 주문번호는 {@code markPayPending} 에서 발급되므로, 결제창까지 간 결제에는 반드시 있다.
+	 */
+	public String paymentNo() {
+		return orderGroup.getOrderNo() + "-" + (isFirst() ? "1" : "2");
+	}
+
 	/** fail_reason 은 100자다. 이유가 길다고 결제 처리가 실패하면 안 된다 */
 	private static String truncate(String reason) {
 		if (reason == null) {

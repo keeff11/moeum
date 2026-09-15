@@ -390,6 +390,8 @@ CREATE TABLE refund (
                      COMMENT 'PROCESSING, COMPLETED, FAILED',
     settled_manual   TINYINT(1)   NOT NULL DEFAULT 0
                      COMMENT '정산 완료 후 셀러 직접 환불 접수건',
+    manual_refunded_at DATETIME(6)    NULL
+                     COMMENT '정산 후 셀러가 직접 이체를 마쳤다고 표시한 시각 (S14). 비어 있으면 환불 대기',
     created_at       DATETIME(6)  NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
     updated_at       DATETIME(6)  NOT NULL DEFAULT CURRENT_TIMESTAMP(6)
                      ON UPDATE CURRENT_TIMESTAMP(6),
@@ -397,6 +399,7 @@ CREATE TABLE refund (
     UNIQUE KEY uk_refund_idem (idempotency_key),
     KEY idx_refund_payment (payment_id, created_at),
     KEY idx_refund_pending (status, updated_at),
+    KEY idx_refund_manual (settled_manual, manual_refunded_at),
     CONSTRAINT fk_refund_payment FOREIGN KEY (payment_id) REFERENCES payment (id),
     CONSTRAINT fk_refund_order   FOREIGN KEY (order_id)   REFERENCES orders (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

@@ -1,6 +1,8 @@
 package store.moeum.moeum.payment.domain;
 
 import jakarta.persistence.LockModeType;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
@@ -47,6 +49,52 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
 			 order by p.updatedAt desc, p.id desc
 			""")
 	List<Payment> findInProgressByBuyer(@Param("kakaoId") String kakaoId);
+
+	/**
+	 * 셀러 결제 내역 (와이어프레임 G10 · D-059). 결제한 시각 기준 최신순이다.
+	 *
+	 * <b>줄 하나가 결제 한 건</b>이다 — 묶음 × 차수. 1차금과 2차금은 세션도 금액도
+	 * 취소 경로도 달라서 묶음으로 접으면 화면의 '구분 · 1차금' 칸을 채울 수 없다.
+	 *
+	 * 네이티브로 쓴 이유는 <b>상태 판정을 목록·건수·칩 숫자 셋이 나눠 쓰기</b> 위해서다.
+	 * 판정문은 {@link SellerPaymentSql#STATUS_CASE} 하나뿐이고 세 쿼리가 그것을 이어 붙인다.
+	 *
+	 * @param status {@code SellerPaymentStatus} 의 이름. null 이면 '전체' 다
+	 */
+	@Query(value = SellerPaymentSql.LIST, countQuery = SellerPaymentSql.LIST_COUNT,
+			nativeQuery = true)
+	Page<Payment> findSellerPayments(@Param("sellerId") Long sellerId,
+	                                 @Param("status") String status,
+	                                 @Param("saleFormId") Long saleFormId,
+	                                 @Param("keyword") String keyword,
+	                                 Pageable pageable);
+
+	/**
+	 * 결제번호로 한 건 찾기 (G10 상세 · S14 · D-059).
+	 *
+	 * <b>묶음과 셀러까지 같이 끌어온다.</b> 소유권 확인과 응답 조립에 어차피 필요한 값이라
+	 * 지연 로딩으로 두면 조회가 세 번 나가고, 트랜잭션 밖에서 부르면 아예 터진다.
+	 */
+	@Query("""
+			select p from Payment p
+			  join fetch p.orderGroup g
+			  join fetch g.seller
+			 where g.orderNo = :orderNo
+			   and p.phase = :phase
+			""")
+	Optional<Payment> findByOrderNoAndPhase(@Param("orderNo") String orderNo,
+	                                        @Param("phase") PaymentPhase phase);
+
+	/**
+	 * 칩 숫자. {@code (상태, 건수)} 줄로 돌아온다 — {@code SellerPaymentCounts.of} 가 편다.
+	 *
+	 * <b>칩 조건만 빼고 목록과 같은 필터를 건다.</b> 갈라지면 칩에는 3건이라 적혀 있는데
+	 * 눌러서 열면 2건인 화면이 나온다.
+	 */
+	@Query(value = SellerPaymentSql.TALLY, nativeQuery = true)
+	List<Object[]> tallySellerPayments(@Param("sellerId") Long sellerId,
+	                                   @Param("saleFormId") Long saleFormId,
+	                                   @Param("keyword") String keyword);
 
 	/**
 	 * 확정 처리용 잠금 조회.

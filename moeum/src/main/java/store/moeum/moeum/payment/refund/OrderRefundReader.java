@@ -57,6 +57,55 @@ public class OrderRefundReader {
 	}
 
 	/**
+	 * 셀러가 거는 취소의 계획 — 결제 내역(G10)의 [결제 취소] (D-059).
+	 *
+	 * <b>취소 구간 판정은 구매자와 한 글자도 다르지 않다.</b> {@link #plan} 과 같은
+	 * {@link RefundPolicy} 를 탄다 — 셀러라고 발주 끝난 건을 되돌릴 수 있는 것이 아니다.
+	 * 다른 것은 <b>소유권을 보는 쪽</b>과 <b>주문을 찾는 열쇠</b> 둘뿐이다. 셀러는
+	 * orderToken 을 모르고 화면에 찍힌 주문번호로 부른다.
+	 *
+	 * @param sellerId 세션에서 꺼낸 셀러. 남의 주문번호를 넣으면 "없음" 으로 답한다
+	 */
+	@Transactional(readOnly = true)
+	public RefundPlan sellerPlan(Long sellerId, String orderNo, Long orderId) {
+		OrderGroup group = requireSellerGroup(sellerId, orderNo);
+
+		List<Order> active = group.activeOrders();
+		if (active.isEmpty()) {
+			throw new BusinessException(ErrorCode.REFUND_NOT_ALLOWED, "취소할 주문이 남아 있지 않습니다.");
+		}
+
+		List<Order> targets = targets(active, orderId);
+		for (Order order : targets) {
+			String reason = RefundPolicy.blockReason(order);
+			if (reason != null) {
+				throw new BusinessException(ErrorCode.REFUND_NOT_ALLOWED, reason);
+			}
+		}
+		return build(group, active, targets, orderId);
+	}
+
+	/**
+	 * 셀러 화면이 [결제 취소] 버튼을 켤지 정할 때 쓴다 (G10 · D-059).
+	 *
+	 * <b>{@link #sellerPlan} 을 그대로 세워 보고 결과만 바꿔 준다.</b> 조건을 화면 쪽에
+	 * 따로 적으면 켜져 있는데 누르면 튕기는 버튼이 생긴다 — 여기서 통과한 계획이 곧
+	 * 취소가 실행할 계획이다.
+	 *
+	 * <b>예외를 이 메서드 안에서 잡는 것이 중요하다.</b> 트랜잭션 경계 밖으로 나가게 두면
+	 * 부르는 쪽이 잡아도 트랜잭션은 이미 rollback-only 로 찍혀 커밋에서 터진다.
+	 * 같은 빈 안에서 부르므로 {@code sellerPlan} 의 트랜잭션 프록시를 타지 않는다.
+	 */
+	@Transactional(readOnly = true)
+	public SellerCancelView sellerCancelView(Long sellerId, String orderNo) {
+		try {
+			return SellerCancelView.allowed(sellerPlan(sellerId, orderNo, null));
+		} catch (BusinessException e) {
+			return SellerCancelView.blocked(e.getMessage());
+		}
+	}
+
+	/**
 	 * 시스템이 거는 취소의 계획 — 목표수량 미달 등 (D-026).
 	 *
 	 * <b>소유권도 취소 구간도 보지 않는다.</b> 구매자 잘못이 아니라 폼이 성립하지 않은 것이라
@@ -177,6 +226,22 @@ public class OrderRefundReader {
 	private Optional<Payment> capturedPayment(Long groupId, PaymentPhase phase) {
 		return paymentRepository.findByOrderGroupIdAndPhase(groupId, phase)
 				.filter(payment -> payment.getStatus() == PaymentStatus.CAPTURED);
+	}
+
+	/**
+	 * 주문번호로 찾고 셀러 소유인지 본다.
+	 *
+	 * 남의 주문번호를 "있는데 권한 없음" 으로 답하지 않는다 — 셀러 주문 상세
+	 * ({@code SellerOrderService.detail}) 와 같은 규칙이다.
+	 */
+	private OrderGroup requireSellerGroup(Long sellerId, String orderNo) {
+		OrderGroup group = orderGroupRepository.findByOrderNo(orderNo)
+				.orElseThrow(() -> new BusinessException(ErrorCode.ORDER_GROUP_NOT_FOUND));
+
+		if (!group.getSeller().getId().equals(sellerId)) {
+			throw new BusinessException(ErrorCode.ORDER_GROUP_NOT_FOUND);
+		}
+		return group;
 	}
 
 	private OrderGroup requireOwnedGroup(String kakaoId, String orderToken) {
