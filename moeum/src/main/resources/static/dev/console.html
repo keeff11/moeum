@@ -1,0 +1,1264 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>moeum 운영 콘솔</title>
+<style>
+  :root {
+    --ground:      #F4F3F7;
+    --surface:     #FFFFFF;
+    --surface-2:   #EDEBF3;
+    --line:        #DCD8E6;
+    --line-soft:   #E8E5EF;
+    --ink:         #1B1830;
+    --ink-2:       #4A455F;
+    --ink-3:       #7C7791;
+    --accent:      #5B47E0;
+    --accent-soft: #ECE8FE;
+    --ok:          #1F8A5B;
+    --ok-soft:     #DFF1E8;
+    --warn:        #A76A05;
+    --warn-soft:   #FBEEDA;
+    --risk:        #C0392B;
+    --risk-soft:   #FBE6E3;
+    --track:       #E2DFEB;
+    --shadow:      0 1px 2px rgba(27, 24, 48, .06), 0 8px 24px -16px rgba(27, 24, 48, .28);
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "D2Coding", monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Malgun Gothic", "Apple SD Gothic Neo", sans-serif;
+    /* ERD 무리 색 — 도메인마다 고정이다 */
+    --c-sale:  #5B47E0;
+    --c-buyer: #0E7C86;
+    --c-order: #A7600A;
+    --c-pay:   #B02D6B;
+    --c-infra: #6B7280;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #131126; --surface: #1B1832; --surface-2: #232040;
+      --line: #322D52; --line-soft: #272346;
+      --ink: #EFEDF7; --ink-2: #B9B4D0; --ink-3: #8A85A6;
+      --accent: #9C8CFF; --accent-soft: #2B2554;
+      --ok: #56C795; --ok-soft: #17362A;
+      --warn: #E0A34A; --warn-soft: #3A2C15;
+      --risk: #FF8B84; --risk-soft: #3A1C1A;
+      --track: #262244;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 10px 30px -20px rgba(0,0,0,.8);
+      --c-sale: #9C8CFF; --c-buyer: #4FC3CE; --c-order: #E0A34A;
+      --c-pay: #FF8FB8; --c-infra: #9AA1AE;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #131126; --surface: #1B1832; --surface-2: #232040;
+    --line: #322D52; --line-soft: #272346;
+    --ink: #EFEDF7; --ink-2: #B9B4D0; --ink-3: #8A85A6;
+    --accent: #9C8CFF; --accent-soft: #2B2554;
+    --ok: #56C795; --ok-soft: #17362A;
+    --warn: #E0A34A; --warn-soft: #3A2C15;
+    --risk: #FF8B84; --risk-soft: #3A1C1A;
+    --track: #262244;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 10px 30px -20px rgba(0,0,0,.8);
+    --c-sale: #9C8CFF; --c-buyer: #4FC3CE; --c-order: #E0A34A;
+    --c-pay: #FF8FB8; --c-infra: #9AA1AE;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0; background: var(--ground); color: var(--ink);
+    font-family: var(--sans); font-size: 14px; line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  button, input, textarea, select { font-family: inherit; font-size: inherit; color: inherit; }
+  a { color: inherit; }
+
+  /* ---------- 골격 ---------- */
+  .app { display: grid; grid-template-columns: 224px minmax(0, 1fr); min-height: 100vh; }
+
+  .rail {
+    background: var(--surface); border-right: 1px solid var(--line);
+    display: flex; flex-direction: column; gap: 3px; padding: 18px 12px;
+    position: sticky; top: 0; height: 100vh; overflow: auto;
+  }
+  .brand { padding: 4px 10px 14px; }
+  .brand b { font-size: 15px; font-weight: 600; letter-spacing: -.01em; display: block; }
+  .brand span {
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--ink-3);
+  }
+  .rail-label {
+    font-family: var(--mono); font-size: 10px; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--ink-3); padding: 14px 10px 5px;
+  }
+  .nav-item, .rail-link {
+    display: flex; align-items: center; gap: 8px; width: 100%;
+    padding: 8px 10px; border: 0; border-radius: 7px; background: none;
+    text-align: left; cursor: pointer; color: var(--ink-2); font-size: 13.5px;
+    text-decoration: none;
+  }
+  .nav-item:hover, .rail-link:hover { background: var(--surface-2); color: var(--ink); }
+  .nav-item[aria-current="true"] { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+  .nav-item .key, .rail-link .out {
+    margin-left: auto; font-family: var(--mono); font-size: 10px; color: var(--ink-3);
+  }
+  .nav-item .key { border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
+  .nav-item .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--risk); }
+  .rail-foot { margin-top: auto; display: flex; flex-direction: column; gap: 8px; padding: 14px 10px 4px; }
+  .switch { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--ink-2); cursor: pointer; }
+  .switch input { accent-color: var(--accent); }
+
+  /* ---------- 상단 바 ---------- */
+  .topbar {
+    position: sticky; top: 0; z-index: 30;
+    display: flex; align-items: center; gap: 9px; flex-wrap: wrap;
+    padding: 12px 24px; background: color-mix(in srgb, var(--ground) 88%, transparent);
+    backdrop-filter: blur(8px); border-bottom: 1px solid var(--line-soft);
+  }
+  .pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line);
+    background: var(--surface); font-size: 12px; font-weight: 500; text-decoration: none;
+  }
+  .pill .led { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); }
+  .pill.down { border-color: color-mix(in srgb, var(--risk) 45%, var(--line)); color: var(--risk); }
+  .pill.down .led { background: var(--risk); }
+  .pill.muted { color: var(--ink-3); }
+  .pill.muted .led { background: var(--ink-3); }
+  a.pill:hover { border-color: var(--accent); color: var(--accent); }
+  .topbar .spacer { margin-left: auto; }
+  .stamp { font-family: var(--mono); font-size: 11.5px; color: var(--ink-3); }
+
+  main { min-width: 0; }
+  .view { padding: 22px 24px 64px; display: none; }
+  .view[data-active="true"] { display: block; }
+  .view > h2 { margin: 0 0 2px; font-size: 17px; font-weight: 600; letter-spacing: -.015em; }
+  .view > .lede { margin: 0 0 20px; color: var(--ink-3); font-size: 13px; }
+
+  /* ---------- 조각 ---------- */
+  .card {
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: 10px; box-shadow: var(--shadow);
+  }
+  .card > header {
+    display: flex; align-items: center; gap: 8px;
+    padding: 11px 14px; border-bottom: 1px solid var(--line-soft);
+  }
+  .card > header h3 {
+    margin: 0; font-size: 11px; font-weight: 600; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--ink-3); font-family: var(--mono);
+  }
+  .card > header .right { margin-left: auto; font-size: 12px; color: var(--ink-3); }
+  .card .body { padding: 14px; }
+
+  .grid { display: grid; gap: 14px; }
+  .grid.cols-4 { grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
+  .grid.cols-3 { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+  .grid.tiles  { grid-template-columns: repeat(auto-fit, minmax(148px, 1fr)); }
+
+  .kv { display: grid; grid-template-columns: auto 1fr; gap: 5px 14px; font-size: 12.5px; }
+  .kv dt { color: var(--ink-3); }
+  .kv dd { margin: 0; text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+  .tile { padding: 13px 14px; }
+  .tile .label { font-size: 11.5px; color: var(--ink-3); }
+  .tile .num {
+    font-family: var(--mono); font-size: 25px; font-weight: 500; line-height: 1.25;
+    letter-spacing: -.02em; font-variant-numeric: tabular-nums;
+  }
+  .tile .foot { font-size: 11px; color: var(--ink-3); }
+  .tile.hot .num { color: var(--risk); }
+  .tile.warm .num { color: var(--warn); }
+
+  .meter { height: 6px; border-radius: 3px; background: var(--track); overflow: hidden; display: flex; }
+  .meter i { display: block; height: 100%; background: var(--accent); }
+  .meter i.warn { background: var(--warn); }
+  .meter i.risk { background: var(--risk); }
+  .meter i.idle { background: color-mix(in srgb, var(--accent) 28%, transparent); }
+
+  .signal {
+    display: flex; gap: 11px; padding: 11px 13px; border-radius: 9px;
+    border: 1px solid var(--line); background: var(--surface); align-items: flex-start;
+  }
+  .signal .mark {
+    font-family: var(--mono); font-size: 10px; font-weight: 700; letter-spacing: .06em;
+    padding: 2px 7px; border-radius: 5px; white-space: nowrap; margin-top: 1px;
+  }
+  .signal.risk { border-color: color-mix(in srgb, var(--risk) 40%, var(--line)); }
+  .signal.risk .mark { background: var(--risk-soft); color: var(--risk); }
+  .signal.warn .mark { background: var(--warn-soft); color: var(--warn); }
+  .signal.info .mark { background: var(--ok-soft); color: var(--ok); }
+  .signal .title { font-weight: 600; font-size: 13.5px; }
+  .signal .detail { color: var(--ink-2); font-size: 12.5px; }
+  .signal .hint { color: var(--ink-3); font-size: 12px; margin-top: 3px; }
+  .signal .hint::before { content: "→ "; }
+
+  /* ---------- 진척 카드 ---------- */
+  .rm { display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 20px; }
+  .rm-total { display: flex; flex-direction: column; gap: 8px; }
+  .rm-total .num {
+    font-family: var(--mono); font-size: 52px; line-height: 1; font-weight: 500;
+    letter-spacing: -.035em; font-variant-numeric: tabular-nums;
+  }
+  .rm-total .num small { font-size: 20px; color: var(--ink-3); margin-left: 2px; }
+  .rm-total .label { font-size: 11.5px; color: var(--ink-3); }
+  .rm-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(232px, 1fr)); gap: 3px 18px; }
+  .rm-row {
+    display: grid; grid-template-columns: 108px minmax(40px, 1fr) 42px;
+    align-items: center; gap: 9px; padding: 4px 7px; border-radius: 6px;
+    text-decoration: none; font-size: 12.5px;
+  }
+  .rm-row:hover { background: var(--surface-2); }
+  .rm-row:hover .rm-name { color: var(--accent); }
+  .rm-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rm-row b {
+    font-family: var(--mono); font-weight: 500; text-align: right;
+    font-variant-numeric: tabular-nums; color: var(--ink-2);
+  }
+  .rm-row .meter { height: 5px; }
+
+  .bars { display: flex; flex-direction: column; gap: 10px; }
+  .bar-row .bar-head {
+    display: flex; justify-content: space-between; font-size: 12px; color: var(--ink-2); margin-bottom: 4px;
+  }
+  .bar-row .bar-head b { font-family: var(--mono); font-variant-numeric: tabular-nums; font-weight: 500; }
+  .seg { display: flex; height: 22px; border-radius: 5px; overflow: hidden; background: var(--track); }
+  .seg span {
+    display: flex; align-items: center; justify-content: center; min-width: 0;
+    font-family: var(--mono); font-size: 10.5px; color: #fff; white-space: nowrap;
+  }
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 7px; font-size: 11.5px; color: var(--ink-2); }
+  .legend i { width: 8px; height: 8px; border-radius: 2px; display: inline-block; margin-right: 5px; }
+
+  /* ---------- 표 ---------- */
+  .scroll { overflow: auto; max-height: 62vh; }
+  table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+  thead th {
+    position: sticky; top: 0; z-index: 1; text-align: left; white-space: nowrap;
+    background: var(--surface-2); color: var(--ink-3); font-weight: 600;
+    font-family: var(--mono); font-size: 11px; letter-spacing: .04em;
+    padding: 7px 10px; border-bottom: 1px solid var(--line);
+  }
+  tbody td {
+    padding: 6px 10px; border-bottom: 1px solid var(--line-soft);
+    white-space: nowrap; max-width: 380px; overflow: hidden; text-overflow: ellipsis;
+    font-variant-numeric: tabular-nums;
+  }
+  tbody tr:hover td { background: var(--surface-2); }
+  td.num, th.num { text-align: right; font-family: var(--mono); }
+  .mono { font-family: var(--mono); }
+  .null { color: var(--ink-3); font-style: italic; }
+  .copyable { cursor: copy; }
+
+  .chip {
+    display: inline-block; padding: 1px 7px; border-radius: 5px; font-size: 11px;
+    font-family: var(--mono); font-weight: 600; background: var(--surface-2); color: var(--ink-2);
+  }
+  .chip.ok   { background: var(--ok-soft);   color: var(--ok); }
+  .chip.warn { background: var(--warn-soft); color: var(--warn); }
+  .chip.risk { background: var(--risk-soft); color: var(--risk); }
+  .chip.acc  { background: var(--accent-soft); color: var(--accent); }
+
+  /* ---------- 입력 ---------- */
+  .btn {
+    padding: 7px 13px; border-radius: 7px; border: 1px solid var(--line);
+    background: var(--surface); cursor: pointer; font-size: 13px; font-weight: 500;
+    text-decoration: none; display: inline-flex; align-items: center; gap: 6px;
+  }
+  .btn:hover { background: var(--surface-2); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn.primary:hover { filter: brightness(1.08); }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .btn.sm { padding: 4px 9px; font-size: 12px; }
+  input[type="text"], input[type="search"], textarea, select {
+    width: 100%; padding: 8px 11px; border-radius: 7px;
+    border: 1px solid var(--line); background: var(--ground);
+  }
+  select { width: auto; padding: 5px 7px; }
+  input:focus-visible, textarea:focus-visible, select:focus-visible,
+  .btn:focus-visible, .nav-item:focus-visible, .rail-link:focus-visible, .erd-node:focus-visible {
+    outline: 2px solid var(--accent); outline-offset: 1px;
+  }
+  textarea {
+    font-family: var(--mono); font-size: 13px; line-height: 1.6; resize: vertical; min-height: 132px;
+  }
+
+  .split { display: grid; grid-template-columns: 262px minmax(0, 1fr); gap: 14px; align-items: start; }
+  .split-half { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: 14px; align-items: start; }
+  .list { max-height: 72vh; overflow: auto; }
+  .list button {
+    display: block; width: 100%; text-align: left; border: 0; background: none;
+    padding: 8px 13px; cursor: pointer; border-bottom: 1px solid var(--line-soft);
+  }
+  .list button:hover { background: var(--surface-2); }
+  .list button[aria-current="true"] { background: var(--accent-soft); }
+  .list .name { font-family: var(--mono); font-size: 12.5px; }
+  .list .meta { font-size: 11px; color: var(--ink-3); display: flex; justify-content: space-between; gap: 8px; }
+
+  .empty { padding: 34px 16px; text-align: center; color: var(--ink-3); font-size: 13px; }
+  .err {
+    margin: 14px; padding: 10px 13px; border-radius: 8px;
+    background: var(--risk-soft); color: var(--risk); font-size: 12.5px; font-family: var(--mono);
+  }
+
+  /* ---------- ERD ---------- */
+  .erd-wrap { overflow: auto; max-height: 66vh; padding: 10px; }
+  .erd { display: block; }
+  .erd .cluster { fill: color-mix(in srgb, var(--surface-2) 60%, transparent); stroke: var(--line-soft); }
+  .erd .cluster-label {
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: .12em;
+    text-transform: uppercase; fill: var(--ink-3);
+  }
+  .erd .edge { fill: none; stroke: var(--line); stroke-width: 1.4; }
+  .erd .edge.on { stroke: var(--accent); stroke-width: 2; }
+  .erd .edge.dim { opacity: .25; }
+  .erd-node { cursor: pointer; }
+  .erd-node .box {
+    fill: var(--surface); stroke: var(--line); stroke-width: 1.2; rx: 7;
+  }
+  .erd-node:hover .box { stroke: var(--accent); }
+  .erd-node[data-on="true"] .box { stroke: var(--accent); stroke-width: 2.2; fill: var(--accent-soft); }
+  .erd-node[data-dim="true"] { opacity: .32; }
+  .erd-node[data-hit="true"] .box { stroke: var(--warn); stroke-width: 2.2; }
+  .erd-node .tag { width: 4px; rx: 2; }
+  .erd-node .nm { font-family: var(--mono); font-size: 12px; fill: var(--ink); }
+  .erd-node .ct { font-family: var(--mono); font-size: 10.5px; fill: var(--ink-3); }
+  .erd-node[data-empty="true"] .nm { fill: var(--ink-3); }
+  .erd-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 11.5px; color: var(--ink-2); }
+  .erd-legend i { width: 9px; height: 9px; border-radius: 2px; display: inline-block; margin-right: 5px; }
+  .erd-tools { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+  .erd-tools input { width: 190px; padding: 5px 9px; font-size: 12.5px; }
+
+  .rel-list { display: flex; flex-direction: column; gap: 2px; }
+  .rel {
+    display: flex; align-items: center; gap: 7px; font-size: 12px; font-family: var(--mono);
+    padding: 4px 7px; border-radius: 6px; cursor: pointer; border: 0; background: none;
+    width: 100%; text-align: left; color: inherit;
+  }
+  .rel:hover { background: var(--surface-2); }
+  .rel .arrow { color: var(--ink-3); }
+  .rel .to { color: var(--accent); }
+
+  /* ---------- 타임라인 ---------- */
+  .timeline { position: relative; padding-left: 20px; }
+  .timeline::before {
+    content: ""; position: absolute; left: 4px; top: 6px; bottom: 6px; width: 2px; background: var(--track);
+  }
+  .tl-item { position: relative; padding: 6px 0; }
+  .tl-item::before {
+    content: ""; position: absolute; left: -20px; top: 12px;
+    width: 10px; height: 10px; border-radius: 50%;
+    background: var(--surface); border: 2px solid var(--accent);
+  }
+  .tl-item.risk::before { border-color: var(--risk); }
+  .tl-item.ok::before { border-color: var(--ok); background: var(--ok); }
+  .tl-head { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; font-size: 12.5px; }
+  .tl-time { font-family: var(--mono); font-size: 11px; color: var(--ink-3); }
+  .tl-note { font-size: 12px; color: var(--ink-2); }
+
+  .toast {
+    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+    background: var(--ink); color: var(--ground); padding: 8px 15px; border-radius: 8px;
+    font-size: 12.5px; opacity: 0; pointer-events: none; transition: opacity .18s; z-index: 60;
+  }
+  .toast[data-show="true"] { opacity: .95; }
+
+  @media (max-width: 1000px) {
+    .app { grid-template-columns: 1fr; }
+    .rail { position: static; height: auto; }
+    .split, .split-half, .rm { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <aside class="rail">
+    <div class="brand">
+      <b>운영 콘솔</b>
+      <span>moeum · local</span>
+    </div>
+
+    <div class="rail-label">화면</div>
+    <button class="nav-item" data-view="overview" aria-current="true">개요 <span class="key">1</span></button>
+    <button class="nav-item" data-view="schema">스키마 · ERD <span class="key">2</span></button>
+    <button class="nav-item" data-view="sql">SQL <span class="key">3</span></button>
+    <button class="nav-item" data-view="trace">주문 추적 <span class="key">4</span></button>
+    <button class="nav-item" data-view="migrations">마이그레이션 <span class="key">5</span></button>
+
+    <div class="rail-label">바깥 링크</div>
+    <a class="rail-link" href="/swagger-ui.html" target="_blank" rel="noopener">스웨거 UI <span class="out">↗</span></a>
+    <a class="rail-link" href="/v3/api-docs" target="_blank" rel="noopener">OpenAPI JSON <span class="out">↗</span></a>
+    <a class="rail-link" href="/dev/console/status-board" target="_blank" rel="noopener">개발 현황판 <span class="out">↗</span></a>
+    <a class="rail-link" href="/dev/stock-hold.html" target="_blank" rel="noopener">재고 홀드 실험 <span class="out">↗</span></a>
+    <a class="rail-link" href="/actuator/health" target="_blank" rel="noopener">actuator/health <span class="out">↗</span></a>
+
+    <div class="rail-foot">
+      <label class="switch"><input type="checkbox" id="auto" checked> 5초마다 갱신</label>
+      <label class="switch"><input type="checkbox" id="dark"> 어두운 화면</label>
+    </div>
+  </aside>
+
+  <main>
+    <div class="topbar">
+      <span class="pill muted" id="pill-app"><i class="led"></i> 앱</span>
+      <span class="pill muted" id="pill-db"><i class="led"></i> MySQL</span>
+      <span class="pill muted" id="pill-fw"><i class="led"></i> 스키마</span>
+      <a class="pill" id="pill-progress" href="/dev/console/status-board" target="_blank" rel="noopener" hidden></a>
+      <a class="pill" href="/swagger-ui.html" target="_blank" rel="noopener">스웨거 ↗</a>
+      <span class="spacer"></span>
+      <span class="stamp" id="stamp">불러오는 중…</span>
+      <button class="btn sm" id="refresh">갱신 <span style="opacity:.6">R</span></button>
+    </div>
+
+    <!-- ===================== 개요 ===================== -->
+    <section class="view" data-view="overview" data-active="true">
+      <h2>개요</h2>
+      <p class="lede">서버가 살아 있는지, 돈이 걸린 상태가 막혀 있지 않은지 한 화면에서 본다.</p>
+
+      <div id="signals" class="grid" style="gap:8px; margin-bottom:14px"></div>
+
+      <div class="card" style="margin-bottom:14px">
+        <header>
+          <h3>개발 진척</h3>
+          <span class="right" id="rm-asof"></span>
+        </header>
+        <div class="body">
+          <div class="rm">
+            <div class="rm-total">
+              <div class="num" id="rm-total">–</div>
+              <div class="label">전체 진척 · 로드맵 단계 비중 가중</div>
+              <div class="meter" style="height:7px"><i id="rm-bar" style="width:0"></i></div>
+              <a class="btn sm" href="/dev/console/status-board" target="_blank" rel="noopener"
+                 style="margin-top:4px; align-self:flex-start">현황판 전체 보기 ↗</a>
+            </div>
+            <div class="rm-list" id="rm-list"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid cols-4" style="margin-bottom:14px">
+        <div class="card"><header><h3>애플리케이션</h3><span class="right" id="app-uptime"></span></header>
+          <div class="body"><dl class="kv" id="app-kv"></dl>
+            <div style="margin-top:10px">
+              <div style="display:flex;justify-content:space-between;font-size:11.5px;color:var(--ink-3);margin-bottom:4px">
+                <span>힙</span><span id="heap-text"></span>
+              </div>
+              <div class="meter"><i id="heap-bar" style="width:0"></i></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card"><header><h3>커넥션 풀</h3><span class="right" id="pool-name"></span></header>
+          <div class="body"><dl class="kv" id="pool-kv"></dl>
+            <div style="margin-top:10px">
+              <div style="display:flex;justify-content:space-between;font-size:11.5px;color:var(--ink-3);margin-bottom:4px">
+                <span>활성 / 유휴</span><span id="pool-text"></span>
+              </div>
+              <div class="meter" id="pool-bar"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card"><header><h3>MySQL</h3><span class="right" id="db-size"></span></header>
+          <div class="body"><dl class="kv" id="db-kv"></dl></div>
+        </div>
+
+        <div class="card"><header><h3>스키마</h3><span class="right" id="fw-when"></span></header>
+          <div class="body"><dl class="kv" id="fw-kv"></dl></div>
+        </div>
+      </div>
+
+      <div class="grid tiles" style="margin-bottom:14px" id="tiles"></div>
+
+      <div class="grid cols-3">
+        <div class="card"><header><h3>결제 상태</h3></header><div class="body"><div class="bars" id="bar-payment"></div></div></div>
+        <div class="card"><header><h3>주문 묶음 상태</h3></header><div class="body"><div class="bars" id="bar-group"></div></div></div>
+        <div class="card"><header><h3>아웃박스</h3></header><div class="body"><div class="bars" id="bar-outbox"></div></div></div>
+      </div>
+
+      <div class="card" style="margin-top:14px">
+        <header><h3>최근 결제 상태 전이</h3><span class="right">payment_event</span></header>
+        <div class="scroll" id="events"></div>
+      </div>
+    </section>
+
+    <!-- ===================== 스키마 · ERD ===================== -->
+    <section class="view" data-view="schema">
+      <h2>스키마 · ERD</h2>
+      <p class="lede">선은 실제로 DB 에 걸린 외래키다. 테이블을 누르면 컬럼 · 관계 · 최근 행이 아래에 열리고, 거기서 바로 SQL 로 넘길 수 있다.</p>
+
+      <div class="card" style="margin-bottom:14px">
+        <header>
+          <h3>관계도</h3>
+          <div class="erd-tools">
+            <input type="search" id="erd-find" placeholder="테이블 찾기 (Enter 로 선택)">
+            <button class="btn sm" id="erd-out">−</button>
+            <button class="btn sm" id="erd-in">+</button>
+            <span class="stamp" id="erd-zoom">100%</span>
+          </div>
+        </header>
+        <div class="erd-wrap" id="erd-wrap"><div class="empty">불러오는 중…</div></div>
+        <div class="body" style="border-top:1px solid var(--line-soft)">
+          <div class="erd-legend" id="erd-legend"></div>
+        </div>
+      </div>
+
+      <div class="split-half">
+        <div>
+          <div class="card" style="margin-bottom:14px">
+            <header><h3 id="peek-name">테이블을 고른다</h3><span class="right" id="peek-meta"></span></header>
+            <div class="body" id="peek-actions" hidden style="display:flex;gap:8px;flex-wrap:wrap;padding-bottom:0;border:0">
+              <button class="btn sm primary" id="to-sql">SQL 로 열기</button>
+              <button class="btn sm" id="to-sql-join">부모와 조인해서 열기</button>
+            </div>
+            <div class="scroll" id="peek-schema" style="max-height:44vh"></div>
+          </div>
+          <div class="card">
+            <header><h3>관계</h3><span class="right" id="rel-count"></span></header>
+            <div class="body"><div class="rel-list" id="rel-list"></div></div>
+          </div>
+        </div>
+        <div class="card">
+          <header><h3>행</h3><span class="right" id="peek-page"></span>
+            <button class="btn sm" id="peek-prev" style="margin-left:8px">이전</button>
+            <button class="btn sm" id="peek-next">다음</button>
+          </header>
+          <div class="scroll" id="peek-rows" style="max-height:66vh"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== SQL ===================== -->
+    <section class="view" data-view="sql">
+      <h2>SQL</h2>
+      <p class="lede">읽기 전용이다. SELECT · WITH · SHOW · EXPLAIN 만 실행되고 커넥션도 read-only 로 연다.</p>
+      <div class="split">
+        <div class="card">
+          <header><h3>진단 쿼리</h3></header>
+          <div class="list" id="presets"></div>
+        </div>
+        <div>
+          <div class="card" style="margin-bottom:14px">
+            <div class="body">
+              <textarea id="sql" spellcheck="false" placeholder="SELECT * FROM payment ORDER BY id DESC"></textarea>
+              <div style="display:flex;align-items:center;gap:10px;margin-top:10px;flex-wrap:wrap">
+                <button class="btn primary" id="run">실행 <span style="opacity:.7">⌃⏎</span></button>
+                <label class="switch">최대
+                  <select id="sql-limit">
+                    <option>50</option><option selected>100</option><option>200</option><option>500</option>
+                  </select>행
+                </label>
+                <span class="stamp" id="sql-stat" style="margin-left:auto"></span>
+              </div>
+              <p class="lede" id="preset-note" style="margin:10px 0 0"></p>
+            </div>
+          </div>
+          <div class="card">
+            <header><h3>결과</h3></header>
+            <div class="scroll" id="sql-out"><div class="empty">아직 실행하지 않았다.</div></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== 추적 ===================== -->
+    <section class="view" data-view="trace">
+      <h2>주문 추적</h2>
+      <p class="lede">주문번호 · order_token · session_token · point3 sessionId · 묶음 id — 손에 있는 값 아무거나 넣는다.</p>
+      <div class="card" style="margin-bottom:14px">
+        <div class="body" style="display:flex;gap:9px">
+          <input type="search" id="trace-q" placeholder="ORD-260909-1024">
+          <button class="btn primary" id="trace-run" style="white-space:nowrap">찾기</button>
+        </div>
+      </div>
+      <div id="trace-out"><div class="empty">검색하면 묶음 · 결제 · 상태 전이 이력을 한 화면에 펼친다.</div></div>
+    </section>
+
+    <!-- ===================== 마이그레이션 ===================== -->
+    <section class="view" data-view="migrations">
+      <h2>마이그레이션</h2>
+      <p class="lede">flyway_schema_history 그대로. success 가 0 인 행이 있으면 스키마를 믿을 수 없다.</p>
+      <div class="card"><div class="scroll" id="mig-out"></div></div>
+    </section>
+  </main>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const BASE = "/dev/console";
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const num = n => (n === null || n === undefined) ? "–" : Number(n).toLocaleString("ko-KR");
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+/* 상태값마다 고정된 색을 준다 — 화면을 옮겨도 같은 상태는 같은 색이다 */
+const TONE = {
+  CAPTURED: "ok", PAID: "ok", SECOND_PAID: "ok", SHIPPED: "ok", SENT: "ok",
+  COMPLETED: "ok", COMMITTED: "ok", SELLING: "ok",
+  CAPTURE_PENDING: "risk", FAILED: "risk", DEAD: "risk", CANCELED: "risk", EXPIRED: "risk",
+  PAY_PENDING: "warn", CONFIRMING: "warn", PENDING: "warn", PROCESSING: "warn",
+  SECOND_PENDING: "warn", HELD: "warn", RECRUITING: "warn"
+};
+const tone = s => TONE[s] || "";
+const COLORS = { ok: "var(--ok)", warn: "var(--warn)", risk: "var(--risk)", "": "var(--ink-3)" };
+
+let timer = null, snapshot = null;
+
+function toast(text) {
+  const el = $("#toast");
+  el.textContent = text;
+  el.dataset.show = "true";
+  clearTimeout(el._t);
+  el._t = setTimeout(() => el.dataset.show = "false", 1400);
+}
+
+async function api(path, options) {
+  const res = await fetch(BASE + path, options);
+  const body = await res.json().catch(() => ({ message: res.statusText }));
+  if (!res.ok) throw new Error(body.message || ("HTTP " + res.status));
+  return body;
+}
+
+/* ---------------- 화면 전환 ---------------- */
+const LOADERS = { overview: loadSnapshot, schema: loadErd, sql: loadPresets, trace: null, migrations: loadMigrations };
+const loaded = {};
+
+function show(view) {
+  if (!LOADERS.hasOwnProperty(view)) view = "overview";
+  $$(".nav-item").forEach(b => b.setAttribute("aria-current", String(b.dataset.view === view)));
+  $$(".view").forEach(v => v.dataset.active = String(v.dataset.view === view));
+  location.hash = view;
+  if (LOADERS[view] && !loaded[view]) { loaded[view] = true; LOADERS[view](); }
+}
+$$(".nav-item").forEach(b => b.onclick = () => show(b.dataset.view));
+
+/* ---------------- 개요 ---------------- */
+async function loadSnapshot() {
+  try {
+    snapshot = await api("/snapshot");
+  } catch (e) {
+    $("#stamp").textContent = "연결 실패 — " + e.message;
+    $("#pill-app").className = "pill down";
+    return;
+  }
+  const s = snapshot;
+  $("#stamp").textContent = s.takenAt;
+
+  /* 상단 pill */
+  $("#pill-app").className = "pill";
+  $("#pill-app").innerHTML = `<i class="led"></i> 앱 ${esc(s.app.profiles[0] || "?")}`;
+  $("#pill-db").className = "pill" + (s.db.reachable ? "" : " down");
+  $("#pill-db").innerHTML = `<i class="led"></i> MySQL ${s.db.reachable ? esc(s.db.version || "") : "끊김"}`;
+  const fwBad = !s.flyway.available || s.flyway.failed > 0;
+  $("#pill-fw").className = "pill" + (fwBad ? " down" : "");
+  $("#pill-fw").innerHTML = `<i class="led"></i> V${esc(s.flyway.current || "?")}`;
+
+  /* 신호 */
+  $("#signals").innerHTML = s.signals.map(sig => `
+    <div class="signal ${sig.level.toLowerCase()}">
+      <span class="mark">${sig.level === "RISK" ? "위험" : sig.level === "WARN" ? "주의" : "정상"}</span>
+      <div>
+        <div class="title">${esc(sig.title)}</div>
+        ${sig.detail ? `<div class="detail">${esc(sig.detail)}</div>` : ""}
+        ${sig.hint ? `<div class="hint">${esc(sig.hint)}</div>` : ""}
+      </div>
+    </div>`).join("");
+  const risky = s.signals.some(x => x.level === "RISK");
+  $$(".nav-item")[0].innerHTML = `개요 ${risky ? '<span class="dot"></span>' : ""}<span class="key">1</span>`;
+
+  /* 앱 */
+  const up = s.app.uptimeMs;
+  const uptime = up < 60000 ? Math.round(up / 1000) + "초"
+    : up < 3600000 ? Math.round(up / 60000) + "분"
+    : Math.floor(up / 3600000) + "시간 " + Math.round(up % 3600000 / 60000) + "분";
+  $("#app-uptime").textContent = uptime;
+  $("#app-kv").innerHTML = kv({
+    "프로파일": s.app.profiles.join(", ") || "default",
+    "스레드": num(s.app.threads),
+    "PID": s.app.pid,
+    "자바": s.app.javaVersion,
+    "기동": s.app.startedAt.slice(5)
+  });
+  $("#heap-text").textContent = `${s.app.heapUsedMb} / ${s.app.heapMaxMb} MB · ${s.app.heapPercent}%`;
+  const hb = $("#heap-bar");
+  hb.style.width = s.app.heapPercent + "%";
+  hb.className = s.app.heapPercent >= 85 ? "risk" : s.app.heapPercent >= 70 ? "warn" : "";
+
+  /* 풀 */
+  const p = s.pool;
+  $("#pool-name").textContent = p.name;
+  $("#pool-kv").innerHTML = kv({
+    "활성": num(p.active), "유휴": num(p.idle), "전체": num(p.total),
+    "대기": num(p.waiting), "최대": num(p.max)
+  });
+  $("#pool-text").textContent = `${p.active} / ${p.idle} · 최대 ${p.max}`;
+  const max = Math.max(p.max, 1);
+  $("#pool-bar").innerHTML =
+    `<i class="${p.waiting > 0 ? "risk" : ""}" style="width:${p.active / max * 100}%"></i>` +
+    `<i class="idle" style="width:${p.idle / max * 100}%"></i>`;
+
+  /* DB */
+  const db = s.db;
+  $("#db-size").textContent = db.reachable ? db.sizeMb + " MB" : "";
+  $("#db-kv").innerHTML = db.reachable ? kv({
+    "스키마": db.schema,
+    "타임존": db.timeZone,
+    "서버 시각": (db.serverNow || "").slice(5),
+    "커넥션": `${db.connections} / ${db.maxConnections}`,
+    "가동": Math.floor(db.uptimeSec / 3600) + "시간",
+    "느린 쿼리": num(db.slowQueries)
+  }) : `<dt>오류</dt><dd style="text-align:left;color:var(--risk)">${esc(db.error || "")}</dd>`;
+
+  /* 플라이웨이 */
+  $("#fw-when").textContent = (s.flyway.lastAppliedAt || "").slice(5);
+  $("#fw-kv").innerHTML = s.flyway.available ? kv({
+    "최신 버전": "V" + s.flyway.current,
+    "설명": s.flyway.description,
+    "적용": num(s.flyway.applied) + "개",
+    "실패": num(s.flyway.failed) + "개"
+  }) : `<dt>이력</dt><dd>없음</dd>`;
+
+  /* 타일 */
+  const pu = s.pulse;
+  $("#tiles").innerHTML = [
+    tile("오늘 승인액", "₩" + num(pu.todayCapturedAmount), num(pu.todayCapturedCount) + "건 · 환불 제외", ""),
+    tile("판매 중 폼", num(pu.sellingForms), "sale_form.SELLING", ""),
+    tile("미확정 결제", num(pu.capturePendingStuck), "5분 초과 CAPTURE_PENDING", pu.capturePendingStuck ? "hot" : ""),
+    tile("만료 홀드", num(pu.expiredHolds), "안 풀린 재고", pu.expiredHolds ? "warm" : ""),
+    tile("발송 대기", num(pu.outboxDue), "기한 지난 PENDING", pu.outboxDue ? "warm" : ""),
+    tile("발송 포기", num(pu.outboxDead), "outbox.DEAD", pu.outboxDead ? "hot" : ""),
+    tile("처리 중 환불", num(pu.refundProcessing), "refund.PROCESSING", pu.refundProcessing ? "warm" : "")
+  ].join("");
+
+  segments("#bar-payment", pu.payment);
+  segments("#bar-group", pu.orderGroup);
+  segments("#bar-outbox", pu.outbox);
+
+  /* 최근 전이 */
+  $("#events").innerHTML = pu.recentEvents.length ? table(
+    ["시각", "주문번호", "차수", "전이", "주체", "사유"],
+    pu.recentEvents.map(e => [
+      `<span class="mono">${esc(e.at)}</span>`,
+      e.order_no ? `<span class="mono">${esc(e.order_no)}</span>` : '<span class="null">미발급</span>',
+      `<span class="chip">${esc(e.phase)}</span>`,
+      `${e.from_status ? `<span class="chip ${tone(e.from_status)}">${esc(e.from_status)}</span> → ` : ""}` +
+      `<span class="chip ${tone(e.to_status)}">${esc(e.to_status)}</span>`,
+      `<span class="chip">${esc(e.actor)}</span>`,
+      e.reason ? esc(e.reason) : '<span class="null">NULL</span>'
+    ])) : `<div class="empty">아직 결제 상태 전이가 없다.</div>`;
+}
+
+/* ---------------- 개발 진척 ---------------- */
+async function loadRoadmap() {
+  let rm;
+  try { rm = await api("/roadmap"); } catch { return; }
+  if (!rm.available || !rm.domains.length) {
+    $("#rm-total").textContent = "–";
+    $("#rm-list").innerHTML = `<div class="empty" style="padding:14px">현황판을 읽지 못했다 — ${esc(rm.source || "")}</div>`;
+    return;
+  }
+  $("#rm-total").innerHTML = `${rm.total}<small>%</small>`;
+  $("#rm-bar").style.width = rm.total + "%";
+  $("#rm-asof").textContent = rm.asOf ? rm.asOf + " 기준" : "";
+
+  const pill = $("#pill-progress");
+  pill.hidden = false;
+  pill.textContent = `진척 ${rm.total}% ↗`;
+
+  // 자세한 항목표는 현황판이 갖고 있다. 여기서는 도메인 한 줄과 링크까지만 둔다
+  $("#rm-list").innerHTML = rm.domains.map(d => `
+    <a class="rm-row" href="${BASE}/status-board#${encodeURIComponent(d.slug)}" target="_blank" rel="noopener"
+       title="${esc(d.name)} · 완료 ${d.done}${d.part ? " · 부분 " + d.part : ""} · 점검 ${d.check} · 남음 ${d.todo} · 가중치 ${d.weight}">
+      <span class="rm-name">${esc(d.name)}</span>
+      <span class="meter"><i class="${d.pct >= 90 ? "" : d.pct >= 60 ? "warn" : "risk"}" style="width:${d.pct}%"></i></span>
+      <b>${d.pct}%</b>
+    </a>`).join("");
+}
+
+const kv = obj => Object.entries(obj)
+  .map(([k, v]) => `<dt>${esc(k)}</dt><dd>${v === null || v === undefined ? '<span class="null">—</span>' : esc(v)}</dd>`)
+  .join("");
+
+const tile = (label, value, foot, cls) => `
+  <div class="card tile ${cls}">
+    <div class="label">${esc(label)}</div>
+    <div class="num">${value}</div>
+    <div class="foot">${esc(foot)}</div>
+  </div>`;
+
+function segments(sel, counts) {
+  const entries = Object.entries(counts || {});
+  const total = entries.reduce((a, [, v]) => a + v, 0);
+  if (!total) { $(sel).innerHTML = `<div class="empty" style="padding:14px">행이 없다.</div>`; return; }
+  $(sel).innerHTML = `
+    <div class="bar-row">
+      <div class="bar-head"><span>전체</span><b>${num(total)}</b></div>
+      <div class="seg">${entries.map(([k, v]) =>
+        `<span title="${esc(k)} ${num(v)}" style="width:${v / total * 100}%;background:${COLORS[tone(k)]}">${v / total > .12 ? num(v) : ""}</span>`).join("")}</div>
+      <div class="legend">${entries.map(([k, v]) =>
+        `<span><i style="background:${COLORS[tone(k)]}"></i>${esc(k)} <b class="mono">${num(v)}</b></span>`).join("")}</div>
+    </div>`;
+}
+
+function table(head, rows, aligns) {
+  return `<table><thead><tr>${head.map((h, i) =>
+    `<th class="${aligns && aligns[i] === "num" ? "num" : ""}">${esc(h)}</th>`).join("")}</tr></thead>
+    <tbody>${rows.map(r => `<tr>${r.map((c, i) =>
+      `<td class="${aligns && aligns[i] === "num" ? "num" : ""}">${c}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+}
+
+/* 값 하나를 셀로. 클릭하면 복사된다 */
+function cell(v) {
+  if (v === null || v === undefined) return '<span class="null">NULL</span>';
+  if (typeof v === "number" || typeof v === "boolean") return `<span class="mono">${esc(v)}</span>`;
+  const text = String(v);
+  if (TONE[text] !== undefined) return `<span class="chip ${tone(text)}">${esc(text)}</span>`;
+  return `<span class="copyable" data-copy="${esc(text)}">${esc(text)}</span>`;
+}
+
+document.addEventListener("click", e => {
+  const target = e.target.closest("[data-copy]");
+  if (!target) return;
+  navigator.clipboard.writeText(target.dataset.copy).then(() => toast("복사했다"));
+});
+
+/* =================================================================
+   ERD
+   배치는 손으로 잡았다. 자동 배치는 이만한 규모에서 선이 더 엉킨다 —
+   도메인 무리를 눈으로 알아보는 게 이 화면의 전부라서 그걸 포기할 수 없다.
+   여기 없는 테이블(새 마이그레이션 등)은 아래 '그 밖' 줄에 자동으로 붙는다.
+   ================================================================= */
+const NODE_W = 168, NODE_H = 46;
+const ERD_LAYOUT = {
+  seller:            [ 40,  40, "sale"],
+  sale_form:         [ 40, 140, "sale"],
+  sale_form_history: [250, 100, "sale"],
+  sale_form_image:   [250, 176, "sale"],
+  product:           [ 40, 240, "sale"],
+  product_option:    [250, 252, "sale"],
+
+  buyer:             [ 40, 400, "buyer"],
+  buyer_address:     [250, 380, "buyer"],
+  wishlist:          [250, 456, "buyer"],
+  cart:              [ 40, 500, "buyer"],
+  cart_item:         [250, 532, "buyer"],
+
+  shipping:          [520, 150, "order"],
+  order_group:       [520, 240, "order"],
+  orders:            [520, 340, "order"],
+  order_item:        [520, 440, "order"],
+  stock_hold:        [520, 516, "order"],
+
+  payment:           [770, 300, "pay"],
+  payment_event:     [770, 400, "pay"],
+  refund:            [770, 476, "pay"],
+  outbox:            [770, 576, "pay"],
+
+  flyway_schema_history:     [ 40, 640, "infra"],
+  SPRING_SESSION:            [250, 640, "infra"],
+  SPRING_SESSION_ATTRIBUTES: [460, 640, "infra"]
+};
+const ERD_CLUSTERS = [
+  { key: "sale",  name: "셀러 · 판매폼",     box: [ 20,  20, 420, 300] },
+  { key: "buyer", name: "구매자 · 장바구니", box: [ 20, 352, 420, 250] },
+  { key: "order", name: "주문 · 배송",       box: [500, 128, 210, 458] },
+  { key: "pay",   name: "결제 · 이벤트",     box: [750, 278, 210, 368] },
+  { key: "infra", name: "인프라",            box: [ 20, 616, 640, 108] }
+];
+const CLUSTER_COLOR = { sale: "var(--c-sale)", buyer: "var(--c-buyer)", order: "var(--c-order)", pay: "var(--c-pay)", infra: "var(--c-infra)" };
+
+let erd = null, erdZoom = 1, selectedTable = null, peekOffset = 0;
+const PEEK_LIMIT = 30;
+
+async function loadErd() {
+  try { erd = await api("/erd"); }
+  catch (e) { $("#erd-wrap").innerHTML = `<div class="err">${esc(e.message)}</div>`; return; }
+
+  const layout = { ...ERD_LAYOUT };
+  // 배치에 없는 테이블은 맨 아래에 한 줄로 붙인다. 새 테이블이 조용히 사라지면 안 된다
+  const extra = erd.tables.map(t => t.name).filter(n => !layout[n]);
+  extra.forEach((name, i) => layout[name] = [40 + (i % 5) * 210, 760 + Math.floor(i / 5) * 76, "infra"]);
+
+  const height = extra.length ? 760 + Math.ceil(extra.length / 5) * 76 + 20 : 748;
+  const rows = Object.fromEntries(erd.tables.map(t => [t.name, t.rows]));
+
+  const edges = erd.relations.filter(r => layout[r.from] && layout[r.to])
+    .map(r => `<path class="edge" data-from="${esc(r.from)}" data-to="${esc(r.to)}" d="${edgePath(layout[r.to], layout[r.from])}"></path>`)
+    .join("");
+
+  const clusters = ERD_CLUSTERS.map(c => `
+    <g>
+      <rect class="cluster" x="${c.box[0]}" y="${c.box[1]}" width="${c.box[2]}" height="${c.box[3]}" rx="12"></rect>
+      <text class="cluster-label" x="${c.box[0] + 12}" y="${c.box[1] + 17}">${esc(c.name)}</text>
+    </g>`).join("");
+
+  const nodes = Object.entries(layout).map(([name, [x, y, cluster]]) => {
+    const count = rows[name];
+    return `
+    <g class="erd-node" data-table="${esc(name)}" data-empty="${!count}" tabindex="0" role="button">
+      <rect class="box" x="${x}" y="${y}" width="${NODE_W}" height="${NODE_H}"></rect>
+      <rect class="tag" x="${x + 1}" y="${y + 9}" width="4" height="${NODE_H - 18}" fill="${CLUSTER_COLOR[cluster]}"></rect>
+      <text class="nm" x="${x + 14}" y="${y + 21}">${esc(name)}</text>
+      <text class="ct" x="${x + 14}" y="${y + 36}">${count === undefined ? "?" : num(count) + "행"}</text>
+    </g>`;
+  }).join("");
+
+  $("#erd-wrap").innerHTML =
+    `<svg class="erd" id="erd-svg" width="${1000 * erdZoom}" height="${height * erdZoom}" viewBox="0 0 1000 ${height}">
+       ${clusters}${edges}${nodes}
+     </svg>`;
+
+  $("#erd-legend").innerHTML = ERD_CLUSTERS.map(c =>
+    `<span><i style="background:${CLUSTER_COLOR[c.key]}"></i>${esc(c.name)}</span>`).join("")
+    + `<span style="margin-left:auto;color:var(--ink-3)">테이블 ${erd.tables.length} · 외래키 ${erd.relations.length}</span>`;
+
+  $$(".erd-node").forEach(n => {
+    n.onclick = () => selectTable(n.dataset.table);
+    n.onkeydown = e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); selectTable(n.dataset.table); } };
+  });
+
+  if (selectedTable) highlight(selectedTable);
+  else selectTable(pickBusiest());
+}
+
+const pickBusiest = () => (erd.tables.filter(t => ERD_LAYOUT[t.name] && t.rows > 0)
+  .sort((a, b) => b.rows - a.rows)[0] || erd.tables[0]).name;
+
+/** 부모 → 자식. 열이 다르면 가로로, 같으면 세로로 뺀다 */
+function edgePath(parent, child) {
+  const p = { x: parent[0], y: parent[1] }, c = { x: child[0], y: child[1] };
+  const pc = { x: p.x + NODE_W / 2, y: p.y + NODE_H / 2 };
+  const cc = { x: c.x + NODE_W / 2, y: c.y + NODE_H / 2 };
+  if (Math.abs(cc.x - pc.x) >= 100) {
+    const right = cc.x > pc.x;
+    const x1 = right ? p.x + NODE_W : p.x, x2 = right ? c.x : c.x + NODE_W;
+    const k = right ? 60 : -60;
+    return `M ${x1} ${pc.y} C ${x1 + k} ${pc.y}, ${x2 - k} ${cc.y}, ${x2} ${cc.y}`;
+  }
+  const down = cc.y > pc.y;
+  const y1 = down ? p.y + NODE_H : p.y, y2 = down ? c.y : c.y + NODE_H;
+  const k = down ? 30 : -30;
+  return `M ${pc.x} ${y1} C ${pc.x} ${y1 + k}, ${cc.x} ${y2 - k}, ${cc.x} ${y2}`;
+}
+
+/** 고른 테이블과 그에 닿은 것만 남기고 나머지는 흐리게 */
+function highlight(name) {
+  const touching = new Set([name]);
+  erd.relations.forEach(r => {
+    if (r.from === name) touching.add(r.to);
+    if (r.to === name) touching.add(r.from);
+  });
+  $$(".erd-node").forEach(n => {
+    const on = n.dataset.table === name;
+    n.dataset.on = String(on);
+    n.dataset.dim = String(!touching.has(n.dataset.table));
+  });
+  $$(".erd .edge").forEach(p => {
+    const on = p.dataset.from === name || p.dataset.to === name;
+    p.classList.toggle("on", on);
+    p.classList.toggle("dim", !on);
+  });
+}
+
+function zoom(step) {
+  erdZoom = Math.min(1.6, Math.max(0.6, Math.round((erdZoom + step) * 10) / 10));
+  const svg = $("#erd-svg");
+  if (svg) {
+    const [, , w, h] = svg.getAttribute("viewBox").split(" ").map(Number);
+    svg.setAttribute("width", w * erdZoom);
+    svg.setAttribute("height", h * erdZoom);
+  }
+  $("#erd-zoom").textContent = Math.round(erdZoom * 100) + "%";
+}
+$("#erd-in").onclick = () => zoom(0.1);
+$("#erd-out").onclick = () => zoom(-0.1);
+
+$("#erd-find").oninput = e => {
+  const q = e.target.value.trim().toLowerCase();
+  $$(".erd-node").forEach(n => n.dataset.hit = String(!!q && n.dataset.table.toLowerCase().includes(q)));
+};
+$("#erd-find").onkeydown = e => {
+  if (e.key !== "Enter") return;
+  const hit = $$(".erd-node").find(n => n.dataset.hit === "true");
+  if (hit) { selectTable(hit.dataset.table); hit.scrollIntoView({ block: "center", inline: "center" }); }
+};
+
+/* ---------------- 테이블 상세 ---------------- */
+async function selectTable(name) {
+  if (!name) return;
+  selectedTable = name;
+  peekOffset = 0;
+  highlight(name);
+  renderRelations(name);
+  await loadPeek();
+}
+
+function renderRelations(name) {
+  const out = erd.relations.filter(r => r.from === name);
+  const incoming = erd.relations.filter(r => r.to === name);
+  $("#rel-count").textContent = `나감 ${out.length} · 들어옴 ${incoming.length}`;
+  const row = (label, target, text) =>
+    `<button class="rel" data-goto="${esc(target)}"><span class="arrow">${label}</span>${text}</button>`;
+  $("#rel-list").innerHTML =
+    (out.map(r => row("→", r.to,
+      `${esc(r.fromColumn)} <span class="arrow">→</span> <span class="to">${esc(r.to)}</span>.${esc(r.toColumn)}`)).join("") +
+     incoming.map(r => row("←", r.from,
+      `<span class="to">${esc(r.from)}</span>.${esc(r.fromColumn)} <span class="arrow">→</span> ${esc(r.toColumn)}`)).join(""))
+    || `<div class="empty" style="padding:14px">외래키가 없다.</div>`;
+  $$("#rel-list .rel").forEach(b => b.onclick = () => selectTable(b.dataset.goto));
+}
+
+async function loadPeek() {
+  let peek;
+  try { peek = await api(`/tables/${encodeURIComponent(selectedTable)}?limit=${PEEK_LIMIT}&offset=${peekOffset}`); }
+  catch (e) { $("#peek-rows").innerHTML = `<div class="err">${esc(e.message)}</div>`; return; }
+
+  $("#peek-name").textContent = peek.table;
+  $("#peek-meta").textContent = `${num(peek.totalRows)}행 · ${peek.columns.length}열 · ORDER BY ${peek.orderBy}`;
+  $("#peek-actions").hidden = false;
+  $("#peek-schema").innerHTML = table(
+    ["컬럼", "타입", "NULL", "키", "기본값", "설명"],
+    peek.columns.map(c => [
+      `<span class="mono">${esc(c.name)}</span>${c.masked ? ' <span class="chip warn">가림</span>' : ""}`,
+      `<span class="mono" style="color:var(--ink-3)">${esc(c.type)}</span>`,
+      c.nullable ? '<span class="null">yes</span>' : "no",
+      c.key ? `<span class="chip acc">${esc(c.key)}</span>` : "",
+      c.defaultValue == null ? '<span class="null">—</span>' : `<span class="mono">${esc(c.defaultValue)}</span>`,
+      esc(c.comment || "")
+    ]));
+
+  const from = peek.totalRows ? peekOffset + 1 : 0;
+  $("#peek-page").textContent = `${num(from)}–${num(peekOffset + peek.rows.length)} / ${num(peek.totalRows)}`;
+  $("#peek-prev").disabled = peekOffset === 0;
+  $("#peek-next").disabled = peekOffset + PEEK_LIMIT >= peek.totalRows;
+  $("#peek-rows").innerHTML = peek.rows.length
+    ? table(peek.resultColumns, peek.rows.map(r => r.map(cell)))
+    : `<div class="empty">행이 없다.</div>`;
+}
+$("#peek-prev").onclick = () => { peekOffset = Math.max(0, peekOffset - PEEK_LIMIT); loadPeek(); };
+$("#peek-next").onclick = () => { peekOffset += PEEK_LIMIT; loadPeek(); };
+
+/* ERD 에서 고른 테이블을 SQL 창으로 넘긴다 */
+$("#to-sql").onclick = () => openInSql(`SELECT *\n  FROM \`${selectedTable}\`\n ORDER BY 1 DESC`);
+$("#to-sql-join").onclick = () => {
+  const parents = erd.relations.filter(r => r.from === selectedTable);
+  if (!parents.length) { toast("외래키가 없어서 조인할 부모가 없다"); return; }
+  const joins = parents.map((r, i) =>
+    `  JOIN \`${r.to}\` p${i + 1} ON p${i + 1}.\`${r.toColumn}\` = t.\`${r.fromColumn}\``).join("\n");
+  openInSql(`SELECT t.*\n  FROM \`${selectedTable}\` t\n${joins}\n ORDER BY t.\`${parents[0].fromColumn}\` DESC`);
+};
+
+function openInSql(sql) {
+  show("sql");
+  $("#sql").value = sql;
+  $("#preset-note").textContent = `ERD 의 ${selectedTable} 에서 만든 쿼리다.`;
+  $$("#presets button").forEach(x => x.setAttribute("aria-current", "false"));
+  runSql();
+}
+
+/* ---------------- SQL ---------------- */
+async function loadPresets() {
+  const presets = await api("/presets");
+  $("#presets").innerHTML = presets.map((p, i) => `
+    <button data-i="${i}">
+      <div class="name" style="font-family:var(--sans);font-size:13px">${esc(p.title)}</div>
+      <div class="meta"><span>${esc(p.note)}</span></div>
+    </button>`).join("");
+  $$("#presets button").forEach(b => b.onclick = () => {
+    const p = presets[b.dataset.i];
+    $("#sql").value = p.sql;
+    $("#preset-note").textContent = p.note;
+    $$("#presets button").forEach(x => x.setAttribute("aria-current", String(x === b)));
+    runSql();
+  });
+}
+
+async function runSql() {
+  const btn = $("#run");
+  btn.disabled = true;
+  $("#sql-stat").textContent = "실행 중…";
+  try {
+    const result = await api("/query", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sql: $("#sql").value, limit: Number($("#sql-limit").value) })
+    });
+    $("#sql-stat").textContent = `${num(result.rowCount)}행 · ${result.elapsedMs}ms${result.truncated ? " · 잘림" : ""}`;
+    $("#sql-out").innerHTML = result.rows.length
+      ? table(result.columns, result.rows.map(r => r.map(cell)))
+      : `<div class="empty">결과가 없다.</div>`;
+  } catch (e) {
+    $("#sql-stat").textContent = "";
+    $("#sql-out").innerHTML = `<div class="err">${esc(e.message)}</div>`;
+  } finally {
+    btn.disabled = false;
+  }
+}
+$("#run").onclick = runSql;
+$("#sql").addEventListener("keydown", e => {
+  if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); runSql(); }
+});
+
+/* ---------------- 주문 추적 ---------------- */
+async function runTrace() {
+  const q = $("#trace-q").value.trim();
+  if (!q) return;
+  $("#trace-out").innerHTML = `<div class="empty">찾는 중…</div>`;
+  let t;
+  try { t = await api("/trace?q=" + encodeURIComponent(q)); }
+  catch (e) { $("#trace-out").innerHTML = `<div class="err">${esc(e.message)}</div>`; return; }
+
+  if (!t.found) {
+    $("#trace-out").innerHTML = `<div class="empty">‘${esc(q)}’ 로 찾은 묶음이 없다.</div>`;
+    return;
+  }
+  const g = t.orderGroup;
+  const paid = (t.payments || []).filter(p => p.status === "CAPTURED")
+    .reduce((a, p) => a + p.amount - p.refunded_amount, 0);
+
+  const section = (title, right, inner) => `
+    <div class="card" style="margin-bottom:14px">
+      <header><h3>${esc(title)}</h3><span class="right">${esc(right || "")}</span></header>
+      ${inner}
+    </div>`;
+
+  $("#trace-out").innerHTML = `
+    <div class="card" style="margin-bottom:14px">
+      <div class="body" style="display:flex;gap:24px;flex-wrap:wrap;align-items:center">
+        <div>
+          <div style="font-size:11.5px;color:var(--ink-3)">주문번호</div>
+          <div style="font-family:var(--mono);font-size:19px">${esc(g.order_no || "미발급")}</div>
+        </div>
+        <div><div style="font-size:11.5px;color:var(--ink-3)">묶음 상태</div>
+          <div style="margin-top:4px"><span class="chip ${tone(g.status)}">${esc(g.status)}</span></div></div>
+        <div><div style="font-size:11.5px;color:var(--ink-3)">청구</div>
+          <div style="font-family:var(--mono);font-size:19px">₩${num(g.deposit1_total + g.shipping_fee)}</div></div>
+        <div><div style="font-size:11.5px;color:var(--ink-3)">실제 승인</div>
+          <div style="font-family:var(--mono);font-size:19px;color:${paid ? "var(--ok)" : "var(--ink-3)"}">₩${num(paid)}</div></div>
+        <div style="margin-left:auto;text-align:right;font-size:12px;color:var(--ink-3)">
+          <div>생성 ${esc(g.created_at)}</div><div>갱신 ${esc(g.updated_at)}</div>
+        </div>
+      </div>
+      <div class="body" style="border-top:1px solid var(--line-soft);display:flex;gap:22px;flex-wrap:wrap;font-size:12.5px">
+        <span>구매자 <span class="mono">#${esc(g.buyer_id)}</span> ${esc(t.buyer.nickname || "")}</span>
+        <span>셀러 <span class="mono">#${esc(g.seller_id)}</span> ${esc(t.seller.store_slug || "")}</span>
+        <span>배송비 <span class="mono">₩${num(g.shipping_fee)}</span></span>
+        <span>2차금 <span class="mono">₩${num(g.deposit2_total)}</span></span>
+        <span data-copy="${esc(g.order_token || "")}" class="copyable">order_token <span class="mono">${esc(g.order_token || "—")}</span></span>
+        ${g.fail_reason ? `<span style="color:var(--risk)">실패 사유 ${esc(g.fail_reason)}</span>` : ""}
+      </div>
+    </div>
+
+    ${section("결제", "payment", t.payments.length ? table(
+      ["id", "차수", "금액", "환불", "상태", "승인 시각", "sessionId"],
+      t.payments.map(p => [
+        `<span class="mono">${p.id}</span>`, `<span class="chip">${esc(p.phase)}</span>`,
+        `₩${num(p.amount)}`, p.refunded_amount ? `₩${num(p.refunded_amount)}` : '<span class="null">0</span>',
+        `<span class="chip ${tone(p.status)}">${esc(p.status)}</span>`,
+        p.captured_at ? `<span class="mono">${esc(p.captured_at)}</span>` : '<span class="null">—</span>',
+        p.session_id ? `<span class="mono copyable" data-copy="${esc(p.session_id)}">${esc(p.session_id)}</span>` : '<span class="null">—</span>'
+      ]), ["num", "", "num", "num", "", "", ""]) : `<div class="empty">결제 행이 없다.</div>`)}
+
+    ${section("상태 전이", "payment_event", t.events.length ? `<div class="body"><div class="timeline">${
+      t.events.map((e, i) => `
+        <div class="tl-item ${e.to_status === "CAPTURED" ? "ok"
+          : e.to_status === "FAILED" || (e.to_status === "CAPTURE_PENDING" && i === t.events.length - 1) ? "risk" : ""}">
+          <div class="tl-head">
+            <span class="tl-time">${esc(e.created_at)}</span>
+            <span class="chip">${esc(e.phase)}</span>
+            ${e.from_status ? `<span class="chip ${tone(e.from_status)}">${esc(e.from_status)}</span> →` : ""}
+            <span class="chip ${tone(e.to_status)}">${esc(e.to_status)}</span>
+            <span class="chip">${esc(e.actor)}</span>
+          </div>
+          ${e.reason ? `<div class="tl-note">${esc(e.reason)}</div>` : ""}
+        </div>`).join("")}</div></div>` : `<div class="empty">전이 기록이 없다.</div>`)}
+
+    ${section("주문 · 재고 홀드", "orders / stock_hold", t.orders.length ? table(
+      ["주문", "판매 폼", "수량", "1차금", "2차금", "상태", "홀드"],
+      t.orders.map(o => {
+        const h = t.holds.find(x => x.order_id === o.id);
+        return [
+          `<span class="mono">${o.id}</span>`, esc(o.title),
+          num(o.qty), `₩${num(o.deposit1_sum)}`, `₩${num(o.deposit2_sum)}`,
+          `<span class="chip ${tone(o.status)}">${esc(o.status)}</span>`,
+          h ? `<span class="chip ${h.expired && h.status === "HELD" ? "risk" : tone(h.status)}">${esc(h.status)}</span>
+               <span class="tl-time">${esc(h.expires_at)}</span>` : '<span class="null">—</span>'
+        ];
+      }), ["num", "", "num", "num", "num", "", ""]) : `<div class="empty">주문 행이 없다.</div>`)}
+
+    ${t.refunds.length ? section("환불", "refund", table(
+      ["id", "결제", "금액", "요청자", "상태", "사유", "시각"],
+      t.refunds.map(r => [`<span class="mono">${r.id}</span>`, `<span class="mono">${r.payment_id}</span>`,
+        `₩${num(r.amount)}`, `<span class="chip">${esc(r.requested_by)}</span>`,
+        `<span class="chip ${tone(r.status)}">${esc(r.status)}</span>`,
+        esc(r.reason || ""), `<span class="mono">${esc(r.created_at)}</span>`]),
+      ["num", "num", "num", "", "", "", ""])) : ""}
+
+    ${t.outbox.length ? section("아웃박스", "outbox", table(
+      ["id", "이벤트", "상태", "재시도", "보낸 시각", "마지막 오류"],
+      t.outbox.map(o => [`<span class="mono">${o.id}</span>`, `<span class="mono">${esc(o.event_type)}</span>`,
+        `<span class="chip ${tone(o.status)}">${esc(o.status)}</span>`, num(o.retry_count),
+        o.sent_at ? `<span class="mono">${esc(o.sent_at)}</span>` : '<span class="null">—</span>',
+        o.last_error ? `<span style="color:var(--risk)">${esc(o.last_error)}</span>` : ""]))) : ""}
+  `;
+}
+$("#trace-run").onclick = runTrace;
+$("#trace-q").addEventListener("keydown", e => { if (e.key === "Enter") runTrace(); });
+
+/* ---------------- 마이그레이션 ---------------- */
+async function loadMigrations() {
+  const rows = await api("/migrations");
+  $("#mig-out").innerHTML = rows.length ? table(
+    ["#", "버전", "설명", "스크립트", "결과", "실행 시간", "적용 시각"],
+    rows.map(m => [
+      `<span class="mono">${m.installed_rank}</span>`,
+      `<span class="chip acc">V${esc(m.version || "")}</span>`,
+      esc(m.description || ""),
+      `<span class="mono" style="color:var(--ink-3)">${esc(m.script || "")}</span>`,
+      m.success ? '<span class="chip ok">성공</span>' : '<span class="chip risk">실패</span>',
+      `${num(m.execution_time)} ms`,
+      `<span class="mono">${esc(m.installed_on || "")}</span>`
+    ]), ["num", "", "", "", "", "num", ""]) : `<div class="empty">flyway_schema_history 가 없다.</div>`;
+}
+
+/* ---------------- 갱신 · 단축키 ---------------- */
+function schedule() {
+  clearInterval(timer);
+  if ($("#auto").checked) timer = setInterval(loadSnapshot, 5000);
+}
+$("#auto").onchange = schedule;
+$("#refresh").onclick = () => {
+  loadSnapshot();
+  loadRoadmap();
+  const view = $$(".view").find(v => v.dataset.active === "true").dataset.view;
+  if (LOADERS[view] && view !== "overview") LOADERS[view]();
+  toast("갱신했다");
+};
+
+$("#dark").onchange = e => {
+  document.documentElement.dataset.theme = e.target.checked ? "dark" : "light";
+  localStorage.setItem("moeum-console-theme", e.target.checked ? "dark" : "light");
+};
+const savedTheme = localStorage.getItem("moeum-console-theme");
+if (savedTheme) {
+  document.documentElement.dataset.theme = savedTheme;
+  $("#dark").checked = savedTheme === "dark";
+} else {
+  $("#dark").checked = matchMedia("(prefers-color-scheme: dark)").matches;
+}
+
+const KEYS = { "1": "overview", "2": "schema", "3": "sql", "4": "trace", "5": "migrations" };
+document.addEventListener("keydown", e => {
+  if (/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)) return;
+  if (KEYS[e.key]) show(KEYS[e.key]);
+  if (e.key === "r") $("#refresh").click();
+});
+
+show(location.hash.slice(1) || "overview");
+loadSnapshot();
+loadRoadmap();
+schedule();
+</script>
+</body>
+</html>
