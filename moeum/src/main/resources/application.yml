@@ -93,8 +93,20 @@ moeum:
       # 수신번호 정책이 정해지기 전까지 알림톡을 켜 두는 방법이다. 실서비스에서는 비운다
       test-recipient: ${SOLAPI_TEST_RECIPIENT:}
       templates:
-        # 승인된 템플릿만 적는다. 없는 이벤트는 로그만 남기고 넘어간다
+        # 승인된 템플릿만 적는다. 없는 이벤트는 로그만 남기고 넘어간다 —
+        # 미승인 id 로 보내면 4xx 로 떨어져 8회 재시도 끝에 DEAD 로 쌓인다.
+        # 9개를 다 적어 두는 이유는, 한 줄이 비어 있는 것과 아예 없는 것이
+        # 화면에서 똑같아 보이기 때문이다. 승인되는 대로 파라미터만 채우면 나가기 시작한다
         ORDER_PAID: ${SOLAPI_TEMPLATE_ORDER_PAID:}
+        # 유실되면 구매자가 잔금을 낼 줄 모른다. 다른 이벤트보다 중요하다
+        SECOND_PAYMENT_DUE: ${SOLAPI_TEMPLATE_SECOND_PAYMENT_DUE:}
+        SECOND_PAID: ${SOLAPI_TEMPLATE_SECOND_PAID:}
+        SHIPPED: ${SOLAPI_TEMPLATE_SHIPPED:}
+        PROGRESS_CHANGED: ${SOLAPI_TEMPLATE_PROGRESS_CHANGED:}
+        RECRUITMENT_SUCCEEDED: ${SOLAPI_TEMPLATE_RECRUITMENT_SUCCEEDED:}
+        RECRUITMENT_FAILED: ${SOLAPI_TEMPLATE_RECRUITMENT_FAILED:}
+        SECOND_PAYMENT_OVERDUE: ${SOLAPI_TEMPLATE_SECOND_PAYMENT_OVERDUE:}
+        REFUND_COMPLETED: ${SOLAPI_TEMPLATE_REFUND_COMPLETED:}
   auth:
     # 로컬은 http 라 Secure 를 붙이면 쿠키가 저장되지 않는다
     cookie-secure: false
@@ -160,6 +172,42 @@ spring:
     show-sql: false
 
 moeum:
+  notify:
+    # log | solapi.
+    #
+    # ★ 이 블록이 없으면 NOTIFY_PROVIDER 를 solapi 로 놓아도 알림톡이 나가지 않는다.
+    #   ${NOTIFY_PROVIDER} 를 읽는 자리가 여기뿐이라, 프로파일 문서에 없으면
+    #   moeum.notify.provider 가 정의되지 않은 채로 남고 발송기는
+    #   LoggingNotificationSender(matchIfMissing=true)가 잡는다 — 로그만 남고 조용히 안 나간다.
+    #   실제로 그래서 운영에서 알림톡이 켜지지 않았다.
+    provider: ${NOTIFY_PROVIDER:log}
+    solapi:
+      # 키는 저장소에 두지 않는다 — Parameter Store 에서 온다 (D-017).
+      # 비어 있으면 앱은 그대로 뜨고 알림톡만 안 나간다
+      api-key: ${SOLAPI_API_KEY:}
+      api-secret: ${SOLAPI_API_SECRET:}
+      pf-id: ${SOLAPI_PF_ID:}
+      # SOLAPI 에 사전 등록된 발신번호. 알림톡이 막혀 문자로 대체될 때 쓰인다
+      from: ${SOLAPI_FROM:}
+      link-base: ${SOLAPI_LINK_BASE:https://www.moeum.store}
+      # ★ 값이 있으면 모든 알림이 이 번호로만 간다 — 구매자에게는 한 통도 가지 않는다.
+      #   실서비스로 넘어갈 때 지우는 것을 잊으면 알림이 전부 한 사람에게만 간다
+      test-recipient: ${SOLAPI_TEST_RECIPIENT:}
+      templates:
+        # 승인된 템플릿만 적는다. 없는 이벤트는 로그만 남기고 넘어간다 —
+        # 미승인 id 로 보내면 4xx 로 떨어져 8회 재시도 끝에 DEAD 로 쌓인다.
+        # 9개를 다 적어 두는 이유는, 한 줄이 비어 있는 것과 아예 없는 것이
+        # 화면에서 똑같아 보이기 때문이다. 승인되는 대로 파라미터만 채우면 나가기 시작한다
+        ORDER_PAID: ${SOLAPI_TEMPLATE_ORDER_PAID:}
+        # 유실되면 구매자가 잔금을 낼 줄 모른다. 다른 이벤트보다 중요하다
+        SECOND_PAYMENT_DUE: ${SOLAPI_TEMPLATE_SECOND_PAYMENT_DUE:}
+        SECOND_PAID: ${SOLAPI_TEMPLATE_SECOND_PAID:}
+        SHIPPED: ${SOLAPI_TEMPLATE_SHIPPED:}
+        PROGRESS_CHANGED: ${SOLAPI_TEMPLATE_PROGRESS_CHANGED:}
+        RECRUITMENT_SUCCEEDED: ${SOLAPI_TEMPLATE_RECRUITMENT_SUCCEEDED:}
+        RECRUITMENT_FAILED: ${SOLAPI_TEMPLATE_RECRUITMENT_FAILED:}
+        SECOND_PAYMENT_OVERDUE: ${SOLAPI_TEMPLATE_SECOND_PAYMENT_OVERDUE:}
+        REFUND_COMPLETED: ${SOLAPI_TEMPLATE_REFUND_COMPLETED:}
   auth:
     cookie-secure: true
     # CSRF 2차 방어 (api-spec 10-11). 운영에서는 반드시 채운다

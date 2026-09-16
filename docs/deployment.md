@@ -361,7 +361,14 @@ read -rs SOLAPI_SECRET && put SOLAPI_API_SECRET "$SOLAPI_SECRET" && unset SOLAPI
 
 # 발신프로필 ID(pfId) 와 승인된 템플릿 ID. 비밀은 아니지만 같이 둔다
 aws ssm put-parameter --region ap-northeast-2     --name /moeum/prod/SOLAPI_PF_ID --value "KA01PF..." --type String --overwrite
+
+# 템플릿 id — 승인된 것만 채운다. 안 채운 이벤트는 로그만 남고 넘어간다.
+# 이름은 OutboxEventType 의 상수명 그대로다
 aws ssm put-parameter --region ap-northeast-2     --name /moeum/prod/SOLAPI_TEMPLATE_ORDER_PAID --value "KA01TP..." --type String --overwrite
+# 그 외 여덟 개: SECOND_PAYMENT_DUE · SECOND_PAID · SHIPPED · PROGRESS_CHANGED ·
+#               RECRUITMENT_SUCCEEDED · RECRUITMENT_FAILED · SECOND_PAYMENT_OVERDUE ·
+#               REFUND_COMPLETED
+# SECOND_PAYMENT_DUE 가 가장 중요하다 — 이게 안 나가면 구매자는 잔금을 낼 줄 모른다
 
 # 발신번호. SOLAPI 에 사전 등록된 번호여야 한다 —
 # 알림톡이 막힌 수신자에게 문자로 대체 발송될 때 쓰인다
@@ -373,9 +380,16 @@ aws ssm put-parameter --region ap-northeast-2     --name /moeum/prod/NOTIFY_PROV
 
 **승인된 템플릿이 있는 이벤트만 나간다.** `SOLAPI_TEMPLATE_ORDER_PAID` 만 채워 두면
 1차금 결제 완료만 발송되고, 2차금 청구·환불 완료는 예전처럼 로그만 남는다.
-템플릿이 추가로 승인되면 **파라미터를 하나 더 넣고 재배포하면 된다 — 코드는 손대지 않는다.**
-그때 `docker-compose.prod.yml` 의 `environment` 와 `application.yml` 의 `templates` 에
-이름을 같이 추가한다 (point3 키가 컨테이너까지 안 갔던 것과 같은 함정이다).
+템플릿이 추가로 승인되면 **파라미터만 넣고 재배포하면 된다 — 코드도 설정 파일도 손대지 않는다.**
+아홉 개 이벤트의 자리를 `application.yml` 과 `docker-compose.prod.yml` 에 미리 다 뚫어 두었다
+(D-062). 새 이벤트 타입을 만들 때만 두 파일에 이름을 추가하고, `NotifyConfigWiringTest` 가
+빠진 자리를 잡는다.
+
+> **⚠ 예전에는 이 설명대로 해도 알림톡이 나가지 않았다 (D-062).**
+> `application.yml` 의 `prod` 문서에 `moeum.notify` 블록이 통째로 빠져 있어서,
+> `NOTIFY_PROVIDER=solapi` 를 넣어도 읽는 자리가 없어 `moeum.notify.provider` 가
+> 정의되지 않았다. 그러면 발송기를 `LoggingNotificationSender`(`matchIfMissing = true`)가
+> 잡아 **예외도 경고도 없이 로그만 남는다.** 지금은 블록이 있고 테스트가 지킨다.
 
 ### 테스트 수신번호 — 구매자에게 안 가게 하고 켜는 법
 

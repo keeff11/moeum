@@ -2976,3 +2976,67 @@ refund 행에서 세도록 고쳤다. 화면이 읽는 키 이름(`refunded_amou
 셀러 페이지·상품 상세와 같은 `no-store` 다. 프로필은 재고만큼 자주 바뀌지 않지만,
 셀러가 설정 화면에서 이름·소개·사진을 고쳤는데 목록에 옛날 값이 남아 있으면
 **저장이 안 된 줄 안다.**
+
+## D-062. 알림톡이 운영에서 조용히 꺼져 있었다 — 설정 자리를 프로파일마다 뚫어 둔다
+
+**계기:** "알림톡을 켜 달라" 는 요청을 받고 연동 상태를 확인하다 발견했다.
+**코드는 다 되어 있었다.** `SolapiNotificationSender` 도 `AlimtalkMessageFactory` 도
+완성돼 있고, 배포 문서에는 파라미터를 채우는 절차까지 적혀 있었다.
+**그런데 그 절차를 그대로 따라도 알림톡은 나가지 않았다.**
+
+### 읽는 자리가 없으면 환경변수는 아무 일도 하지 않는다
+
+`application.yml` 의 `prod` 문서에 `moeum.notify` 블록이 **통째로 없었다.**
+`${NOTIFY_PROVIDER}` 를 읽는 자리가 `local` 문서에만 있었던 것이다.
+
+환경변수 이름이 `NOTIFY_PROVIDER` 라 스프링이 알아서 `moeum.notify.provider` 로
+바인딩해 주지 않는다 — 그 매핑을 만드는 것이 yml 의 `${NOTIFY_PROVIDER:log}` 플레이스홀더
+자체다. 자리가 없으면 프로퍼티는 **정의되지 않은 채로 남는다.**
+
+그리고 그때 발송기를 무엇이 잡는가가 이 문제의 고약한 점이다.
+
+```java
+@ConditionalOnProperty(name = "moeum.notify.provider", havingValue = "log", matchIfMissing = true)
+public class LoggingNotificationSender implements NotificationSender
+```
+
+`matchIfMissing = true` 라 **프로퍼티가 없으면 로그 발송기가 이긴다.** 로그 발송기는
+outbox 행을 `SENT` 로 넘긴다. 그래서 **예외도 경고도 재시도도 없다** — 파라미터를 다
+채우고 배포한 사람이 보기에 "켰는데 안 온다" 이고, 로그에는 `[알림]` 줄이 정상적으로 쌓인다.
+게다가 `SENT` 로 넘어간 건은 **나중에 제대로 켜도 다시 나가지 않는다.**
+
+**설정 누락이 조용한 성공으로 보이는 조합**이었다. 배송조회(`moeum.tracking`)는 같은 실수가
+없었는데, 그쪽은 `prod` 문서에 블록이 있었기 때문이지 코드가 더 안전해서가 아니다.
+
+### 자리는 미리 다 뚫어 둔다
+
+템플릿도 `ORDER_PAID` 하나만 배선돼 있었다. 나머지 여덟 이벤트는 승인이 나도
+**채울 곳이 없었다.** `OutboxEventType` 아홉 개의 자리를 `application.yml` 과
+`docker-compose.prod.yml` 에 전부 만들어 두었다 — 비어 있는 자리는 발송을 막지 않는다
+(`templateOf` 가 빈 문자열을 없는 것으로 친다).
+
+**한 줄이 비어 있는 것과 아예 없는 것이 화면에서 똑같아 보인다**는 것이 요점이다.
+비어 있으면 "아직 승인 안 났구나" 지만, 없으면 "왜 안 나가지" 다.
+
+### 테스트가 yml 을 직접 읽는다
+
+`NotifyConfigWiringTest` 는 스프링 컨텍스트를 띄우지 않고 `application.yml` 의 문서를
+프로파일별로 갈라 읽어, **프로파일마다 자리가 있는지**만 본다. 컨텍스트로 검증하려면
+프로파일마다 DB 가 필요하고, 정작 보려는 것은 빈이 아니라 설정 파일의 자리다.
+
+고치기 전 설정에 대고 돌려서 **실제로 실패하는 것을 확인했다** — 알림 세 개는 실패하고
+배송조회는 통과했다. 그게 당시의 정확한 상태다.
+
+### 남은 것 — 이건 코드로 풀 수 없다
+
+두 기능 다 **자격증명이 있어야 실제로 켜진다.** 저장소에 둘 수 없는 값이라 여기서 끝낸다.
+
+| 기능 | 켜는 조건 |
+|---|---|
+| 스마트택배 배송조회 | `SMART_TRACKER_API_KEY` + `SMART_TRACKER_ENABLED=true` (둘 다 필요) |
+| 알림톡 | `SOLAPI_API_KEY` · `SOLAPI_API_SECRET` · `SOLAPI_PF_ID` · `SOLAPI_FROM` + 승인된 템플릿 id + `NOTIFY_PROVIDER=solapi` |
+
+**알림톡을 켤 때는 `SOLAPI_TEST_RECIPIENT` 를 먼저 건다.** 그 값이 있으면 모든 알림이
+그 번호로만 가서, 구매자에게 한 통도 가지 않는 채로 실제 발송 경로를 확인할 수 있다.
+수신번호 정책(D-040 — 구매자 본인 번호가 DB 에 없어 배송지 번호로 나간다)이 정해지기
+전까지는 이 값을 두고 쓴다.
