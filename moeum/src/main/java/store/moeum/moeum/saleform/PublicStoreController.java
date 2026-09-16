@@ -11,19 +11,58 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import store.moeum.moeum.saleform.domain.SaleType;
+import store.moeum.moeum.saleform.dto.StoreListResponse;
 import store.moeum.moeum.saleform.dto.StorePageResponse;
 
 /**
- * 셀러 페이지 (B0). <b>인증이 없다.</b>
+ * 공개 셀러 화면 — 셀러 리스트와 셀러 페이지 (B0). <b>인증이 없다.</b>
  *
  * 경로의 {@code storeSlug} 가 셀러가 뿌리는 공개 주소다 (meoum.store/{storeSlug}).
  */
-@Tag(name = "셀러 페이지(공개)", description = "셀러 프로필 + 판매 상품 목록")
+@Tag(name = "셀러 페이지(공개)", description = "셀러 리스트 · 셀러 프로필 + 판매 상품 목록")
 @RestController
 @RequiredArgsConstructor
 public class PublicStoreController {
 
 	private final PublicStoreService publicStoreService;
+
+	/**
+	 * 셀러 리스트. <b>캐시하지 않는다.</b>
+	 *
+	 * 셀러가 설정 화면에서 상점 이름·소개·사진을 바꾸는 즉시 반영돼야 한다.
+	 * 프로필은 재고만큼 자주 바뀌지는 않지만, 고쳤는데 목록에 옛날 값이 남아 있으면
+	 * 셀러는 저장이 안 된 줄 안다. 셀러 페이지와 같은 기준으로 둔다.
+	 */
+	@Operation(
+			summary = "셀러 리스트 조회",
+			description = """
+					구매자가 상점을 훑는 화면. 로그인이 필요 없다.
+
+					- **승인된 셀러만** 나온다. 심사 중·반려된 셀러는 셀러 페이지가 404 라 목록에도 없다
+					- 판매 상품은 실리지 않는다. 카드를 눌러 `GET /stores/{storeSlug}` 로 들어간다
+					- 판매 중인 상품이 하나도 없는 셀러도 나온다
+					- 최근에 승인된 셀러가 위에 온다
+					- 검색은 **카드에 찍히는 이름**으로 한다 — 상점 이름을 등록하지 않은 셀러는
+					  storeSlug 가 카드에 나오고, 그 값으로도 찾힌다
+					- 대표자 실명·심사용 연락처·사업자번호는 어떤 경로로도 나가지 않는다
+					""")
+	@GetMapping("/stores")
+	public ResponseEntity<StoreListResponse> list(
+
+			@Parameter(description = "셀러 이름 검색어. 부분 일치로 찾는다. % 나 _ 를 쳐도 글자로 취급한다",
+					example = "모음")
+			@RequestParam(required = false) String q,
+
+			@Parameter(description = "페이지 번호. 0부터 시작한다", example = "0")
+			@RequestParam(defaultValue = "0") int page,
+
+			@Parameter(description = "페이지 크기. 최대 50이고 넘기면 50으로 줄어든다", example = "20")
+			@RequestParam(defaultValue = "20") int size) {
+
+		return ResponseEntity.ok()
+				.cacheControl(CacheControl.noStore())
+				.body(publicStoreService.list(q, page, size));
+	}
 
 	/**
 	 * 헤더 + 상품 목록. <b>캐시하지 않는다.</b>

@@ -11,6 +11,7 @@ import store.moeum.moeum.global.storage.ImageStorage;
 import store.moeum.moeum.saleform.domain.SaleForm;
 import store.moeum.moeum.saleform.domain.SaleFormRepository;
 import store.moeum.moeum.saleform.domain.SaleType;
+import store.moeum.moeum.saleform.dto.StoreListResponse;
 import store.moeum.moeum.saleform.dto.StorePageResponse;
 import store.moeum.moeum.seller.domain.Seller;
 import store.moeum.moeum.seller.domain.SellerRepository;
@@ -21,10 +22,11 @@ import java.util.List;
 import static store.moeum.moeum.global.jpa.JpaAuditingConfig.KST;
 
 /**
- * 셀러 페이지 (B0). 로그인이 필요 없다.
+ * 공개 셀러 화면 — 셀러 리스트와 셀러 페이지 (B0). 로그인이 필요 없다.
  *
  * 셀러가 링크(`/{storeSlug}`)를 뿌리고 구매자가 그 링크로 들어오는 구조라,
- * 이 화면이 구매자 유입의 시작점이다.
+ * 셀러 페이지가 구매자 유입의 시작점이다. 리스트는 <b>링크를 받지 못한 구매자</b>가
+ * 상점을 찾아 들어오는 두 번째 입구다 — 같은 승인 기준을 봐야 눌렀을 때 404 가 안 난다.
  *
  * 셀러용 {@link SaleFormService} 와 나눈 이유는 {@link PublicProductService} 와 같다 —
  * 저쪽은 "내 폼인가"를 묻고 여기는 "누구에게 보여도 되는 폼인가"를 묻는다.
@@ -63,6 +65,29 @@ public class PublicStoreService {
 				items,
 				new StorePageResponse.PageInfo(forms.getNumber(), forms.getSize(),
 						forms.getTotalElements(), forms.getTotalPages(), forms.hasNext()));
+	}
+
+	/**
+	 * 셀러 리스트.
+	 *
+	 * <b>판매 폼을 세지 않는다.</b> 카드가 보여주는 것은 프로필뿐이라, 셀러마다 폼을
+	 * 끌어오면 쓰지도 않을 조회가 목록 크기만큼 늘어난다.
+	 *
+	 * <b>상품이 하나도 없는 셀러도 나온다.</b> 승인된 상점이면 비어 있어도 상점이다 —
+	 * 여기서 걸러 내면 폼을 전부 마감한 셀러가 목록에서 사라져, 단골이 찾아갈 길이 없다.
+	 */
+	@Transactional(readOnly = true)
+	public StoreListResponse list(String q, int page, int size) {
+		Page<Seller> sellers = sellerRepository.findPublicSellers(
+				likePattern(q), PageRequest.of(Math.max(page, 0), clampSize(size)));
+
+		List<StoreListResponse.StoreListItem> items = sellers.getContent().stream()
+				.map(seller -> StoreListResponse.itemOf(seller, profileImageOf(seller)))
+				.toList();
+
+		return new StoreListResponse(items,
+				new StoreListResponse.PageInfo(sellers.getNumber(), sellers.getSize(),
+						sellers.getTotalElements(), sellers.getTotalPages(), sellers.hasNext()));
 	}
 
 	// ---------------------------------------------------------------- 내부
