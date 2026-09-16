@@ -344,7 +344,6 @@ CREATE TABLE payment (
     status          VARCHAR(20) NOT NULL DEFAULT 'CREATED'
                     COMMENT 'CREATED, CAPTURE_PENDING, CAPTURED, FAILED',
     fail_reason     VARCHAR(100)    NULL,
-    refunded_amount INT         NOT NULL DEFAULT 0,
     captured_at     DATETIME(6)     NULL,
     created_at      DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
     updated_at      DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)
@@ -353,8 +352,7 @@ CREATE TABLE payment (
     UNIQUE KEY uk_payment_group_phase (order_group_id, phase),
     UNIQUE KEY uk_payment_session (session_id),
     KEY idx_payment_pending (status, updated_at),
-    CONSTRAINT fk_payment_group FOREIGN KEY (order_group_id) REFERENCES order_group (id),
-    CONSTRAINT ck_payment_refunded CHECK (refunded_amount >= 0 AND refunded_amount <= amount)
+    CONSTRAINT fk_payment_group FOREIGN KEY (order_group_id) REFERENCES order_group (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 

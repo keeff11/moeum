@@ -234,7 +234,6 @@ Table "payment" {
   "tax_free_amount" INT [not null, default: 0]
   "status" VARCHAR(20) [not null, default: 'CREATED', note: 'CREATED, CAPTURE_PENDING, CAPTURED, FAILED']
   "fail_reason" VARCHAR(100)
-  "refunded_amount" INT [not null, default: 0]
   "captured_at" DATETIME(6)
   "created_at" DATETIME(6) [not null, default: `CURRENT_TIMESTAMP(6)`]
   "updated_at" DATETIME(6) [not null, default: `CURRENT_TIMESTAMP(6)`]

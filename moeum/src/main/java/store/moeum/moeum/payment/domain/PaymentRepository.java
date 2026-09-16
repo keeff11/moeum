@@ -32,8 +32,8 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
 	 * 실패한 결제를 구매자가 낸 것으로 보게 되고, 2차금 청구를 받고도 이미 낸 줄 안다.
 	 * {@code PaymentSummary.isSettled} 와 같은 기준이다.
 	 *
-	 * 환불은 여기서 빼지 않는다 — {@code payment.refunded_amount} 는 0 으로 만들어진 뒤
-	 * 아무도 갱신하지 않는 컬럼이라, 실제 기준인 refund 행 합계를 부르는 쪽이 따로 뺀다.
+	 * 환불은 여기서 빼지 않는다 — 기준이 refund 행 합계라 부르는 쪽이 따로 뺀다.
+	 * payment 에 누적 컬럼을 두는 길은 D-060 에서 닫았다.
 	 */
 	@Query("""
 			select new store.moeum.moeum.payment.domain.GroupAmount(

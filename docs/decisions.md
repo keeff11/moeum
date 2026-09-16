@@ -2891,10 +2891,19 @@ EOB 시간대(23:30~00:30)도 끈 것으로 본다. 실패가 아니라 "00:30 �
 받고도 이미 냈다고 생각한다. `PaymentSummary.isSettled` 가 셀러 화면에서 쓰는 기준과
 같다 — 두 화면이 같은 결제를 두고 다른 말을 하면 안 된다.
 
-### 환불은 `payment.refunded_amount` 로 세지 않는다
+### 환불은 `payment.refunded_amount` 로 세지 않는다 — 그 컬럼은 걷었다
 
-그 컬럼은 **0 으로 만들어진 뒤 아무도 갱신하지 않는다.** 실제 기준은 `COMPLETED` 인
-refund 행의 합이다 (`PaymentWriter.readStatus` 가 이미 그렇게 읽고 있었다).
+그 컬럼은 **처음부터 죽어 있었다.** 엔티티 생성자가 0 으로 채운 뒤 갱신하는 코드가
+한 줄도 없었다. 실제 기준은 `COMPLETED` 인 refund 행의 합이고, 돈을 다루는 경로는
+전부 이미 그렇게 읽고 있었다 (`PaymentWriter.readStatus` · `RefundRepository.sumCompleted`).
+
+**이름이 그럴듯해서 읽는 쪽이 생기는 것이 문제였다.** 개발 콘솔의 '오늘 매출' 이
+`SUM(amount - refunded_amount)` 로 세고 있어서 **환불한 만큼 매출이 부풀어 보였다**
+(20,000 을 받고 5,000 을 돌려준 날 15,000 이 아니라 20,000 이 찍혔다). 남겨 두면
+다음 사람이 또 믿는다 — `V17` 에서 컬럼과 `ck_payment_refunded` 를 같이 드롭하고,
+콘솔 세 곳(오늘 매출 · 묶음 상세의 결제 목록 · SQL 콘솔 '오늘 결제' 프리셋)은
+refund 행에서 세도록 고쳤다. 화면이 읽는 키 이름(`refunded_amount`)은 그대로 두고
+계산된 값에 별칭을 달았다.
 
 다만 **`RefundRepository.sumCompleted` 와는 기준이 다르고, 달라야 한다.** 저쪽은
 "point3 세션에서 얼마나 빠져나갔는가" 를 묻는 세금 안분의 기준이라 정산 후 직접

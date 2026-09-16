@@ -77,9 +77,6 @@ public class Payment extends BaseTimeEntity {
 	@Column(name = "fail_reason", length = 100)
 	private String failReason;
 
-	@Column(name = "refunded_amount", nullable = false)
-	private int refundedAmount;
-
 	@Column(name = "captured_at")
 	private LocalDateTime capturedAt;
 
@@ -88,7 +85,6 @@ public class Payment extends BaseTimeEntity {
 		this.phase = phase;
 		this.amount = amount;
 		this.taxFreeAmount = 0;
-		this.refundedAmount = 0;
 		this.status = PaymentStatus.CREATED;
 	}
 

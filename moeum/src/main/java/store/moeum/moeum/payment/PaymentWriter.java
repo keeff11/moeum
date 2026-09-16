@@ -400,8 +400,8 @@ public class PaymentWriter {
 		// 취소는 payment.status 를 바꾸지 않는다 — 결제는 실제로 일어났고 그 뒤에 환불된 것이다.
 		// 이걸 얹지 않으면 전액 환불된 주문도 영원히 PAID 로 보인다 (D-036)
 		//
-		// payment.refundedAmount 를 쓰지 않는다. 그 컬럼은 0 으로 만들어진 뒤 아무도 갱신하지 않는다 —
-		// 실제 기준은 COMPLETED 인 refund 행들의 합이고, 세금 안분도 그걸 쓴다 (RefundWriter)
+		// 환불 누적은 COMPLETED 인 refund 행의 합이 유일한 기준이다. 세금 안분도 그걸 쓴다
+		// (RefundWriter). payment 에 누적 컬럼을 두었다가 아무도 갱신하지 않아 걷었다 (D-060)
 		long refunded = refundRepository.sumCompleted(payment.getId()).amount();
 
 		// 취소 주체는 차수가 아니라 묶음에서 본다. 2차금까지 낸 주문을 취소하면 refund 행이
