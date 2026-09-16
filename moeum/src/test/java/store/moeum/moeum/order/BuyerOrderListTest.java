@@ -31,6 +31,7 @@ import store.moeum.moeum.seller.domain.Seller;
 import store.moeum.moeum.seller.domain.SellerRepository;
 import store.moeum.moeum.support.IntegrationTest;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -263,6 +264,140 @@ class BuyerOrderListTest extends IntegrationTest {
 		assertThat(items().get(0).cancelable()).isFalse();
 	}
 
+	// ---------------------------------------------------------------- 금액
+
+	@Test
+	@DisplayName("총액이_1차금과_2차금으로_쪼개져_나온다")
+	void 금액_내역() {
+		place(buyer, groupForm, OrderGroupStatus.PAID, OrderStatus.PAID);
+
+		// 옵션 하나 — 1차금 20000 · 2차금 12000 · 배송비 3000.
+		// 배송비는 2차금 쪽에 실린다 (2차금이 있는 묶음)
+		assertThat(items()).singleElement().satisfies(item -> {
+			assertThat(item.firstPaymentAmount()).isEqualTo(20000);
+			assertThat(item.secondPaymentAmount()).isEqualTo(15000);
+			assertThat(item.shippingFee()).isEqualTo(3000);
+			// 배송비를 또 더하면 안 된다 — 이미 2차금 안에 있다
+			assertThat(item.amount()).isEqualTo(35000);
+		});
+	}
+
+	@Test
+	@DisplayName("단독_판매는_배송비가_1차금에_실린다")
+	void 금액_내역_단독() {
+		place(buyer, soloForm, OrderGroupStatus.PAID, OrderStatus.PAID);
+		jdbcTemplate.update("UPDATE order_group SET deposit2_total = 0");
+		jdbcTemplate.update("UPDATE orders SET deposit2_sum = 0");
+
+		// 2차금 단계가 없으니 여기서 안 받으면 셀러가 배송비를 떠안는다 (D-046)
+		assertThat(items()).singleElement().satisfies(item -> {
+			assertThat(item.firstPaymentAmount()).isEqualTo(23000);
+			assertThat(item.secondPaymentAmount()).isZero();
+			assertThat(item.shippingFee()).isEqualTo(3000);
+			assertThat(item.amount()).isEqualTo(23000);
+		});
+	}
+
+	@Test
+	@DisplayName("1차금만_낸_주문은_낸_금액이_총액보다_적다")
+	void 낸_금액_일차금만() {
+		String token = place(buyer, groupForm, OrderGroupStatus.PAID, OrderStatus.ARRIVED);
+		capture(token, "FIRST", 20000);
+
+		// 이게 없으면 잔금을 내야 하는 주문이 완납한 주문과 같은 숫자로 보인다
+		assertThat(items()).singleElement().satisfies(item -> {
+			assertThat(item.paidAmount()).isEqualTo(20000);
+			assertThat(item.amount()).isEqualTo(35000);
+			assertThat(item.status()).isEqualTo(BuyerOrderStatus.SECOND_UNPAID);
+		});
+	}
+
+	@Test
+	@DisplayName("완납한_주문은_낸_금액이_총액과_같다")
+	void 낸_금액_완납() {
+		String token = place(buyer, groupForm, OrderGroupStatus.SECOND_PAID, OrderStatus.ARRIVED);
+		capture(token, "FIRST", 20000);
+		capture(token, "SECOND", 15000);
+
+		assertThat(items().get(0).paidAmount()).isEqualTo(35000);
+		assertThat(items().get(0).amount()).isEqualTo(35000);
+	}
+
+	@Test
+	@DisplayName("승인_결과를_모르는_결제는_낸_금액에_들어가지_않는다")
+	void 낸_금액_확인_중() {
+		String token = place(buyer, groupForm, OrderGroupStatus.PAID, OrderStatus.PAID);
+		payment(token, "FIRST", 20000, "CAPTURE_PENDING");
+
+		// CAPTURE_PENDING 은 모름이지 성공이 아니다 (D-006).
+		// 낸 금액에 올리면 실제로는 실패한 결제를 낸 것으로 보게 된다
+		assertThat(items().get(0).paidAmount()).isZero();
+	}
+
+	@Test
+	@DisplayName("취소된_주문은_돌려받은_만큼_낸_금액에서_빠진다")
+	void 낸_금액_환불() {
+		String token = place(buyer, groupForm, OrderGroupStatus.CANCELED, OrderStatus.CANCELED);
+		long paymentId = capture(token, "FIRST", 20000);
+		refund(paymentId, 20000, "COMPLETED", false, false);
+
+		assertThat(items()).singleElement().satisfies(item -> {
+			assertThat(item.paidAmount()).isZero();
+			assertThat(item.refundedAmount()).isEqualTo(20000);
+		});
+	}
+
+	@Test
+	@DisplayName("확정되지_않은_취소는_낸_금액을_줄이지_않는다")
+	void 낸_금액_취소_진행_중() {
+		String token = place(buyer, groupForm, OrderGroupStatus.PAID, OrderStatus.PAID);
+		long paymentId = capture(token, "FIRST", 20000);
+		refund(paymentId, 20000, "PROCESSING", false, false);
+
+		// 거절되면 되돌아온다. 미리 빼면 낸 금액이 잠깐 줄었다 늘어난다
+		assertThat(items().get(0).paidAmount()).isEqualTo(20000);
+		assertThat(items().get(0).refundedAmount()).isZero();
+	}
+
+	@Test
+	@DisplayName("셀러가_직접_이체하기_전까지는_돌려받은_것이_아니다")
+	void 낸_금액_정산_후_직접_이체() {
+		String token = place(buyer, groupForm, OrderGroupStatus.PAID, OrderStatus.PAID);
+		long paymentId = capture(token, "FIRST", 20000);
+		long refundId = refund(paymentId, 20000, "COMPLETED", true, false);
+
+		// 접수만 된 상태. 구매자 지갑에는 아직 아무것도 안 돌아왔다 (D-059)
+		assertThat(items().get(0).paidAmount()).isEqualTo(20000);
+		assertThat(items().get(0).refundedAmount()).isZero();
+
+		jdbcTemplate.update("UPDATE refund SET manual_refunded_at = NOW(6) WHERE id = ?", refundId);
+
+		assertThat(items().get(0).paidAmount()).isZero();
+		assertThat(items().get(0).refundedAmount()).isEqualTo(20000);
+	}
+
+	@Test
+	@DisplayName("결제_기록이_없으면_낸_금액은_0_이다")
+	void 낸_금액_없음() {
+		place(buyer, groupForm, OrderGroupStatus.PAID, OrderStatus.PAID);
+
+		// group by 는 행이 없으면 줄을 주지 않는다. 지도에 키가 없어도 터지면 안 된다
+		assertThat(items().get(0).paidAmount()).isZero();
+		assertThat(items().get(0).refundedAmount()).isZero();
+	}
+
+	@Test
+	@DisplayName("남의_주문의_결제는_내_낸_금액에_섞이지_않는다")
+	void 낸_금액_격리() {
+		String mine = place(buyer, groupForm, OrderGroupStatus.PAID, OrderStatus.PAID);
+		String theirs = place(other, groupForm, OrderGroupStatus.PAID, OrderStatus.PAID);
+		capture(mine, "FIRST", 20000);
+		capture(theirs, "FIRST", 99000);
+
+		assertThat(items()).singleElement()
+				.satisfies(item -> assertThat(item.paidAmount()).isEqualTo(20000));
+	}
+
 	// ---------------------------------------------------------------- HTTP
 
 	@Test
@@ -341,6 +476,40 @@ class BuyerOrderListTest extends IntegrationTest {
 		}
 		pendingStatuses.clear();
 		return group.getOrderToken();
+	}
+
+	/** 출금까지 끝난 결제 한 건 */
+	private long capture(String orderToken, String phase, int amount) {
+		return payment(orderToken, phase, amount, "CAPTURED");
+	}
+
+	/**
+	 * 결제 행을 SQL 로 넣는다 — 엔티티는 전이 순서를 강제하고, 여기서 보려는 것은
+	 * 그 순서가 아니라 확정된 결과가 금액에 어떻게 잡히는가다.
+	 */
+	private long payment(String orderToken, String phase, int amount, String status) {
+		Long groupId = jdbcTemplate.queryForObject(
+				"SELECT id FROM order_group WHERE order_token = ?", Long.class, orderToken);
+
+		jdbcTemplate.update("INSERT INTO payment"
+						+ " (order_group_id, phase, session_id, amount, status, captured_at)"
+						+ " VALUES (?, ?, ?, ?, ?, ?)",
+				groupId, phase, "sess_" + System.nanoTime(), amount, status,
+				"CAPTURED".equals(status) ? LocalDateTime.now() : null);
+
+		return jdbcTemplate.queryForObject("SELECT LAST_INSERT_ID()", Long.class);
+	}
+
+	private long refund(long paymentId, int amount, String status,
+	                    boolean settledManual, boolean manualRefunded) {
+		jdbcTemplate.update("INSERT INTO refund"
+						+ " (payment_id, idempotency_key, amount, requested_by, status,"
+						+ "  settled_manual, manual_refunded_at)"
+						+ " VALUES (?, ?, ?, 'BUYER', ?, ?, ?)",
+				paymentId, "idem_" + System.nanoTime(), amount, status,
+				settledManual, manualRefunded ? LocalDateTime.now() : null);
+
+		return jdbcTemplate.queryForObject("SELECT LAST_INSERT_ID()", Long.class);
 	}
 
 	private SaleForm saveForm(String title, SaleType saleType) {

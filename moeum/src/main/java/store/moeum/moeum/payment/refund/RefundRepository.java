@@ -5,6 +5,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import store.moeum.moeum.payment.domain.GroupAmount;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -45,6 +46,31 @@ public interface RefundRepository extends JpaRepository<Refund, Long> {
 	 * 목록 크기만큼 조회가 나간다 — 한 번에 끌어와 결제 id 로 접는다.
 	 */
 	List<Refund> findByPaymentIdIn(List<Long> paymentIds);
+
+	/**
+	 * 구매자 구매 목록(B13)이 쓴다 — 묶음별로 <b>구매자에게 실제로 돌아간 금액</b> 합계다.
+	 *
+	 * <b>{@link #sumCompleted} 와 기준이 다르다.</b> 저쪽은 point3 세션에서 얼마나
+	 * 빠져나갔는가(세금 안분의 기준)를 묻고, 여기는 구매자 지갑에 얼마가 돌아왔는가를 묻는다.
+	 * 그래서 정산 후 직접 이체건({@code settled_manual})을 빼지 않고, 대신
+	 * <b>셀러가 실제로 이체를 마쳤는지({@code manual_refunded_at})</b> 를 본다 (D-059).
+	 * 접수만 되고 이체가 안 끝난 건을 돌려준 것으로 세면, 구매자는 받지도 않은 돈을
+	 * 환불받은 것으로 보게 된다.
+	 *
+	 * <b>{@code COMPLETED} 만 센다.</b> {@code PROCESSING} 은 아직 확정되지 않은 취소라
+	 * 거절되면 되돌아온다 — 미리 빼면 낸 금액이 잠깐 줄었다 늘어난다.
+	 */
+	@Query("""
+			select new store.moeum.moeum.payment.domain.GroupAmount(
+			         p.orderGroup.id, coalesce(sum(r.amount), 0L))
+			  from Refund r, store.moeum.moeum.payment.domain.Payment p
+			 where p.id = r.paymentId
+			   and p.orderGroup.id in :orderGroupIds
+			   and r.status = store.moeum.moeum.payment.refund.RefundStatus.COMPLETED
+			   and (r.settledManual = false or r.manualRefundedAt is not null)
+			 group by p.orderGroup.id
+			""")
+	List<GroupAmount> sumRefundedByOrderGroupIdIn(@Param("orderGroupIds") List<Long> orderGroupIds);
 
 	/**
 	 * 이 묶음에서 확정된 취소의 요청 주체. 최근 것이 앞에 온다.

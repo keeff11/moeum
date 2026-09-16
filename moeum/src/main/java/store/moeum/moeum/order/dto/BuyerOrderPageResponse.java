@@ -55,8 +55,35 @@ public record BuyerOrderPageResponse(
 					example = "moeum-store")
 			String storeSlug,
 
-			@Schema(description = "주문 총액. 1차금 + 2차금 + 배송비다", example = "32000")
+			@Schema(description = "주문 총액. 1차금 청구액 + 2차금 청구액이다 — "
+					+ "배송비는 둘 중 한쪽에 이미 들어 있어 여기에 또 더하면 안 된다",
+					example = "35000")
 			int amount,
+
+			@Schema(description = "1차금 청구액. 2차금이 없는 묶음(단독 판매)은 배송비가 여기 포함된다 (D-046)",
+					example = "20000")
+			int firstPaymentAmount,
+
+			@Schema(description = "2차금 청구액. 입고 후 청구될 잔금 + 배송비다. "
+					+ "0 이면 2차금 단계가 없다는 뜻이고, 그때는 배송비가 1차금에 실린다. "
+					+ "취소한 폼의 잔금은 빠져 있다 (D-035)",
+					example = "15000")
+			int secondPaymentAmount,
+
+			@Schema(description = "배송비. 묶음당 1회다. <b>위 두 값 중 한쪽에 이미 들어 있다</b> — "
+					+ "내역을 펼쳐 보일 때만 쓰고 합계에 더하지 않는다",
+					example = "3000")
+			int shippingFee,
+
+			@Schema(description = """
+					★ 지금까지 실제로 낸 금액. <b>출금이 확정된 결제만 세고 돌려받은 금액은 뺀 값이다.</b> 					승인 결과를 기다리는 중(확인 중)인 결제는 여기 들어오지 않는다 — 					아직 돈이 들어온 것이 아니다 (D-006). 남은 금액은 amount - paidAmount 가 아니라 					상태 배지와 같이 읽어야 한다: 취소된 주문은 낸 금액이 0 으로 돌아간다""",
+					example = "20000")
+			int paidAmount,
+
+			@Schema(description = "돌려받은 금액. 취소가 확정되고 실제로 구매자에게 돌아간 것만 센다. "
+					+ "paidAmount 에서 이미 빠져 있다",
+					example = "0")
+			int refundedAmount,
 
 			@Schema(description = "공동구매인지 단독 판매인지. 탭이 이 값으로 갈린다")
 			SaleType saleType,
@@ -112,11 +139,14 @@ public record BuyerOrderPageResponse(
 	// ---------------------------------------------------------------- 조립
 
 	/**
-	 * @param cancelable {@code RefundPolicy} 로 판정한 값. <b>서비스가 넘겨준다</b> —
-	 *                   정책이 refund 패키지에 있어 DTO 가 그쪽을 알 이유가 없다
+	 * @param cancelable     {@code RefundPolicy} 로 판정한 값. <b>서비스가 넘겨준다</b> —
+	 *                       정책이 refund 패키지에 있어 DTO 가 그쪽을 알 이유가 없다
+	 * @param paidAmount     실제로 출금돼 아직 돌려주지 않은 금액. 같은 이유로 서비스가 넘겨준다 —
+	 *                       payment · refund 행을 세는 값이라 묶음 엔티티만 봐서는 알 수 없다
+	 * @param refundedAmount 돌려받은 금액. {@code paidAmount} 에서 이미 빠져 있다
 	 */
 	public static BuyerOrderItem itemOf(OrderGroup group, String thumbnailUrl, boolean cancelable,
-	                                    Shipping shipping) {
+	                                    Shipping shipping, int paidAmount, int refundedAmount) {
 		BuyerOrderStatus status = BuyerOrderStatus.of(group);
 
 		// LAZY 프록시다. 카드마다 깨우지만 default_batch_fetch_size 가 한 번에 끌어온다 —
@@ -131,6 +161,11 @@ public record BuyerOrderPageResponse(
 				seller.displayName(),
 				seller.getStoreSlug(),
 				group.firstPaymentAmount() + group.secondPaymentAmount(),
+				group.firstPaymentAmount(),
+				group.secondPaymentAmount(),
+				group.getShippingFee(),
+				paidAmount,
+				refundedAmount,
 				saleTypeOf(group),
 				status,
 				status.label(),

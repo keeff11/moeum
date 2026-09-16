@@ -25,6 +25,27 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
 	List<Payment> findByOrderGroupIdIn(List<Long> orderGroupIds);
 
 	/**
+	 * 구매자 구매 목록(B13)이 쓴다 — 묶음별로 <b>실제로 출금된 금액</b> 합계다.
+	 *
+	 * <b>{@code CAPTURED} 만 센다.</b> {@code CAPTURE_PENDING} 은 승인 결과를 모르는
+	 * 상태이지 돈이 들어온 상태가 아니다 (D-006). 그걸 "낸 금액" 에 올리면 실제로는
+	 * 실패한 결제를 구매자가 낸 것으로 보게 되고, 2차금 청구를 받고도 이미 낸 줄 안다.
+	 * {@code PaymentSummary.isSettled} 와 같은 기준이다.
+	 *
+	 * 환불은 여기서 빼지 않는다 — {@code payment.refunded_amount} 는 0 으로 만들어진 뒤
+	 * 아무도 갱신하지 않는 컬럼이라, 실제 기준인 refund 행 합계를 부르는 쪽이 따로 뺀다.
+	 */
+	@Query("""
+			select new store.moeum.moeum.payment.domain.GroupAmount(
+			         p.orderGroup.id, coalesce(sum(p.amount), 0L))
+			  from Payment p
+			 where p.orderGroup.id in :orderGroupIds
+			   and p.status = store.moeum.moeum.payment.domain.PaymentStatus.CAPTURED
+			 group by p.orderGroup.id
+			""")
+	List<GroupAmount> sumCapturedByOrderGroupIdIn(@Param("orderGroupIds") List<Long> orderGroupIds);
+
+	/**
 	 * 진행 중인 결제 (D-042).
 	 *
 	 * <b>구매자가 orderToken 을 잃어버렸을 때 되찾는 유일한 경로다.</b> 토큰은 {@code /pay}

@@ -12,7 +12,10 @@ import store.moeum.moeum.order.domain.OrderGroupRepository;
 import store.moeum.moeum.order.domain.Shipping;
 import store.moeum.moeum.order.domain.ShippingRepository;
 import store.moeum.moeum.order.dto.BuyerOrderPageResponse;
+import store.moeum.moeum.payment.domain.GroupAmount;
+import store.moeum.moeum.payment.domain.PaymentRepository;
 import store.moeum.moeum.payment.refund.RefundPolicy;
+import store.moeum.moeum.payment.refund.RefundRepository;
 import store.moeum.moeum.saleform.domain.SaleForm;
 import store.moeum.moeum.saleform.domain.SaleType;
 
@@ -37,6 +40,8 @@ public class BuyerOrderService {
 
 	private final OrderGroupRepository orderGroupRepository;
 	private final ShippingRepository shippingRepository;
+	private final PaymentRepository paymentRepository;
+	private final RefundRepository refundRepository;
 	private final ImageStorage imageStorage;
 
 	/**
@@ -48,13 +53,19 @@ public class BuyerOrderService {
 		Page<OrderGroup> groups = orderGroupRepository.findBuyerOrders(
 				kakaoId, saleType, PageRequest.of(Math.max(page, 0), clampSize(size)));
 
-		// 송장은 한 번에 끌어온다 — 카드마다 조회하면 목록 한 장에 쿼리가 20번 더 나간다
-		Map<Long, Shipping> shippings = shippingsOf(groups.getContent());
+		List<Long> ids = groups.getContent().stream().map(OrderGroup::getId).toList();
+
+		// 송장·결제·취소를 전부 한 번에 끌어온다 — 카드마다 조회하면 목록 한 장에 쿼리가 20번씩 더 나간다
+		Map<Long, Shipping> shippings = shippingsOf(ids);
+		Map<Long, Long> captured = sumsOf(ids, paymentRepository::sumCapturedByOrderGroupIdIn);
+		Map<Long, Long> refunded = sumsOf(ids, refundRepository::sumRefundedByOrderGroupIdIn);
 
 		List<BuyerOrderPageResponse.BuyerOrderItem> items = groups.getContent().stream()
 				.map(group -> BuyerOrderPageResponse.itemOf(
 						group, thumbnailOf(group), cancelableOf(group),
-						shippings.get(group.getId())))
+						shippings.get(group.getId()),
+						paidAmountOf(captured, refunded, group.getId()),
+						amountOf(refunded, group.getId())))
 				.toList();
 
 		return new BuyerOrderPageResponse(items,
@@ -65,13 +76,48 @@ public class BuyerOrderService {
 	// ---------------------------------------------------------------- 내부
 
 	/** 송장이 없는 묶음은 키가 아예 없다 — 등록 전이라는 뜻이다 */
-	private Map<Long, Shipping> shippingsOf(List<OrderGroup> groups) {
-		if (groups.isEmpty()) {
+	private Map<Long, Shipping> shippingsOf(List<Long> orderGroupIds) {
+		if (orderGroupIds.isEmpty()) {
 			return Map.of();
 		}
-		return shippingRepository.findByOrderGroupIdIn(groups.stream().map(OrderGroup::getId).toList())
+		return shippingRepository.findByOrderGroupIdIn(orderGroupIds)
 				.stream()
 				.collect(Collectors.toMap(s -> s.getOrderGroup().getId(), Function.identity()));
+	}
+
+	/**
+	 * 지금까지 실제로 낸 금액 (B13).
+	 *
+	 * <b>출금이 확정된 결제에서 돌려준 금액을 뺀다.</b> 화면이 지금까지 총액만 보여 주고 있어
+	 * 1차금만 낸 주문과 완납한 주문이 같은 숫자로 보였다 — 구매자가 잔금을 낸 줄 안다.
+	 *
+	 * <b>음수로 내려가지 않게 막는다.</b> 환불 세금 안분에서 원 단위가 위로 떨어지거나
+	 * 정산 후 직접 이체건이 섞이면 뺀 값이 원금을 넘을 수 있는데, "-500원 냈다" 는 화면에
+	 * 찍힐 값이 아니다. 그런 건은 0 으로 보여 주고 실제 정산은 결제 내역이 맡는다.
+	 */
+	private static int paidAmountOf(Map<Long, Long> captured, Map<Long, Long> refunded, Long groupId) {
+		long paid = captured.getOrDefault(groupId, 0L) - refunded.getOrDefault(groupId, 0L);
+		return Math.toIntExact(Math.max(paid, 0L));
+	}
+
+	private static int amountOf(Map<Long, Long> sums, Long groupId) {
+		return Math.toIntExact(sums.getOrDefault(groupId, 0L));
+	}
+
+	/**
+	 * 집계 결과를 묶음 id 로 접는다.
+	 *
+	 * <b>결제도 취소도 없는 묶음은 키가 아예 없다</b> — {@code group by} 는 행이 있어야
+	 * 줄을 준다. 부르는 쪽이 전부 {@code getOrDefault(0)} 으로 읽는 이유다.
+	 */
+	private static Map<Long, Long> sumsOf(List<Long> orderGroupIds,
+	                                      Function<List<Long>, List<GroupAmount>> query) {
+		if (orderGroupIds.isEmpty()) {
+			// 빈 목록으로 부르면 `in ()` 이 나간다. 애초에 셀 것이 없다
+			return Map.of();
+		}
+		return query.apply(orderGroupIds).stream()
+				.collect(Collectors.toMap(GroupAmount::orderGroupId, GroupAmount::amount));
 	}
 
 	/**
