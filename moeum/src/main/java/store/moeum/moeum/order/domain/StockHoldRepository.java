@@ -1,6 +1,8 @@
 package store.moeum.moeum.order.domain;
 
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -10,6 +12,14 @@ import java.util.List;
 public interface StockHoldRepository extends JpaRepository<StockHold, Long> {
 
 	List<StockHold> findByOrderIdIn(List<Long> orderIds);
+
+	/**
+	 * 만료 배치와 겨루는 자리에서 쓴다 (D-063). 배치는 SKIP LOCKED 라 이쪽이 먼저 잡으면 건너뛰고,
+	 * 배치가 먼저 잡았으면 기다렸다가 RELEASED 를 본다.
+	 */
+	@Lock(LockModeType.PESSIMISTIC_WRITE)
+	@Query("select h from StockHold h where h.order.id in :orderIds order by h.id")
+	List<StockHold> findByOrderIdInForUpdate(@Param("orderIds") List<Long> orderIds);
 
 	/**
 	 * 만료 홀드 회수 대상.

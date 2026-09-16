@@ -312,6 +312,18 @@ aws ssm put-parameter --region ap-northeast-2 \
 
 `POINT3_BASE_URL` 은 등록하지 않는다. 기본값(`https://api.point3.io`)이 운영 주소와 같다.
 
+### 만료 홀드 point3 확인 스위치 (D-063)
+
+기본값이 **켜짐**이라 등록하지 않아도 된다. 만료 배치가 재고를 풀기 전에 point3 에
+구매자 확정을 묻는 기능이다. **이상하면 끄고 다시 배포한다** — 코드를 되돌리지 않아도
+이전 동작(만료되면 묻지 않고 푼다)으로 돌아간다.
+
+```bash
+aws ssm put-parameter --region ap-northeast-2     --name /moeum/prod/HOLD_EXPIRY_POINT3_CHECK --value false --type String --overwrite
+```
+
+`.env` 는 `deploy.sh` 가 만들 때만 갱신된다. 파라미터만 바꾸고 재시작하면 반영되지 않는다.
+
 ### 스마트택배 배송조회 키 (D-048)
 
 **무료 이용권이 월 100건이다.** 그래서 키와 별개인 스위치를 뒀다 — 키를 넣어 두고도

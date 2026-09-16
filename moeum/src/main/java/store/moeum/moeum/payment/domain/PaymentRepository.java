@@ -146,4 +146,31 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
 			""", nativeQuery = true)
 	List<Payment> findPendingForUpdate(@Param("threshold") LocalDateTime threshold,
 	                                   @Param("limit") int limit);
+
+	/**
+	 * 홀드가 만료됐는데 결제창까지 간 1차금 (D-063).
+	 *
+	 * 만료 배치가 재고를 풀기 전에 point3 에 "구매자가 확정했는가" 를 물어볼 대상이다.
+	 * 잠그지 않는다 — 이 목록을 들고 트랜잭션 밖에서 point3 를 부른다.
+	 */
+	@Query(value = """
+			SELECT DISTINCT p.id AS paymentId, p.order_group_id AS orderGroupId, p.session_id AS sessionId
+			  FROM stock_hold h
+			  JOIN orders o  ON o.id = h.order_id
+			  JOIN payment p ON p.order_group_id = o.order_group_id
+			 WHERE h.status = 'HELD'
+			   AND h.expires_at < NOW(6)
+			   AND p.phase = 'FIRST'
+			   AND p.status = 'CREATED'
+			   AND p.session_id IS NOT NULL
+			 ORDER BY p.id
+			 LIMIT :limit
+			""", nativeQuery = true)
+	List<ExpiredSession> findExpiredWithSession(@Param("limit") int limit);
+
+	interface ExpiredSession {
+		Long getPaymentId();
+		Long getOrderGroupId();
+		String getSessionId();
+	}
 }

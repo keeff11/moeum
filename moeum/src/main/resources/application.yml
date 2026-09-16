@@ -126,6 +126,9 @@ moeum:
     # 스마트택배 배송조회 (D-048). 꺼져 있으면 조회만 안 되고 송장 등록은 그대로 된다
     enabled: ${SMART_TRACKER_ENABLED:false}
     api-key: ${SMART_TRACKER_API_KEY:}
+  batch:
+    # 만료 홀드를 풀기 전에 point3 에 구매자 확정을 묻는다 (D-063). false 면 이전 동작
+    hold-expiry-point3-check: ${HOLD_EXPIRY_POINT3_CHECK:true}
   oauth:
     kakao:
       client-id: ${KAKAO_CLIENT_ID:local-client-id}
@@ -237,6 +240,9 @@ moeum:
     connect-timeout: 2s
     read-timeout: 5s
   batch:
+    # 만료 홀드를 풀기 전에 point3 에 구매자 확정을 묻는다 (D-063).
+    # 문제가 생기면 파라미터를 false 로 바꾸고 재시작한다 — 코드 배포 없이 이전 동작으로 돌아간다
+    hold-expiry-point3-check: ${HOLD_EXPIRY_POINT3_CHECK:true}
     orphan-sweep:
       # 어디에도 연결되지 않은 업로드 이미지를 지운다 (D-041).
       # 트래픽이 없는 새벽에 돌린다 — 버킷 전체를 훑는 일이다

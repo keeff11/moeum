@@ -2,13 +2,17 @@ package store.moeum.moeum.payment;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import store.moeum.moeum.global.auth.SessionUser;
+import store.moeum.moeum.global.error.BusinessException;
+import store.moeum.moeum.global.error.ErrorCode;
 import store.moeum.moeum.payment.domain.PaymentActor;
 import store.moeum.moeum.payment.domain.PaymentPhase;
 import store.moeum.moeum.payment.dto.PaymentResultResponse;
 import store.moeum.moeum.payment.dto.InProgressOrderResponse;
 import store.moeum.moeum.payment.dto.PaySessionResponse;
+import store.moeum.moeum.payment.exception.Point3Exception;
 import store.moeum.moeum.payment.exception.Point3FailedException;
 import store.moeum.moeum.payment.exception.Point3UncertainException;
 import store.moeum.moeum.payment.infra.Point3Capture;
@@ -16,6 +20,7 @@ import store.moeum.moeum.payment.infra.Point3Client;
 import store.moeum.moeum.payment.infra.Point3Properties;
 import store.moeum.moeum.payment.infra.Point3Session;
 import store.moeum.moeum.payment.infra.Point3SessionRequest;
+import store.moeum.moeum.payment.infra.Point3SessionStatus;
 
 import java.security.SecureRandom;
 import java.util.Base64;
@@ -50,6 +55,13 @@ public class PaymentService {
 	private final PaymentWriter writer;
 	private final Point3Client point3Client;
 	private final Point3Properties point3Properties;
+
+	/**
+	 * 홀드 만료 시 point3 에 구매자 확정을 물어볼지 (D-063). 만료 배치와 같은 스위치다.
+	 * 끄면 이전 동작 — 만료 시각이 지나면 무조건 거절한다.
+	 */
+	@Value("${moeum.batch.hold-expiry-point3-check:true}")
+	private boolean payerCommittedCheck;
 
 	/**
 	 * 결제창을 띄울 세션을 만든다 (payment-flow 8~13번).
@@ -90,8 +102,15 @@ public class PaymentService {
 	 */
 	public PaymentResultResponse confirm(SessionUser user, String orderToken, String sessionId,
 	                                     String payerId, PaymentPhase phase) {
-		PaymentWriter.Pending pending =
-				writer.markCapturePending(user.kakaoId(), orderToken, sessionId, phase);
+		PaymentWriter.Pending pending;
+		try {
+			pending = writer.markCapturePending(user.kakaoId(), orderToken, sessionId, phase);
+		} catch (BusinessException e) {
+			if (e.errorCode() != ErrorCode.HOLD_EXPIRED || phase != PaymentPhase.FIRST || !payerCommittedCheck) {
+				throw e;
+			}
+			pending = retryIfPayerCommitted(user, orderToken, sessionId, e);
+		}
 
 		if (pending.alreadyPaid()) {
 			// 복귀 페이지를 새로고침했거나 confirm 이 두 번 들어왔다. 승인을 또 부르지 않는다
@@ -129,6 +148,31 @@ public class PaymentService {
 			log.error("승인 결과 불명: paymentId={} — 되돌리지 않는다", pending.paymentId());
 			return PaymentResultResponse.pending(orderToken);
 		}
+	}
+
+	/**
+	 * 홀드 만료 시각이 지났어도 구매자가 제때 확정을 마쳤으면 받아 준다 (D-063).
+	 *
+	 * 결과값이 우리에게 늦게 닿은 것은 구매자 탓이 아니다. point3 가 확정을 보여주고
+	 * 홀드가 아직 회수되지 않았을 때만 통과한다 — 이미 풀린 재고로는 승인하지 않는다.
+	 *
+	 * 여기 오기 전에 소유권과 sessionId 대조는 이미 통과했다 (검증 순서상 홀드가 마지막이다).
+	 * point3 를 못 물어보면 원래 거절을 그대로 던진다.
+	 */
+	private PaymentWriter.Pending retryIfPayerCommitted(SessionUser user, String orderToken, String sessionId,
+	                                                    BusinessException holdExpired) {
+		Point3SessionStatus status;
+		try {
+			status = point3Client.getSession(sessionId).status();
+		} catch (Point3Exception e) {
+			throw holdExpired;
+		}
+		if (!status.isPayerCommitted()) {
+			throw holdExpired;
+		}
+		log.warn("홀드 만료 후 도착한 확정 — point3 확정 확인, 회수 전이면 승인한다: orderToken={}, status={}",
+				orderToken, status);
+		return writer.markCapturePending(user.kakaoId(), orderToken, sessionId, PaymentPhase.FIRST, true);
 	}
 
 	/** 복귀 페이지가 반복 조회한다. <b>부작용이 없다</b> (D-014) */

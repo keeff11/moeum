@@ -50,6 +50,15 @@ public enum Point3SessionStatus {
 		return this == PROCESSING || this == COMMITTED;
 	}
 
+	/**
+	 * 구매자가 결제창에서 최종 확정을 마쳤는가 (D-063).
+	 *
+	 * 이 상태면 재고를 풀지 않는다. 결과값이 우리에게 안 닿은 것은 구매자 탓이 아니다.
+	 */
+	public boolean isPayerCommitted() {
+		return this == COMMITTED || this == PROCESSING || this == CAPTURED;
+	}
+
 	/** 되돌려도 안전한 확정 실패 */
 	public boolean isTerminalFailure() {
 		return this == FAILED || this == EXPIRED;

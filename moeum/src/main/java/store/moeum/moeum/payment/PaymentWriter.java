@@ -237,6 +237,17 @@ public class PaymentWriter {
 	 */
 	@Transactional(propagation = Propagation.REQUIRES_NEW)
 	public Pending markCapturePending(String kakaoId, String orderToken, String sessionId, PaymentPhase phase) {
+		return markCapturePending(kakaoId, orderToken, sessionId, phase, false);
+	}
+
+	/**
+	 * @param payerCommitted point3 가 구매자 확정을 보여줬으면 true (D-063).
+	 *                       이때는 만료 시각이 지났어도 <b>아직 회수되지 않은</b> 홀드면 통과시킨다.
+	 *                       결과값이 늦게 닿은 것은 구매자 탓이 아니다
+	 */
+	@Transactional(propagation = Propagation.REQUIRES_NEW)
+	public Pending markCapturePending(String kakaoId, String orderToken, String sessionId, PaymentPhase phase,
+	                                  boolean payerCommitted) {
 		OrderGroup group = orderGroupRepository.findByOrderToken(orderToken)
 				.orElseThrow(() -> new BusinessException(ErrorCode.ORDER_GROUP_NOT_FOUND));
 
@@ -266,7 +277,11 @@ public class PaymentWriter {
 		// ④ 홀드 유효성 — 돈이 나가기 전에 막는다. 만료된 재고로 결제를 받으면 초과 판매다.
 		// 2차금은 재고가 이미 확정돼 홀드 개념이 없다
 		if (phase == PaymentPhase.FIRST) {
-			requireHoldsAlive(group);
+			if (payerCommitted) {
+				requireHoldsNotReleased(group);
+			} else {
+				requireHoldsAlive(group);
+			}
 		}
 
 		PaymentStatus before = payment.getStatus();
@@ -445,6 +460,34 @@ public class PaymentWriter {
 				.stream().map(Payment::getId).toList();
 	}
 
+	/**
+	 * 만료 배치가 point3 에서 구매자 확정을 확인한 건을 {@code CAPTURE_PENDING} 으로 넘긴다 (D-063).
+	 *
+	 * 그러면 만료 배치는 원래 규칙대로 이 묶음을 건너뛰고, 승인 대사 배치가 승인까지 마친다.
+	 * 재고는 풀리지 않은 채로 확정되므로 초과 판매가 없다.
+	 *
+	 * @return 이번 호출로 넘겼으면 true. 이미 진행됐거나 홀드가 회수됐으면 false
+	 */
+	@Transactional(propagation = Propagation.REQUIRES_NEW)
+	public boolean rescuePayerCommitted(Long paymentId, String sessionId) {
+		Payment payment = paymentRepository.findByIdForUpdate(paymentId)
+				.orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_NOT_FOUND));
+
+		// 조회한 사이에 세션이 바뀌었거나(재결제) 실시간 confirm 이 먼저 처리했다
+		if (payment.getStatus() != PaymentStatus.CREATED || !sessionId.equals(payment.getSessionId())) {
+			return false;
+		}
+		OrderGroup group = payment.getOrderGroup();
+		if (group.isPaid() || !holdsNotReleased(group)) {
+			return false;
+		}
+
+		payment.markCapturePending();
+		record(payment, PaymentStatus.CREATED, PaymentStatus.CAPTURE_PENDING,
+				"홀드 만료 시 구매자 확정 확인", PaymentActor.BATCH);
+		return true;
+	}
+
 	/** 대사 배치가 point3 에 물어보기 위해 꺼내는 값 */
 	@Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true)
 	public String sessionIdOf(Long paymentId) {
@@ -533,6 +576,27 @@ public class PaymentWriter {
 				throw new BusinessException(ErrorCode.HOLD_EXPIRED);
 			}
 		}
+	}
+
+	/**
+	 * 만료 시각은 보지 않고 <b>회수됐는지만</b> 본다 (D-063). 구매자 확정이 확인된 뒤에만 쓴다.
+	 *
+	 * 잠그고 본다. 만료 배치가 같은 홀드를 풀고 있으면 끝날 때까지 기다렸다가 RELEASED 를 본다 —
+	 * 잠그지 않고 HELD 를 읽으면 배치가 푼 재고로 승인을 보내 초과 판매가 된다.
+	 */
+	private void requireHoldsNotReleased(OrderGroup group) {
+		if (!holdsNotReleased(group)) {
+			throw new BusinessException(ErrorCode.HOLD_EXPIRED);
+		}
+	}
+
+	private boolean holdsNotReleased(OrderGroup group) {
+		List<Long> orderIds = group.getOrders().stream().map(Order::getId).toList();
+		if (orderIds.isEmpty()) {
+			return false;
+		}
+		List<StockHold> holds = stockHoldRepository.findByOrderIdInForUpdate(orderIds);
+		return !holds.isEmpty() && holds.stream().allMatch(StockHold::isHeld);
 	}
 
 	private static void requireOwner(OrderGroup group, String kakaoId) {

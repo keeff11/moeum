@@ -66,6 +66,8 @@ services:
       # 키를 넣어 두고도 꺼 둘 수 있다. 꺼져 있으면 조회만 안 되고 송장 등록은 그대로 된다
       SMART_TRACKER_ENABLED: ${SMART_TRACKER_ENABLED:-false}
       SMART_TRACKER_API_KEY: ${SMART_TRACKER_API_KEY:-}
+      # 만료 홀드를 풀기 전에 point3 에 구매자 확정을 묻는다 (D-063). false 면 이전 동작
+      HOLD_EXPIRY_POINT3_CHECK: ${HOLD_EXPIRY_POINT3_CHECK:-true}
       KAKAO_CLIENT_ID: ${KAKAO_CLIENT_ID}
       KAKAO_CLIENT_SECRET: ${KAKAO_CLIENT_SECRET}
       KAKAO_REDIRECT_URI: ${KAKAO_REDIRECT_URI}

@@ -12,6 +12,8 @@ import org.springframework.test.context.DynamicPropertySource;
 import store.moeum.moeum.global.auth.SessionUser;
 import store.moeum.moeum.global.error.BusinessException;
 import store.moeum.moeum.global.error.ErrorCode;
+import org.springframework.test.util.ReflectionTestUtils;
+import store.moeum.moeum.order.HoldExpiryBatch;
 import store.moeum.moeum.order.OrderService;
 import store.moeum.moeum.order.dto.OrderCreateRequest;
 import store.moeum.moeum.order.dto.OrderGroupResponse;
@@ -26,7 +28,9 @@ import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.post;
 import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
+import static com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
+import static com.github.tomakehurst.wiremock.client.WireMock.urlPathMatching;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -64,6 +68,9 @@ class PaymentFlowTest extends IntegrationTest {
 
 	@Autowired
 	private PaymentReconcileBatch reconcileBatch;
+
+	@Autowired
+	private HoldExpiryBatch holdExpiryBatch;
 
 	@Autowired
 	private JdbcTemplate jdbcTemplate;
@@ -339,6 +346,204 @@ class PaymentFlowTest extends IntegrationTest {
 		// 실시간 confirm 이 아직 진행 중일 수 있다
 		assertThat(reconcileBatch.reconcileOnce()).isZero();
 		assertThat(paymentStatus()).containsExactly("CAPTURE_PENDING");
+	}
+
+	// ---------------------------------------------------------------- 만료 시 구매자 확정 확인 (D-063)
+
+	@Test
+	@DisplayName("홀드가_만료돼도_구매자가_확정했으면_풀지_않고_대사가_승인한다")
+	void 만료_배치_committed() {
+		startPayment();
+		expireHolds();
+		stubGetSession("""
+				{"id":"%s","status":"committed"}""".formatted(SESSION_ID));
+
+		// 결과값이 우리에게 안 닿았다. 구매자 탓이 아니다
+		assertThat(holdExpiryBatch.expireOnce()).isZero();
+		assertThat(held()).isEqualTo(3);
+		assertThat(holdStatus()).containsExactly("HELD");
+		assertThat(paymentStatus()).containsExactly("CAPTURE_PENDING");
+
+		// 다음 회차에도 건드리지 않는다 — CAPTURE_PENDING 은 조회에서 빠진다
+		assertThat(holdExpiryBatch.expireOnce()).isZero();
+		assertThat(held()).isEqualTo(3);
+
+		stubCapture(200, """
+				{"id":"%s","status":"captured"}""".formatted(SESSION_ID));
+		agePending();
+		assertThat(reconcileBatch.reconcileOnce()).isEqualTo(1);
+		assertThat(paymentStatus()).containsExactly("CAPTURED");
+		assertThat(groupStatus()).containsExactly("PAID");
+		assertThat(held()).isZero();
+		assertThat(sold()).isEqualTo(3);
+	}
+
+	@Test
+	@DisplayName("구매자가_확정하지_않았으면_만료_배치가_푼다")
+	void 만료_배치_initiated() {
+		startPayment();
+		expireHolds();
+		stubGetSession("""
+				{"id":"%s","status":"initiated"}""".formatted(SESSION_ID));
+
+		// 구매자가 늦은 것이다
+		assertThat(holdExpiryBatch.expireOnce()).isEqualTo(1);
+		assertThat(held()).isZero();
+		assertThat(holdStatus()).containsExactly("RELEASED");
+		assertThat(paymentStatus()).containsExactly("CREATED");
+		POINT3.verify(0, postRequestedFor(urlPathEqualTo("/capture/v2/" + SESSION_ID)));
+	}
+
+	@Test
+	@DisplayName("point3_조회가_안_되면_만료_배치가_풀지_않는다")
+	void 만료_배치_조회_실패() {
+		startPayment();
+		expireHolds();
+		POINT3.stubFor(get(urlPathEqualTo("/payment/v3/session/" + SESSION_ID))
+				.willReturn(json(503, "{}")));
+
+		assertThat(holdExpiryBatch.expireOnce()).isZero();
+		assertThat(held()).isEqualTo(3);
+		assertThat(paymentStatus()).containsExactly("CREATED");
+
+		// 복구되면 다음 회차에 판단한다
+		stubGetSession("""
+				{"id":"%s","status":"created"}""".formatted(SESSION_ID));
+		assertThat(holdExpiryBatch.expireOnce()).isEqualTo(1);
+		assertThat(held()).isZero();
+	}
+
+	@Test
+	@DisplayName("point3_가_응답하지_않아도_결제창과_무관한_홀드는_제때_푼다")
+	void 만료_배치_타임아웃_중_다른_홀드() {
+		startPayment();
+		// 결제창에 가지 않은 다른 구매자의 주문
+		orderService.place(new SessionUser("kakao-leaver", "이탈자"), order(2));
+		expireHolds();
+		// 지연 응답은 끊긴 연결에 남아 다음 테스트의 요청이 받아 간다. 결과 불명은 5xx 로 낸다
+		POINT3.stubFor(get(urlPathEqualTo("/payment/v3/session/" + SESSION_ID))
+				.willReturn(json(503, "{}")));
+
+		assertThat(holdExpiryBatch.expireOnce()).isEqualTo(1);
+		// 결제창까지 간 3개는 남고, 이탈자의 2개만 풀린다
+		assertThat(held()).isEqualTo(3);
+		assertThat(paymentStatus()).containsExactly("CREATED");
+	}
+
+	@Test
+	@DisplayName("세션이_없으면_만료_배치가_푼다")
+	void 만료_배치_세션_404() {
+		startPayment();
+		expireHolds();
+		POINT3.stubFor(get(urlPathEqualTo("/payment/v3/session/" + SESSION_ID))
+				.willReturn(json(404, "{}")));
+
+		assertThat(holdExpiryBatch.expireOnce()).isEqualTo(1);
+		assertThat(held()).isZero();
+	}
+
+	@Test
+	@DisplayName("결제창에_안_간_만료_홀드는_point3_에_묻지_않고_푼다")
+	void 만료_배치_세션_없음() {
+		expireHolds();
+
+		assertThat(holdExpiryBatch.expireOnce()).isEqualTo(1);
+		assertThat(held()).isZero();
+		POINT3.verify(0, getRequestedFor(urlPathMatching("/payment/v3/session/.*")));
+	}
+
+	@Test
+	@DisplayName("스위치를_끄면_이전처럼_묻지_않고_푼다")
+	void 만료_배치_스위치_끔() {
+		startPayment();
+		expireHolds();
+		stubGetSession("""
+				{"id":"%s","status":"committed"}""".formatted(SESSION_ID));
+
+		ReflectionTestUtils.setField(holdExpiryBatch, "point3Check", false);
+		try {
+			assertThat(holdExpiryBatch.expireOnce()).isEqualTo(1);
+		} finally {
+			ReflectionTestUtils.setField(holdExpiryBatch, "point3Check", true);
+		}
+		assertThat(held()).isZero();
+		assertThat(paymentStatus()).containsExactly("CREATED");
+		POINT3.verify(0, getRequestedFor(urlPathMatching("/payment/v3/session/.*")));
+	}
+
+	@Test
+	@DisplayName("만료_후_늦게_온_confirm_도_구매자가_확정했고_회수_전이면_승인한다")
+	void 늦은_confirm_committed() {
+		String orderToken = startPayment();
+		expireHolds();
+		stubGetSession("""
+				{"id":"%s","status":"committed"}""".formatted(SESSION_ID));
+		stubCapture(200, """
+				{"id":"%s","status":"captured"}""".formatted(SESSION_ID));
+
+		PaymentResultResponse result = paymentService.confirm(buyer(), orderToken, SESSION_ID, null);
+
+		assertThat(result.status()).isEqualTo(PaymentResultResponse.Status.PAID);
+		assertThat(sold()).isEqualTo(3);
+		assertThat(held()).isZero();
+	}
+
+	@Test
+	@DisplayName("만료_배치가_먼저_넘긴_건에_confirm_이_와도_한_번만_확정된다")
+	void 배치_구조_뒤_confirm() {
+		String orderToken = startPayment();
+		expireHolds();
+		stubGetSession("""
+				{"id":"%s","status":"committed"}""".formatted(SESSION_ID));
+		holdExpiryBatch.expireOnce();
+		assertThat(paymentStatus()).containsExactly("CAPTURE_PENDING");
+
+		stubCapture(200, """
+				{"id":"%s","status":"captured"}""".formatted(SESSION_ID));
+		PaymentResultResponse result = paymentService.confirm(buyer(), orderToken, SESSION_ID, null);
+
+		assertThat(result.status()).isEqualTo(PaymentResultResponse.Status.PAID);
+		agePending();
+		assertThat(reconcileBatch.reconcileOnce()).isZero();
+		assertThat(sold()).isEqualTo(3);
+		assertThat(held()).isZero();
+	}
+
+	@Test
+	@DisplayName("이미_회수된_홀드로는_구매자가_확정했어도_승인하지_않는다")
+	void 회수된_뒤_confirm() {
+		String orderToken = startPayment();
+		expireHolds();
+		stubGetSession("""
+				{"id":"%s","status":"initiated"}""".formatted(SESSION_ID));
+		holdExpiryBatch.expireOnce();
+		assertThat(holdStatus()).containsExactly("RELEASED");
+
+		// 회수 뒤에 구매자가 확정했다 — 그 재고는 이미 남의 것일 수 있다
+		stubGetSession("""
+				{"id":"%s","status":"committed"}""".formatted(SESSION_ID));
+
+		assertThatThrownBy(() -> paymentService.confirm(buyer(), orderToken, SESSION_ID, null))
+				.isInstanceOf(BusinessException.class)
+				.extracting(e -> ((BusinessException) e).errorCode())
+				.isEqualTo(ErrorCode.HOLD_EXPIRED);
+		POINT3.verify(0, postRequestedFor(urlPathEqualTo("/capture/v2/" + SESSION_ID)));
+		assertThat(sold()).isZero();
+	}
+
+	@Test
+	@DisplayName("만료_후_confirm_인데_구매자가_확정하지_않았으면_거절한다")
+	void 늦은_confirm_initiated() {
+		String orderToken = startPayment();
+		expireHolds();
+		stubGetSession("""
+				{"id":"%s","status":"initiated"}""".formatted(SESSION_ID));
+
+		assertThatThrownBy(() -> paymentService.confirm(buyer(), orderToken, SESSION_ID, null))
+				.isInstanceOf(BusinessException.class)
+				.extracting(e -> ((BusinessException) e).errorCode())
+				.isEqualTo(ErrorCode.HOLD_EXPIRED);
+		POINT3.verify(0, postRequestedFor(urlPathEqualTo("/capture/v2/" + SESSION_ID)));
 	}
 
 	// ---------------------------------------------------------------- 재결제 · 조회
