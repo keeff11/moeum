@@ -1,0 +1,11 @@
+# 실제 자격증명. 저장소에 절대 올리지 않는다 (D-017).
+# 이름 규칙을 넓게 잡는다 — 파일 하나 잘못 만들어 키가 올라가면 되돌릴 수 없다.
+secrets.local.env
+*.local.env
+.env
+.env.*
+!.env.example
+
+# 로컬 설정 덮어쓰기. 키가 들어갈 수 있는 자리다
+application-local.yml
+application-secret.yml
