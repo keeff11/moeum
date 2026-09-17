@@ -52,6 +52,23 @@ class OpenApiDocsTest extends IntegrationTest {
 				.andExpect(jsonPath("$.paths['/me'].get").exists());
 	}
 
+	/** 알림 받을 번호 인증 (D-064). 세 개가 다 보이고 로그인이 필요하다고 적혀야 프론트가 붙인다 */
+	@Test
+	@DisplayName("번호_인증_API_세_개가_로그인_필요로_보인다")
+	void 번호_인증() throws Exception {
+		mockMvc.perform(get("/v3/api-docs"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.paths['/me/phone'].get.summary").value("알림 받을 번호 조회"))
+				.andExpect(jsonPath("$.paths['/me/phone/verification'].post.summary").value("인증번호 받기"))
+				.andExpect(jsonPath("$.paths['/me/phone/verification/confirm'].post.summary").value("인증번호 확인"))
+				.andExpect(jsonPath("$.paths['/me/phone/verification'].post.responses['401']").exists())
+				.andExpect(jsonPath("$.paths['/me/phone/verification/confirm'].post.responses['401']").exists())
+				.andExpect(jsonPath("$.components.schemas.PhoneVerificationRequest.properties.phone").exists())
+				.andExpect(jsonPath("$.components.schemas.PhoneVerificationConfirmRequest.properties.code").exists())
+				.andExpect(jsonPath("$.components.schemas.PhoneVerificationResponse.properties.expiresAt").exists())
+				.andExpect(jsonPath("$.components.schemas.NotifyPhoneResponse.properties.phoneMasked").exists());
+	}
+
 	/**
 	 * /admin/* 는 앱이 지킨다 (D-055).
 	 *
