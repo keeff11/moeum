@@ -58,11 +58,17 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 		"moeum.notify.solapi.pf-id=KA01PF000000000000000000000000",
 		"moeum.notify.solapi.from=0212345678",
 		"moeum.notify.solapi.link-base=https://www.moeum.store",
-		"moeum.notify.solapi.templates.ORDER_PAID=KA01TP000000000000000000000000"
+		"moeum.notify.solapi.templates.ORDER_PAID=KA01TP000000000000000000000000",
+		"moeum.notify.solapi.templates.SECOND_PAYMENT_DUE=KA01TP000000000000000000000002",
+		"moeum.notify.solapi.templates.SHIPPED=KA01TP000000000000000000000003",
+		// 변수를 채우는 코드가 없는 이벤트. id 만 넣고 코드를 안 고친 상황이다
+		"moeum.notify.solapi.templates.REFUND_COMPLETED=KA01TP000000000000000000000009",
+		"moeum.notify.solapi.solo-templates.ORDER_PAID=KA01TP000000000000000000000001"
 })
 class AlimtalkMessageFactoryTest extends IntegrationTest {
 
 	private static final String TEMPLATE_ID = "KA01TP000000000000000000000000";
+	private static final String SOLO_TEMPLATE_ID = "KA01TP000000000000000000000001";
 
 	@Autowired
 	private AlimtalkMessageFactory factory;
@@ -137,8 +143,12 @@ class AlimtalkMessageFactoryTest extends IntegrationTest {
 		OrderGroup group = placeAndShip();
 		LocalDateTime paidAt = LocalDateTime.of(2026, 9, 10, 10, 6);
 
-		Map<String, String> variables = create(group, OutboxEventType.ORDER_PAID, 20000, paidAt)
-				.orElseThrow().kakaoOptions().variables();
+		SolapiSendRequest.KakaoOption kakao = create(group, OutboxEventType.ORDER_PAID, 20000, paidAt)
+				.orElseThrow().kakaoOptions();
+		Map<String, String> variables = kakao.variables();
+
+		// 2차금이 있는 묶음이라 단독 판매 템플릿이 설정돼 있어도 1차금 템플릿으로 간다
+		assertThat(kakao.templateId()).isEqualTo(TEMPLATE_ID);
 
 		assertThat(variables).containsOnlyKeys(
 				"#{userName}", "#{goodsName}", "#{prepayment}", "#{billTime}", "#{LINK}");
@@ -148,6 +158,59 @@ class AlimtalkMessageFactoryTest extends IntegrationTest {
 		assertThat(variables.get("#{billTime}")).isEqualTo("2026년 9월 10일 10:06");
 		assertThat(variables.get("#{LINK}"))
 				.isEqualTo("https://www.moeum.store/orders/" + group.getOrderToken());
+	}
+
+	@Test
+	@DisplayName("2차금이_없는_묶음은_단독_판매_템플릿으로_가고_금액_변수_이름이_다르다")
+	void 단독_판매() {
+		SaleForm soloForm = saveForm("포토카드 — 단독 판매", SaleType.SOLO, 0);
+		OrderGroup group = placeAndShip(soloForm);
+		LocalDateTime paidAt = LocalDateTime.of(2026, 9, 17, 9, 30);
+
+		SolapiSendRequest.KakaoOption kakao = create(group, OutboxEventType.ORDER_PAID, 23000, paidAt)
+				.orElseThrow().kakaoOptions();
+
+		assertThat(kakao.templateId()).isEqualTo(SOLO_TEMPLATE_ID);
+		// 1차금 템플릿은 prepayment, 단독 판매 템플릿은 payment 다. 섞이면 4xx 로 거절된다
+		assertThat(kakao.variables()).containsOnlyKeys(
+				"#{userName}", "#{goodsName}", "#{payment}", "#{billTime}", "#{LINK}");
+		assertThat(kakao.variables().get("#{payment}")).isEqualTo("23,000");
+		assertThat(kakao.variables().get("#{billTime}")).isEqualTo("2026년 9월 17일 09:30");
+	}
+
+	@Test
+	@DisplayName("2차금_청구_템플릿은_주문번호를_채운다")
+	void 청구_변수() {
+		OrderGroup group = placeAndShip();
+
+		SolapiSendRequest.KakaoOption kakao =
+				create(group, OutboxEventType.SECOND_PAYMENT_DUE, 15000, LocalDateTime.now())
+						.orElseThrow().kakaoOptions();
+
+		assertThat(kakao.templateId()).isEqualTo("KA01TP000000000000000000000002");
+		assertThat(kakao.variables()).containsOnlyKeys(
+				"#{userName}", "#{goodsName}", "#{orderNo}", "#{LINK}");
+		assertThat(kakao.variables().get("#{orderNo}")).isEqualTo(group.getOrderNo()).startsWith("ORD-");
+	}
+
+	@Test
+	@DisplayName("발송_완료_템플릿은_적재할_때_실은_송장을_채운다")
+	void 발송_변수() {
+		OrderGroup group = placeAndShip();
+		String payload = """
+				{"orderToken":"%s","buyerId":%d,"carrier":"CJ대한통운","trackingNo":"123456789012"}
+				""".formatted(group.getOrderToken(), buyer.getId());
+
+		SolapiSendRequest.KakaoOption kakao = factory.create(new OutboxMessage(1L,
+						OutboxAggregate.ORDER_GROUP, group.getId(), OutboxEventType.SHIPPED,
+						payload, 0, LocalDateTime.now()))
+				.orElseThrow().kakaoOptions();
+
+		assertThat(kakao.templateId()).isEqualTo("KA01TP000000000000000000000003");
+		assertThat(kakao.variables()).containsOnlyKeys(
+				"#{userName}", "#{goodsName}", "#{deliveryCompany}", "#{trackingNumber}", "#{LINK}");
+		assertThat(kakao.variables().get("#{deliveryCompany}")).isEqualTo("CJ대한통운");
+		assertThat(kakao.variables().get("#{trackingNumber}")).isEqualTo("123456789012");
 	}
 
 	@Test
@@ -238,10 +301,39 @@ class AlimtalkMessageFactoryTest extends IntegrationTest {
 		OrderGroup group = placeAndShip();
 
 		// 예외로 올리면 8회 재시도 뒤 DEAD 로 쌓인다 — 승인을 기다리는 것은 장애가 아니다
-		assertThat(create(group, OutboxEventType.SECOND_PAYMENT_DUE, 12000, LocalDateTime.now()))
+		assertThat(create(group, OutboxEventType.SECOND_PAID, 12000, LocalDateTime.now()))
 				.isEmpty();
+		assertThat(create(group, OutboxEventType.SECOND_PAYMENT_OVERDUE, 12000, LocalDateTime.now()))
+				.isEmpty();
+	}
+
+	@Test
+	@DisplayName("템플릿_id_만_있고_변수를_모르는_이벤트는_보내지_않는다")
+	void 변수_미정() {
+		OrderGroup group = placeAndShip();
+
+		// 변수 이름을 모른 채 보내면 4xx 로 거절돼 8회 재시도 끝에 DEAD 로 쌓인다
 		assertThat(create(group, OutboxEventType.REFUND_COMPLETED, 20000, LocalDateTime.now()))
 				.isEmpty();
+	}
+
+	@Test
+	@DisplayName("단독_판매_템플릿만_있는_이벤트는_2차금이_있는_묶음에_보내지_않는다")
+	void 단독_템플릿만() {
+		OrderGroup group = placeAndShip();
+
+		SolapiProperties soloOnly = new SolapiProperties(
+				properties.baseUrl(), properties.apiKey(), properties.apiSecret(),
+				properties.pfId(), properties.from(), properties.linkBase(), null,
+				Map.of(), properties.connectTimeout(), properties.readTimeout(),
+				Map.of(OutboxEventType.ORDER_PAID, SOLO_TEMPLATE_ID));
+
+		Optional<SolapiSendRequest.Message> message = new TransactionTemplate(transactionManager).execute(status ->
+				new AlimtalkMessageFactory(orderGroupRepository, shippingRepository,
+						buyerAddressRepository, soloOnly)
+						.create(outbox(group, OutboxEventType.ORDER_PAID, 20000, LocalDateTime.now())));
+
+		assertThat(message).isEmpty();
 	}
 
 	@Test
@@ -306,7 +398,8 @@ class AlimtalkMessageFactoryTest extends IntegrationTest {
 		SolapiProperties overridden = new SolapiProperties(
 				properties.baseUrl(), properties.apiKey(), properties.apiSecret(),
 				properties.pfId(), properties.from(), properties.linkBase(), testRecipient,
-				properties.templates(), properties.connectTimeout(), properties.readTimeout());
+				properties.templates(), properties.connectTimeout(), properties.readTimeout(),
+				properties.soloTemplates());
 
 		return new AlimtalkMessageFactory(orderGroupRepository, shippingRepository,
 				buyerAddressRepository, overridden);
@@ -339,11 +432,15 @@ class AlimtalkMessageFactoryTest extends IntegrationTest {
 	}
 
 	private SaleForm saveForm(String title) {
+		return saveForm(title, SaleType.GROUP, 12000);
+	}
+
+	private SaleForm saveForm(String title, SaleType saleType, int deposit2) {
 		SaleForm form = SaleForm.builder()
 				.seller(seller)
 				.title(title)
 				.slug("form-" + System.nanoTime())
-				.saleType(SaleType.GROUP)
+				.saleType(saleType)
 				.stockMax(100)
 				.targetQty(100)
 				.minOrderAmount(0)
@@ -351,7 +448,7 @@ class AlimtalkMessageFactoryTest extends IntegrationTest {
 
 		Product product = Product.builder().name("상품").sortOrder(0).build();
 		product.addOption(ProductOption.builder()
-				.name("옵션 A").deposit1Amount(20000).deposit2Amount(12000).sortOrder(0).build());
+				.name("옵션 A").deposit1Amount(20000).deposit2Amount(deposit2).sortOrder(0).build());
 		form.addProduct(product);
 
 		return saleFormRepository.saveAndFlush(form);

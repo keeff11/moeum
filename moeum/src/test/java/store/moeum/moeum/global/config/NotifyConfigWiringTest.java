@@ -69,6 +69,16 @@ class NotifyConfigWiringTest {
 	}
 
 	@Test
+	@DisplayName("모든_프로파일에_단독_판매_결제완료_템플릿_자리가_있다")
+	void 단독_템플릿_배선() throws IOException {
+		for (String profile : PROFILES) {
+			assertThat(valueOf(profile, "moeum.notify.solapi.solo-templates.ORDER_PAID"))
+					.as("%s 프로파일에 단독 판매 결제완료 템플릿 자리가 없다", profile)
+					.isEqualTo("${SOLAPI_TEMPLATE_ORDER_PAID_SOLO:}");
+		}
+	}
+
+	@Test
 	@DisplayName("모든_프로파일이_배송조회_설정을_읽는_자리를_가진다")
 	void 배송조회_배선() throws IOException {
 		for (String profile : PROFILES) {

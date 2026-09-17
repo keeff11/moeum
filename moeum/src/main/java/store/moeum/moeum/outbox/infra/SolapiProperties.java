@@ -1,6 +1,7 @@
 package store.moeum.moeum.outbox.infra;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.boot.context.properties.bind.ConstructorBinding;
 import store.moeum.moeum.outbox.domain.OutboxEventType;
 
 import java.util.Map;
@@ -20,6 +21,8 @@ import java.util.Map;
  * @param linkBase  버튼 링크의 앞부분. 템플릿의 {@code #{LINK}} 에 채운다
  * @param testRecipient 테스트 수신번호. <b>값이 있으면 모든 알림이 이 번호로만 간다</b> —
  *                      구매자에게는 한 통도 가지 않는다. 실서비스에서는 반드시 비운다
+ * @param soloTemplates 2차금이 없는 묶음에 쓸 템플릿. <b>있으면 {@code templates} 보다 앞선다</b> —
+ *                      단독 판매는 결제 완료 문구가 "2차금이 남았다" 가 아니라 "발송을 기다린다" 다
  */
 @ConfigurationProperties(prefix = "moeum.notify.solapi")
 public record SolapiProperties(
@@ -32,14 +35,25 @@ public record SolapiProperties(
 		String testRecipient,
 		Map<OutboxEventType, String> templates,
 		int connectTimeout,
-		int readTimeout
+		int readTimeout,
+		Map<OutboxEventType, String> soloTemplates
 ) {
 
+	@ConstructorBinding
 	public SolapiProperties {
 		baseUrl = (baseUrl == null || baseUrl.isBlank()) ? "https://api.solapi.com" : baseUrl;
 		templates = (templates == null) ? Map.of() : templates;
 		connectTimeout = (connectTimeout <= 0) ? 3000 : connectTimeout;
 		readTimeout = (readTimeout <= 0) ? 10000 : readTimeout;
+		soloTemplates = (soloTemplates == null) ? Map.of() : soloTemplates;
+	}
+
+	/** 단독 판매 템플릿을 쓰지 않는 자리(발송기 단위 테스트 등)를 위한 생성자 */
+	public SolapiProperties(String baseUrl, String apiKey, String apiSecret, String pfId, String from,
+	                        String linkBase, String testRecipient, Map<OutboxEventType, String> templates,
+	                        int connectTimeout, int readTimeout) {
+		this(baseUrl, apiKey, apiSecret, pfId, from, linkBase, testRecipient, templates,
+				connectTimeout, readTimeout, Map.of());
 	}
 
 	/**
@@ -51,6 +65,17 @@ public record SolapiProperties(
 	 */
 	public String templateOf(OutboxEventType eventType) {
 		String templateId = templates.get(eventType);
+		return notBlank(templateId) ? templateId : null;
+	}
+
+	/**
+	 * 2차금이 없는 묶음의 템플릿. 없으면 null — 호출자가 {@link #templateOf} 로 내려간다.
+	 *
+	 * <b>판매 유형이 아니라 2차금 유무로 고른다</b> ({@code OrderGroup#hasSecondPayment} 와 같은 이유).
+	 * 전액 선결제 공구도 받을 돈이 더 없어서 단독 판매와 같은 문구가 맞다.
+	 */
+	public String soloTemplateOf(OutboxEventType eventType) {
+		String templateId = soloTemplates.get(eventType);
 		return notBlank(templateId) ? templateId : null;
 	}
 

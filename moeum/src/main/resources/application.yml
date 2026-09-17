@@ -107,6 +107,9 @@ moeum:
         RECRUITMENT_FAILED: ${SOLAPI_TEMPLATE_RECRUITMENT_FAILED:}
         SECOND_PAYMENT_OVERDUE: ${SOLAPI_TEMPLATE_SECOND_PAYMENT_OVERDUE:}
         REFUND_COMPLETED: ${SOLAPI_TEMPLATE_REFUND_COMPLETED:}
+      # 2차금이 없는 묶음(단독 판매 · 전액 선결제)에 쓸 템플릿. 있으면 위보다 앞선다
+      solo-templates:
+        ORDER_PAID: ${SOLAPI_TEMPLATE_ORDER_PAID_SOLO:}
   auth:
     # 로컬은 http 라 Secure 를 붙이면 쿠키가 저장되지 않는다
     cookie-secure: false
@@ -211,6 +214,9 @@ moeum:
         RECRUITMENT_FAILED: ${SOLAPI_TEMPLATE_RECRUITMENT_FAILED:}
         SECOND_PAYMENT_OVERDUE: ${SOLAPI_TEMPLATE_SECOND_PAYMENT_OVERDUE:}
         REFUND_COMPLETED: ${SOLAPI_TEMPLATE_REFUND_COMPLETED:}
+      # 2차금이 없는 묶음(단독 판매 · 전액 선결제)에 쓸 템플릿. 있으면 위보다 앞선다
+      solo-templates:
+        ORDER_PAID: ${SOLAPI_TEMPLATE_ORDER_PAID_SOLO:}
   auth:
     cookie-secure: true
     # CSRF 2차 방어 (api-spec 10-11). 운영에서는 반드시 채운다

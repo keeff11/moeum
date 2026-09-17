@@ -13,6 +13,7 @@ import store.moeum.moeum.order.domain.OrderGroupRepository;
 import store.moeum.moeum.order.domain.Shipping;
 import store.moeum.moeum.order.domain.ShippingRepository;
 import store.moeum.moeum.outbox.domain.OutboxAggregate;
+import store.moeum.moeum.outbox.domain.OutboxEventType;
 import store.moeum.moeum.outbox.infra.SolapiFailedException;
 import store.moeum.moeum.outbox.infra.SolapiProperties;
 import store.moeum.moeum.outbox.infra.SolapiSendRequest;
@@ -58,9 +59,9 @@ public class AlimtalkMessageFactory {
 	 */
 	@Transactional(readOnly = true)
 	public Optional<SolapiSendRequest.Message> create(OutboxMessage message) {
-		String templateId = properties.templateOf(message.eventType());
+		OutboxEventType eventType = message.eventType();
 
-		if (templateId == null) {
+		if (properties.templateOf(eventType) == null && properties.soloTemplateOf(eventType) == null) {
 			return Optional.empty();
 		}
 		if (message.aggregateType() != OutboxAggregate.ORDER_GROUP) {
@@ -72,11 +73,27 @@ public class AlimtalkMessageFactory {
 				.orElseThrow(() -> new SolapiFailedException(
 						"알림 대상 주문을 찾을 수 없다: outboxId=" + message.id()));
 
+		boolean solo = !group.hasSecondPayment() && properties.soloTemplateOf(eventType) != null;
+		String templateId = solo ? properties.soloTemplateOf(eventType) : properties.templateOf(eventType);
+
+		if (templateId == null) {
+			// 단독 판매 템플릿만 있고 이 묶음은 2차금이 있다. 보낼 문구가 없다
+			return Optional.empty();
+		}
+
+		Optional<Map<String, String>> variables = variablesOf(group, message, solo);
+
+		if (variables.isEmpty()) {
+			// 템플릿 id 는 있는데 채울 변수를 모른다. 그대로 보내면 4xx 로 거절돼 DEAD 로 쌓인다
+			log.warn("[알림/변수미정] 템플릿은 있지만 변수를 채우는 코드가 없다: {} outboxId={}",
+					eventType, message.id());
+			return Optional.empty();
+		}
+
 		return Optional.of(new SolapiSendRequest.Message(
 				recipientOf(group, message),
 				properties.from(),
-				new SolapiSendRequest.KakaoOption(properties.pfId(), templateId,
-						variablesOf(group, message))));
+				new SolapiSendRequest.KakaoOption(properties.pfId(), templateId, variables.get())));
 	}
 
 	// ---------------------------------------------------------------- 내부
@@ -127,24 +144,47 @@ public class AlimtalkMessageFactory {
 	}
 
 	/**
-	 * 템플릿 변수.
+	 * 템플릿 변수. <b>이름이 승인본과 하나라도 다르면 SOLAPI 가 거절한다.</b>
 	 *
-	 * 승인된 것은 결제완료 하나뿐이라 그 변수만 채운다. 템플릿이 늘면 이벤트별로
-	 * 갈라야 하는데, 지금 갈라 두면 쓰지 않는 분기가 생긴다.
+	 * 승인된 템플릿마다 변수가 다르다 (2026-09-17 콘솔에서 확인).
+	 * <ul>
+	 *   <li>1차금 결제 완료 — userName · goodsName · prepayment · billTime · LINK</li>
+	 *   <li>단독 판매 결제 완료 — userName · goodsName · <b>payment</b> · billTime · LINK</li>
+	 *   <li>2차금 청구(주문 상태 변경 안내) — userName · goodsName · orderNo · LINK</li>
+	 *   <li>발송 완료 — userName · goodsName · deliveryCompany · trackingNumber · LINK</li>
+	 * </ul>
+	 * 모르는 이벤트는 비어 있음을 돌려준다 — 템플릿 id 만 넣고 여기를 안 고치면 로그로 드러난다.
 	 *
 	 * <b>키는 {@code #{}} 를 붙인 그대로 보낸다.</b> SOLAPI 가 알아서 감싸 주기도 하지만
 	 * 그 규칙에 기대면 템플릿에 {@code #{}} 가 없는 변수가 섞였을 때 조용히 어긋난다.
 	 */
-	private Map<String, String> variablesOf(OrderGroup group, OutboxMessage message) {
+	private Optional<Map<String, String>> variablesOf(OrderGroup group, OutboxMessage message,
+	                                                  boolean solo) {
 		Map<String, String> variables = new LinkedHashMap<>();
 
 		variables.put("#{userName}", userNameOf(group));
 		variables.put("#{goodsName}", group.representativeTitle());
-		variables.put("#{prepayment}", wonOf(amountOf(message)));
-		variables.put("#{billTime}", message.createdAt().format(BILL_TIME));
-		variables.put("#{LINK}", linkOf(group));
 
-		return variables;
+		switch (message.eventType()) {
+			case ORDER_PAID -> {
+				JsonNode payload = payloadOf(message);
+				variables.put(solo ? "#{payment}" : "#{prepayment}", wonOf(payload.path("amount").asInt()));
+				variables.put("#{billTime}", message.createdAt().format(BILL_TIME));
+			}
+			case SECOND_PAYMENT_DUE -> variables.put("#{orderNo}", group.getOrderNo());
+			case SHIPPED -> {
+				// 송장은 적재할 때 실은 값을 쓴다. 조회하면 그 사이 고친 번호가 실린다 (ShipmentService)
+				JsonNode payload = payloadOf(message);
+				variables.put("#{deliveryCompany}", payload.path("carrier").asText());
+				variables.put("#{trackingNumber}", payload.path("trackingNo").asText());
+			}
+			default -> {
+				return Optional.empty();
+			}
+		}
+
+		variables.put("#{LINK}", linkOf(group));
+		return Optional.of(variables);
 	}
 
 	/**
@@ -168,15 +208,14 @@ public class AlimtalkMessageFactory {
 	}
 
 	/**
-	 * 금액. payload 의 {@code amount} 가 실제로 청구된 값이다.
+	 * payload. 금액은 여기의 {@code amount} 가 실제로 청구된 값이다.
 	 *
 	 * 묶음에서 다시 계산하지 않는다 — 부분 취소가 있으면 지금 계산한 값과
 	 * 그때 결제한 값이 다르다. 알림은 그때 일어난 사실을 말해야 한다.
 	 */
-	private static int amountOf(OutboxMessage message) {
+	private static JsonNode payloadOf(OutboxMessage message) {
 		try {
-			JsonNode node = MAPPER.readTree(message.payload()).get("amount");
-			return (node == null) ? 0 : node.asInt();
+			return MAPPER.readTree(message.payload());
 
 		} catch (Exception e) {
 			throw new SolapiFailedException("알림 payload 를 읽을 수 없다: outboxId=" + message.id(), e);

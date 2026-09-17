@@ -88,8 +88,8 @@ public class ShipmentService {
 	/**
 	 * 발송 완료 알림을 적재한다 (알림톡 3번).
 	 *
-	 * 승인된 템플릿이 아직 없어 지금은 릴레이가 로그만 남기고 넘어간다 (D-040) —
-	 * 템플릿 id 를 설정에 채우는 순간 나가기 시작한다. 코드는 손대지 않는다.
+	 * 템플릿은 09-17 에 승인됐다 (D-065). 변수 이름이 payload 키와 다르다 —
+	 * {@code carrier} → deliveryCompany, {@code trackingNo} → trackingNumber.
 	 *
 	 * 송장번호를 payload 에 싣는다. 알림이 재시도로 며칠 뒤 나가도 <b>그때 등록한 번호</b>
 	 * 여야 하고, 조회로 채우면 그 사이 수정된 번호가 실린다.
