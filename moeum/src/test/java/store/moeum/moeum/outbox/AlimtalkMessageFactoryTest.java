@@ -104,7 +104,7 @@ class AlimtalkMessageFactoryTest extends IntegrationTest {
 		for (String table : new String[]{
 				"second_charge", "payment_event", "refund", "payment", "outbox",
 				"stock_hold", "order_item", "orders", "shipping", "order_group",
-				"cart_item", "cart", "wishlist", "buyer_address", "buyer_refund_account", "buyer",
+				"cart_item", "cart", "wishlist", "buyer_address", "buyer_refund_account", "phone_verification", "buyer",
 				"sale_form_history", "sale_form_image", "product_option", "product", "sale_form", "seller"}) {
 			jdbcTemplate.execute("DELETE FROM " + table);
 		}
@@ -196,6 +196,38 @@ class AlimtalkMessageFactoryTest extends IntegrationTest {
 		assertThat(message.to()).isEqualTo("01012345678");
 		// 스냅샷이 없으면 수령인 이름도 없다. 카카오 닉네임으로 대신한다
 		assertThat(message.kakaoOptions().variables().get("#{userName}")).isEqualTo("카카오닉네임");
+	}
+
+	@Test
+	@DisplayName("인증한_번호가_있으면_배송지가_아니라_그쪽으로_간다")
+	void 인증_번호() {
+		// 선물 주문이면 배송지 번호는 받는 사람 것이다. 인증한 번호는 구매자 본인 것이다 (D-064)
+		buyer.verifyNotifyPhone("01055556666", LocalDateTime.now());
+		buyerRepository.saveAndFlush(buyer);
+		OrderGroup group = placeAndShip();
+
+		SolapiSendRequest.Message message =
+				create(group, OutboxEventType.ORDER_PAID, 20000, LocalDateTime.now()).orElseThrow();
+
+		assertThat(message.to()).isEqualTo("01055556666");
+		// 구매자 본인이 받으므로 받는 사람 이름으로 부르지 않는다
+		assertThat(message.kakaoOptions().variables().get("#{userName}")).isEqualTo("카카오닉네임");
+	}
+
+	@Test
+	@DisplayName("테스트_수신번호가_인증한_번호보다_앞선다")
+	void 테스트_수신번호_우선() {
+		buyer.verifyNotifyPhone("01055556666", LocalDateTime.now());
+		buyerRepository.saveAndFlush(buyer);
+		OrderGroup group = placeAndShip();
+
+		// 인증한 구매자가 생겨도 테스트 기간에는 한 통도 구매자에게 가면 안 된다
+		String to = new TransactionTemplate(transactionManager).execute(status ->
+				overriding("010-9073-6864")
+						.create(outbox(group, OutboxEventType.ORDER_PAID, 20000, LocalDateTime.now()))
+						.orElseThrow().to());
+
+		assertThat(to).isEqualTo("01090736864");
 	}
 
 	// ---------------------------------------------------------------- 갈림길

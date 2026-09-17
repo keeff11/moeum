@@ -43,6 +43,16 @@ public class Buyer {
 	@Column(name = "payer_id", length = 64)
 	private String payerId;
 
+	/**
+	 * 알림 받을 번호 (D-064). <b>문자 인증을 마친 값만 들어간다.</b>
+	 * 비어 있으면 알림톡은 예전처럼 배송지 번호로 간다 (D-040).
+	 */
+	@Column(name = "notify_phone", length = 20)
+	private String notifyPhone;
+
+	@Column(name = "notify_phone_verified_at")
+	private LocalDateTime notifyPhoneVerifiedAt;
+
 	@CreatedDate
 	@Column(name = "created_at", nullable = false, updatable = false)
 	private LocalDateTime createdAt;
@@ -80,5 +90,26 @@ public class Buyer {
 
 	public boolean hasPayerId() {
 		return payerId != null && !payerId.isBlank();
+	}
+
+	/**
+	 * 인증을 마친 번호로 바꾼다. 인증 흐름({@code PhoneVerificationWriter}) 밖에서는 부르지 않는다 —
+	 * 이 칸에 들어간 번호는 확인된 번호라는 약속이 깨지면 남의 번호로 알림이 간다.
+	 */
+	public void verifyNotifyPhone(String phone, LocalDateTime verifiedAt) {
+		this.notifyPhone = phone;
+		this.notifyPhoneVerifiedAt = verifiedAt;
+	}
+
+	public boolean hasNotifyPhone() {
+		return notifyPhone != null && !notifyPhone.isBlank();
+	}
+
+	/** {@code 01012345678} → {@code 010-****-5678}. 응답에는 이것만 내려보낸다 */
+	public String maskedNotifyPhone() {
+		if (!hasNotifyPhone() || notifyPhone.length() < 7) {
+			return null;
+		}
+		return notifyPhone.substring(0, 3) + "-****-" + notifyPhone.substring(notifyPhone.length() - 4);
 	}
 }

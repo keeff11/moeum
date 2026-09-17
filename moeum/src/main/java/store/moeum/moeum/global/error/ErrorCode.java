@@ -38,6 +38,18 @@ public enum ErrorCode {
 	/** 1차금 결제의 선행 조건이다. 판매 유형을 가리지 않는다 (D-057) */
 	REFUND_ACCOUNT_REQUIRED(HttpStatus.BAD_REQUEST, "환불 계좌를 먼저 등록해 주세요."),
 
+	// --- 알림 받을 번호 인증 (D-064) ---
+	PHONE_VERIFICATION_TOO_SOON(HttpStatus.TOO_MANY_REQUESTS, "인증번호는 1분에 한 번 받을 수 있습니다. 잠시 후 다시 요청해 주세요."),
+	PHONE_VERIFICATION_DAILY_LIMIT(HttpStatus.TOO_MANY_REQUESTS, "오늘은 인증번호를 더 받을 수 없습니다. 내일 다시 시도해 주세요."),
+	PHONE_VERIFICATION_NOT_FOUND(HttpStatus.BAD_REQUEST, "인증번호를 먼저 요청해 주세요."),
+	PHONE_VERIFICATION_EXPIRED(HttpStatus.BAD_REQUEST, "인증번호가 만료되었습니다. 다시 요청해 주세요."),
+	PHONE_VERIFICATION_MISMATCH(HttpStatus.BAD_REQUEST, "인증번호가 일치하지 않습니다."),
+	PHONE_VERIFICATION_LOCKED(HttpStatus.BAD_REQUEST, "인증번호를 여러 번 틀렸습니다. 다시 요청해 주세요."),
+	/** 확정 실패(4xx). 발급 기록을 지워 발송 간격에 걸리지 않게 한다 */
+	SMS_SEND_FAILED(HttpStatus.BAD_GATEWAY, "문자를 보내지 못했습니다. 번호를 확인하고 다시 시도해 주세요."),
+	/** 결과 불명(5xx · 타임아웃). 실제로 도착할 수 있어 발급 기록을 남긴다 */
+	SMS_SEND_UNCERTAIN(HttpStatus.SERVICE_UNAVAILABLE, "문자 발송이 늦어지고 있습니다. 잠시 후 문자를 확인하거나 1분 뒤 다시 요청해 주세요."),
+
 	// --- 장바구니 ---
 	OPTION_NOT_FOUND(HttpStatus.NOT_FOUND, "상품 옵션을 찾을 수 없습니다."),
 	CART_ITEM_NOT_FOUND(HttpStatus.NOT_FOUND, "장바구니 항목을 찾을 수 없습니다."),

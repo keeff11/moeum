@@ -16,7 +16,7 @@ import store.moeum.moeum.buyer.dto.AddressResponse;
 import store.moeum.moeum.global.auth.LoginUser;
 import store.moeum.moeum.global.auth.SessionUser;
 
-@Tag(name = "구매자", description = "배송지 · 환불 계좌")
+@Tag(name = "구매자", description = "배송지 · 환불 계좌 · 알림 받을 번호")
 @RestController
 @RequestMapping("/me/address")
 @RequiredArgsConstructor

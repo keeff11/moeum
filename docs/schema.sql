@@ -144,9 +144,34 @@ CREATE TABLE buyer (
     kakao_id   VARCHAR(64) NOT NULL,
     nickname   VARCHAR(50)     NULL COMMENT '카카오 프로필. 수령인 이름과는 별개',
     payer_id   VARCHAR(64)     NULL COMMENT 'point3 결제자 식별값. 받은 문자열 그대로',
+    notify_phone             VARCHAR(20) NULL COMMENT '알림 받을 번호. 문자 인증을 마친 값만 (V18 · D-064)',
+    notify_phone_verified_at DATETIME(6) NULL COMMENT 'notify_phone 을 인증한 시각',
     created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
     PRIMARY KEY (id),
     UNIQUE KEY uk_buyer_kakao (kakao_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+
+-- ---------------------------------------------------------------------
+-- 문자 인증번호 — /me/phone/verification (V18 · D-064)
+--
+-- 발송 간격(1분) · 하루 한도(구매자 · 번호 각 5회) · 시도 횟수(5회)를 여기서 센다.
+-- 세션에 두지 않는다 — 세션을 새로 열면 한도가 초기화된다.
+-- 유효한 것은 구매자별 마지막 한 건뿐이다. 인증번호는 해시로만 둔다.
+-- ---------------------------------------------------------------------
+CREATE TABLE phone_verification (
+    id           BIGINT       NOT NULL AUTO_INCREMENT,
+    buyer_id     BIGINT       NOT NULL,
+    phone        VARCHAR(20)  NOT NULL COMMENT '인증할 번호 (숫자만)',
+    code_hash    CHAR(64)     NOT NULL COMMENT 'SHA-256(번호:인증번호) hex',
+    attempts     INT          NOT NULL DEFAULT 0 COMMENT '틀린 횟수',
+    expires_at   DATETIME(6)  NOT NULL,
+    verified_at  DATETIME(6)  NULL COMMENT '맞힌 시각. 찬 행은 다시 쓰지 않는다',
+    created_at   DATETIME(6)  NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    PRIMARY KEY (id),
+    KEY idx_phone_verification_buyer (buyer_id, created_at),
+    KEY idx_phone_verification_phone (phone, created_at),
+    CONSTRAINT fk_phone_verification_buyer FOREIGN KEY (buyer_id) REFERENCES buyer (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 

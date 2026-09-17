@@ -24,7 +24,7 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * SOLAPI 알림톡 발송.
+ * SOLAPI 알림톡 · 문자 발송.
  *
  * <b>공식 SDK 를 쓰지 않는다.</b> 이유가 셋이다 —
  * ① SDK 는 코틀린 + kotlinx.serialization 이라 Java 17 프로젝트에 런타임을 통째로 들인다,
@@ -78,13 +78,33 @@ public class SolapiClient {
 		if (!properties.hasCredentials()) {
 			throw new SolapiFailedException("SOLAPI 설정이 비어 있다 — apiKey · apiSecret · pfId · from 을 확인한다");
 		}
+		sendOne(message);
+	}
+
+	/**
+	 * 단문 문자 한 통 (D-064 인증번호).
+	 *
+	 * <b>테스트 수신번호를 따르지 않는다.</b> 인증번호는 그 번호의 주인이 받아야 뜻이 있다 —
+	 * 테스트 번호로 돌리면 아무도 인증을 마칠 수 없다.
+	 *
+	 * 실패 구분은 알림톡과 같다. 4xx 는 {@link SolapiFailedException},
+	 * 5xx · 타임아웃 · 건별 거절은 {@link SolapiUncertainException}.
+	 */
+	public void sendSms(String to, String text) {
+		if (!properties.hasSmsCredentials()) {
+			throw new SolapiFailedException("SOLAPI 설정이 비어 있다 — apiKey · apiSecret · from 을 확인한다");
+		}
+		sendOne(SolapiSendRequest.Message.sms(to, properties.from(), text));
+	}
+
+	// ---------------------------------------------------------------- 내부
+
+	private void sendOne(SolapiSendRequest.Message message) {
 		SolapiSendRequest request = new SolapiSendRequest(List.of(message));
 		SolapiSendResponse response = post(request);
 
 		requireAllAccepted(response);
 	}
-
-	// ---------------------------------------------------------------- 내부
 
 	private SolapiSendResponse post(SolapiSendRequest request) {
 		try {

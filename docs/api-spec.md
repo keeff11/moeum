@@ -32,6 +32,9 @@ BFF 계층은 두지 않는다. CORS·SameSite는 브라우저 발 호출(CSR)�
 | 3 | `GET /me` | 로그인 사용자 프로필 | B4 · B5 | 필요 |
 | 4 | `GET·PUT /me/address` | 배송지 조회 · 등록 | B4 · B5 | 필요 |
 | **4-2** 🆕 | `GET·PUT /me/refund-account` | 환불 계좌 조회 · 등록 (**필수**) | **B5** | 필요 |
+| **4-3** 🆕 | `GET /me/phone` | 알림 받을 번호 조회 (D-064) | B4 · B5 | 필요 |
+| **4-4** 🆕 | `POST /me/phone/verification` | 인증번호 문자 받기 | B4 · B5 | 필요 |
+| **4-5** 🆕 | `POST /me/phone/verification/confirm` | 인증번호 확인 → 알림 받을 번호 저장 | B4 · B5 | 필요 |
 | 5 | `POST /checkout-sessions` | 결제 세션 생성 + **재고 홀드** | **B2 옵션·수량 확정** | 필요 |
 | 6 | `POST /checkout-sessions/{id}/release` | 홀드 해제 (멱등) | B5 이탈 | 필요 |
 | 7 | `POST /checkout-sessions/{id}/pay` | 주문 확정 + PG 결제 준비 | B5 결제하기 | 필요 |
@@ -197,6 +200,63 @@ B1 헤드라인 가격은 `options[0].deposit1Amount`. 상품 자체의 `price` 
 
 ⚠️ **조회 응답에 전체 계좌번호는 나가지 않는다.** 뒤 네 자리(`accountNoMasked`)만
 내려간다. 수정 화면에서는 전체 번호를 다시 입력받아야 한다 — 이전 값을 프리필할 수 없다.
+
+---
+
+## 5-3. 알림 받을 번호 · 문자 인증 🆕 (D-064)
+
+주문 알림톡은 **여기서 인증한 번호로 간다.** 인증 전이면 예전처럼 배송지 번호(수령인)로 간다.
+배송지 번호와 **다른 칸**이다 — 선물 주문이면 받는 사람과 구매자의 번호가 다르고, 알림은 구매자에게 가야 한다.
+**결제의 선행 조건은 아니다** (인증하지 않아도 `/pay` 는 막히지 않는다).
+
+### 흐름
+
+```
+[번호 입력] → POST /me/phone/verification        → 문자 발송, 3분 타이머 · 1분 재요청 타이머 시작
+[6자리 입력] → POST /me/phone/verification/confirm → 200 이면 완료
+```
+
+### `POST /me/phone/verification`
+
+```json
+// 요청
+{ "phone": "010-1234-5678" }
+
+// 200
+{ "expiresAt": "2026-09-17T12:03:00", "resendAvailableAt": "2026-09-17T12:01:00" }
+```
+
+| 오류 | 상태 | 화면 처리 |
+|---|---|---|
+| `PHONE_VERIFICATION_TOO_SOON` | 429 | 1분에 한 번. `resendAvailableAt` 까지 버튼을 막는다 |
+| `PHONE_VERIFICATION_DAILY_LIMIT` | 429 | 하루 5번 — 구매자 기준 · 번호 기준 각각. 내일 다시 |
+| `SMS_SEND_FAILED` | 502 | 못 보냈다. 번호를 확인하고 **바로 다시 요청할 수 있다** |
+| `SMS_SEND_UNCERTAIN` | 503 | 늦게 도착할 수 있다. **입력칸은 그대로 열어 둔다** — 받은 번호로 인증된다. 안 오면 1분 뒤 재요청 |
+| `INVALID_INPUT` | 400 | 휴대폰 번호 형식이 아니다. `010` 은 가운데 4자리, `011·016~019` 는 3~4자리 |
+
+⚠️ **다시 받으면 앞의 인증번호는 쓸 수 없다.** 마지막 것만 유효하다.
+
+### `POST /me/phone/verification/confirm`
+
+```json
+// 요청 — phone 은 인증번호를 요청한 그 번호 (하이픈 유무는 상관없다)
+{ "phone": "010-1234-5678", "code": "123456" }
+
+// 200
+{ "phoneMasked": "010-****-5678", "verifiedAt": "2026-09-17T12:01:30" }
+```
+
+| 오류 | 상태 | 화면 처리 |
+|---|---|---|
+| `PHONE_VERIFICATION_MISMATCH` | 400 | 틀렸다. `message` 에 "(남은 기회 N번)" 이 실린다 |
+| `PHONE_VERIFICATION_LOCKED` | 400 | 5번 틀렸다. 새 인증번호를 받아야 한다 |
+| `PHONE_VERIFICATION_EXPIRED` | 400 | 3분이 지났다. 다시 요청 |
+| `PHONE_VERIFICATION_NOT_FOUND` | 400 | 요청한 적이 없거나, **요청한 번호와 다른 번호**거나, 이미 쓴 인증번호다 |
+
+### `GET /me/phone`
+
+인증한 번호가 없으면 본문 없이 **204**. 있으면 위 confirm 응답과 같은 모양이다.
+⚠️ 전체 번호는 내려가지 않는다(`phoneMasked`). 번호를 바꿀 때는 새 번호로 다시 인증한다.
 
 ---
 

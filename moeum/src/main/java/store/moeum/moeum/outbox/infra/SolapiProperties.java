@@ -73,6 +73,11 @@ public record SolapiProperties(
 		return notBlank(apiKey) && notBlank(apiSecret) && notBlank(pfId) && notBlank(from);
 	}
 
+	/** 문자에는 카카오 채널(pfId)이 필요 없다. 알림톡 승인과 무관하게 보낼 수 있다 */
+	public boolean hasSmsCredentials() {
+		return notBlank(apiKey) && notBlank(apiSecret) && notBlank(from);
+	}
+
 	private static boolean notBlank(String value) {
 		return value != null && !value.isBlank();
 	}

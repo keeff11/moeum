@@ -21,7 +21,7 @@ import store.moeum.moeum.global.auth.SessionUser;
  * 배송지와 따로 둔 것은 성격이 달라서다 — 배송지는 주문 시점 값이 굳지만(shipping 스냅샷),
  * 환불 계좌는 늘 최신 한 벌만 있으면 된다. 돈은 환불하는 그 시점에 보낸다.
  */
-@Tag(name = "구매자", description = "배송지 · 환불 계좌")
+@Tag(name = "구매자", description = "배송지 · 환불 계좌 · 알림 받을 번호")
 @RestController
 @RequestMapping("/me/refund-account")
 @RequiredArgsConstructor

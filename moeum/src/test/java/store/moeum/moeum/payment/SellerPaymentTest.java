@@ -118,7 +118,7 @@ class SellerPaymentTest extends IntegrationTest {
 		for (String table : new String[]{
 				"second_charge", "payment_event", "refund", "payment", "outbox",
 				"stock_hold", "order_item", "orders", "shipping", "order_group",
-				"cart_item", "cart", "wishlist", "buyer_address", "buyer_refund_account", "buyer",
+				"cart_item", "cart", "wishlist", "buyer_address", "buyer_refund_account", "phone_verification", "buyer",
 				"sale_form_history", "sale_form_image", "product_option", "product", "sale_form", "seller"}) {
 			jdbcTemplate.execute("DELETE FROM " + table);
 		}

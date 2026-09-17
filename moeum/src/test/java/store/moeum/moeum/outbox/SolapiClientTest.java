@@ -189,6 +189,87 @@ class SolapiClientTest {
 		assertThat(server.findAll(postRequestedFor(urlPathEqualTo(SEND_PATH)))).isEmpty();
 	}
 
+	// ---------------------------------------------------------------- 문자 (D-064)
+
+	@Test
+	@DisplayName("문자는_SMS로_못_박고_알림톡_파라미터를_싣지_않는다")
+	void 문자_본문() {
+		server.stubFor(WireMock.post(urlPathEqualTo(SEND_PATH))
+				.willReturn(json(200, "{\"failedMessageList\":[]}")));
+
+		client.sendSms("01012341234", "[모음] 인증번호 123456 (3분 안에 입력)");
+
+		String body = server.findAll(postRequestedFor(urlPathEqualTo(SEND_PATH))).get(0).getBodyAsString();
+
+		// 비우면 SOLAPI 가 길이를 보고 장문으로 바꿀 수 있다 — 단가가 오른다
+		assertThat(body).contains("\"type\":\"SMS\"");
+		assertThat(body).contains("\"text\":\"[모음] 인증번호 123456 (3분 안에 입력)\"");
+		assertThat(body).contains("\"to\":\"01012341234\"");
+		assertThat(body).contains("\"from\":\"0212345678\"");
+		// kakaoOptions 가 실리면 알림톡으로 접수된다
+		assertThat(body).doesNotContain("kakaoOptions");
+	}
+
+	@Test
+	@DisplayName("알림톡_요청에는_문자_필드가_실리지_않는다")
+	void 알림톡에_문자_필드_없음() {
+		server.stubFor(WireMock.post(urlPathEqualTo(SEND_PATH))
+				.willReturn(json(200, "{\"failedMessageList\":[]}")));
+
+		client.send(message());
+
+		String body = server.findAll(postRequestedFor(urlPathEqualTo(SEND_PATH))).get(0).getBodyAsString();
+
+		// type 이 SMS 로 실리면 알림톡이 문자로 나간다
+		assertThat(body).doesNotContain("\"type\"");
+		assertThat(body).doesNotContain("\"text\"");
+	}
+
+	@Test
+	@DisplayName("문자는_카카오_채널_없이도_보낼_수_있다")
+	void 문자_pfId_없음() {
+		// 알림톡 승인과 무관하게 인증은 돌아야 한다
+		SolapiClient smsOnly = new SolapiClient(new SolapiProperties(
+				server.baseUrl(), API_KEY, API_SECRET, "", "0212345678",
+				"https://www.moeum.store", null, Map.of(), 2000, 10000));
+		server.stubFor(WireMock.post(urlPathEqualTo(SEND_PATH))
+				.willReturn(json(200, "{\"failedMessageList\":[]}")));
+
+		assertThatCode(() -> smsOnly.sendSms("01012341234", "인증번호 123456"))
+				.doesNotThrowAnyException();
+	}
+
+	@Test
+	@DisplayName("문자는_테스트_수신번호를_따르지_않는다")
+	void 문자_테스트수신_무시() {
+		// 인증번호는 그 번호의 주인이 받아야 뜻이 있다. 테스트 번호로 돌리면 아무도 인증을 못 한다
+		SolapiClient withTestRecipient = new SolapiClient(new SolapiProperties(
+				server.baseUrl(), API_KEY, API_SECRET, PF_ID, "0212345678",
+				"https://www.moeum.store", "010-9073-6864", Map.of(), 2000, 10000));
+		server.stubFor(WireMock.post(urlPathEqualTo(SEND_PATH))
+				.willReturn(json(200, "{\"failedMessageList\":[]}")));
+
+		withTestRecipient.sendSms("01012341234", "인증번호 123456");
+
+		assertThat(server.findAll(postRequestedFor(urlPathEqualTo(SEND_PATH))).get(0).getBodyAsString())
+				.contains("\"to\":\"01012341234\"");
+	}
+
+	@Test
+	@DisplayName("문자도_4xx는_확정_실패_5xx는_결과_불명이다")
+	void 문자_갈림길() {
+		server.stubFor(WireMock.post(urlPathEqualTo(SEND_PATH))
+				.willReturn(json(400, "{\"errorCode\":\"ValidationError\"}")));
+		assertThatThrownBy(() -> client.sendSms("01012341234", "인증번호 123456"))
+				.isInstanceOf(SolapiFailedException.class);
+
+		server.resetAll();
+		server.stubFor(WireMock.post(urlPathEqualTo(SEND_PATH))
+				.willReturn(json(503, "{}")));
+		assertThatThrownBy(() -> client.sendSms("01012341234", "인증번호 123456"))
+				.isInstanceOf(SolapiUncertainException.class);
+	}
+
 	// ---------------------------------------------------------------- 도우미
 
 	private SolapiClient clientWith(int readTimeout) {

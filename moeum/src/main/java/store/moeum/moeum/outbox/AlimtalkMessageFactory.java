@@ -6,6 +6,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
+import store.moeum.moeum.buyer.domain.Buyer;
 import store.moeum.moeum.buyer.domain.BuyerAddressRepository;
 import store.moeum.moeum.order.domain.OrderGroup;
 import store.moeum.moeum.order.domain.OrderGroupRepository;
@@ -86,10 +87,15 @@ public class AlimtalkMessageFactory {
 	 * <b>테스트 수신번호가 설정돼 있으면 그쪽으로만 간다</b> — 구매자에게는 한 통도
 	 * 가지 않는다. 수신번호 정책이 정해지기 전까지 알림톡을 켜 둘 수 있는 유일한 방법이다.
 	 *
-	 * <b>⚠ 그게 없으면 배송지 번호를 쓴다 — 구매자 본인 번호가 DB 에 없다.</b>
-	 * 선물 주문처럼 수령인이 구매자와 다르면 결제 알림이 받는 사람에게 간다 (D-040).
-	 * 카카오 로그인 동의항목에 전화번호를 추가하기 전까지 남는 제약이다.
+	 * 그다음은 <b>구매자가 문자로 인증한 번호</b>다 (D-064). 구매자 본인 번호라
+	 * 선물 주문이어도 구매자에게 간다.
+	 *
+	 * <b>⚠ 인증 전이면 배송지 번호를 쓴다.</b> 선물 주문처럼 수령인이 구매자와 다르면
+	 * 결제 알림이 받는 사람에게 간다 (D-040). 인증을 마치지 않은 구매자에게 남는 제약이다.
 	 * 주문 시점 스냅샷을 먼저 보고, 없으면 현재 배송지에서 가져온다.
+	 *
+	 * <b>인증 번호는 지금 값을 본다 — 스냅샷을 뜨지 않는다.</b> 번호를 바꿨다면 새 번호가
+	 * 맞는 번호다. 배송지와 달리 "그때 어디로 보냈는가" 를 굳혀 둘 이유가 없다.
 	 */
 	private String recipientOf(OrderGroup group, OutboxMessage message) {
 		String testRecipient = properties.testRecipientOrNull();
@@ -101,10 +107,16 @@ public class AlimtalkMessageFactory {
 			return testRecipient;
 		}
 
+		Buyer buyer = group.getBuyer();
+
+		if (buyer.hasNotifyPhone()) {
+			return buyer.getNotifyPhone();
+		}
+
 		String phone = shippingRepository.findByOrderGroupId(group.getId())
 				.map(Shipping::getPhone)
 				.filter(value -> value != null && !value.isBlank())
-				.orElseGet(() -> buyerAddressRepository.findByBuyerId(group.getBuyer().getId())
+				.orElseGet(() -> buyerAddressRepository.findByBuyerId(buyer.getId())
 						.map(address -> address.getPhone())
 						.orElse(null));
 
@@ -135,12 +147,24 @@ public class AlimtalkMessageFactory {
 		return variables;
 	}
 
-	/** 배송지에 적힌 이름을 먼저 쓴다 — 수신번호가 그쪽 번호라 호칭도 맞춰야 한다 */
+	/**
+	 * 호칭은 수신번호의 주인에 맞춘다.
+	 *
+	 * 인증 번호로 가면 구매자 본인이 받으므로 카카오 닉네임을 쓴다 — 선물 주문에서
+	 * 수령인 이름을 쓰면 구매자가 받는 사람 이름으로 불린다. 배송지 번호로 가면 받는 사람이
+	 * 수령인이라 배송지에 적힌 이름을 먼저 쓴다.
+	 */
 	private String userNameOf(OrderGroup group) {
+		Buyer buyer = group.getBuyer();
+
+		if (properties.testRecipientOrNull() == null && buyer.hasNotifyPhone()
+				&& buyer.getNickname() != null && !buyer.getNickname().isBlank()) {
+			return buyer.getNickname();
+		}
 		return shippingRepository.findByOrderGroupId(group.getId())
 				.map(Shipping::getRecipientName)
 				.filter(name -> name != null && !name.isBlank())
-				.orElseGet(() -> group.getBuyer().getNickname());
+				.orElseGet(buyer::getNickname);
 	}
 
 	/**
