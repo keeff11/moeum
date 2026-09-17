@@ -390,9 +390,13 @@ aws ssm put-parameter --region ap-northeast-2     --name /moeum/prod/SOLAPI_FROM
 aws ssm put-parameter --region ap-northeast-2     --name /moeum/prod/NOTIFY_PROVIDER --value "solapi" --type String --overwrite
 ```
 
-**승인된 템플릿이 있는 이벤트만 나간다.** `SOLAPI_TEMPLATE_ORDER_PAID` 만 채워 두면
-1차금 결제 완료만 발송되고, 2차금 청구·환불 완료는 예전처럼 로그만 남는다.
-템플릿이 추가로 승인되면 **파라미터만 넣고 재배포하면 된다 — 코드도 설정 파일도 손대지 않는다.**
+**승인된 템플릿이 있는 이벤트만 나간다.** 승인된 넷(1차금 결제 완료 · 2차금 청구 · 발송 완료 ·
+단독 판매 결제 완료)과 `pfId` 는 **`docker-compose.prod.yml` 에 기본값으로 들어 있다** (D-065) —
+파라미터를 따로 넣지 않아도 된다. 파라미터가 있으면 그쪽이 이긴다.
+
+> **⚠ 템플릿이 추가로 승인되면 id 만 넣어서는 안 나간다 (D-065).** 템플릿마다 변수 이름이
+> 달라서 `AlimtalkMessageFactory` 에 그 이벤트의 변수를 채우는 코드가 있어야 한다.
+> 없으면 `[알림/변수미정]` WARN 을 남기고 보내지 않는다.
 아홉 개 이벤트의 자리를 `application.yml` 과 `docker-compose.prod.yml` 에 미리 다 뚫어 두었다
 (D-062). 새 이벤트 타입을 만들 때만 두 파일에 이름을 추가하고, `NotifyConfigWiringTest` 가
 빠진 자리를 잡는다.

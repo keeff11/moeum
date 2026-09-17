@@ -3178,3 +3178,55 @@ point3 에는 `committed` 가 남는다.
 - `phone_verification` 은 쌓이기만 한다. 한도 계산은 오늘 것만 보므로 동작에는 지장이 없고,
   정리 배치는 행이 늘면 붙인다
 - 화면(B4 · B5)이 아직 붙지 않았다 — api-spec 5-3
+
+---
+
+## D-065. 승인된 템플릿 넷을 붙인다 — 템플릿마다 변수가 다르고, 단독 판매는 결제 완료 문구가 따로다
+
+**계기:** 알림톡 템플릿이 추가로 승인됐다(2026-09-17). 1차금 결제 완료 · 2차금 청구 ·
+발송 완료 · 단독 판매 결제 완료, 넷이다. 발신프로필(`pfId`)은 넷 다 같다.
+
+| 템플릿 | 이벤트 | id | 변수 |
+|---|---|---|---|
+| 1차금 결제 완료 | `ORDER_PAID` | `KA01TP260910010438757xqEil5YCgzW` | userName · goodsName · prepayment · billTime · LINK |
+| 2차금 청구 (주문 상태 변경 안내) | `SECOND_PAYMENT_DUE` | `KA01TP260917045805828reVuTT5m7f5` | userName · goodsName · orderNo · LINK |
+| 발송 완료 | `SHIPPED` | `KA01TP260910013001121Uwp8D09Z4yr` | userName · goodsName · deliveryCompany · trackingNumber · LINK |
+| 단독 판매 결제 완료 | `ORDER_PAID` (2차금 없는 묶음) | `KA01TP260916061042145yGWWMLlZLDX` | userName · goodsName · **payment** · billTime · LINK |
+
+변수 이름은 SOLAPI 콘솔의 변수 목록에서 확인했다.
+
+### D-040 의 "id 만 채우면 나간다" 는 틀렸다
+
+변수가 템플릿마다 다르다. 결제 완료 변수 다섯을 그대로 실어 보냈다면 새 템플릿 셋은
+전부 4xx 로 거절돼 **8회 재시도 끝에 DEAD 로 쌓였을 것이다** — 그중 하나가 가장 중요한
+2차금 청구다. D-050 의 "남은 것" 에 적어 둔 걱정이 그대로 맞았다.
+
+`AlimtalkMessageFactory` 가 이벤트별로 변수를 고른다. **변수를 모르는 이벤트는 보내지 않는다** —
+템플릿 id 만 넣고 코드를 안 고치면 `[알림/변수미정]` WARN 이 남고 넘어간다.
+DEAD 로 쌓는 것보다 이쪽이 드러나기도 되돌리기도 쉽다.
+
+- **송장은 payload 에서 읽는다.** 적재할 때 실은 번호다 — 조회하면 그 사이 고친 번호가 실린다
+- **주문번호는 `order_no`** (`ORD-YYMMDD-id`) 다. 주소창에 실리는 `order_token` 이 아니다
+
+### 단독 판매는 판매 유형이 아니라 2차금 유무로 가른다
+
+같은 `ORDER_PAID` 인데 문구가 둘이다 — 1차금 템플릿은 잔금이 남았다는 전제이고, 단독 판매
+템플릿은 "발송이 시작되면 다시 안내" 다. 이벤트 타입을 새로 만들지 않고
+`solo-templates` 설정을 두어, **2차금이 없는 묶음(`OrderGroup#hasSecondPayment`)이면 그쪽이 앞선다.**
+
+`SaleType.SOLO` 로 묻지 않는 것은 D-046 과 같은 이유다 — 전액 선결제 공구도 받을 돈이 더 없어서
+"잔금이 남았다" 문구가 틀린다. 적재 지점(결제 확정)은 손대지 않았다.
+
+### id 는 compose 의 기본값으로 둔다
+
+비밀이 아니라 저장소에 둔다. 다만 **yml 이 아니라 `docker-compose.prod.yml` 의 기본값**이다 —
+compose 가 `${X:-}` 로 빈 문자열을 넘기면 yml 의 `${X:기본값}` 은 쓰이지 않는다
+(빈 값도 "있는 값" 이다). Parameter Store 에 같은 이름이 있으면 그쪽이 이긴다.
+yml 에 두지 않은 이유가 하나 더 있다 — 테스트 프로파일로 새어 들어가 "템플릿 없음" 테스트가 흔들린다.
+
+### 남은 것
+
+- **실발송은 여전히 꺼져 있다** (`NOTIFY_PROVIDER=log`). 새 템플릿 셋의 변수 이름이 맞는지는
+  실제로 한 통 보내 봐야 확정된다 — `SOLAPI_TEST_RECIPIENT` 를 건 채 결제 · 입고 · 송장 등록을 한 번씩 돌린다
+- **Parameter Store 에 옛 `SOLAPI_TEMPLATE_ORDER_PAID` 가 있으면 그 값이 쓰인다.** 위 id 와 같은지 확인한다
+- 2차금 청구 템플릿에 **금액이 없다.** 셀러의 수동 청구(S10)와 미납 독촉(`SECOND_PAYMENT_OVERDUE`)은 아직 템플릿이 없다
