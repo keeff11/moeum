@@ -566,7 +566,24 @@ AWS 콘솔 → EC2 → Lifecycle Manager → 스냅샷 정책, 대상 태그 `Na
 `server.shutdown: graceful` 이 켜져 있어 처리 중이던 결제 요청은 마무리되고 종료된다.
 
 **Flyway 는 앱 기동 시 자동 실행된다.** 마이그레이션이 실패하면 앱이 안 뜨고,
-헬스체크가 통과하지 않아 배포 잡이 실패한다. 이전 컨테이너는 계속 돌고 있다.
+헬스체크가 통과하지 않아 배포 잡이 실패한다. **이전 컨테이너는 남아 있지 않다** —
+`docker compose up` 이 먼저 교체하므로 그동안 API 가 멈춘다. 되돌리려면 위의 롤백을 돌린다.
+
+**⚠ 운영 DB 콘솔을 열어 둔 채 배포하지 않는다 (2026-09-17 장애).**
+`docker exec ... mysql` 로 조회만 하고 나가지 않은 세션이 트랜잭션을 연 채 남아 있으면,
+그 세션이 건드린 테이블의 `ALTER TABLE` 이 메타데이터 잠금을 **끝없이 기다린다.**
+V18 이 `buyer` 에서 이렇게 10분 멈췄고 그동안 API 가 내려가 있었다. 로그는
+`Migrating schema ... to version` 에서 조용히 멈추고 에러가 없다. 확인과 해제:
+
+```sql
+SELECT id, user, host, command, time, state FROM information_schema.processlist ORDER BY time DESC;
+SELECT trx_mysql_thread_id, trx_started FROM information_schema.innodb_trx;  -- 오래된 것이 범인
+KILL <thread id>;
+```
+
+잠금이 풀리면 멈춰 있던 앱이 그대로 이어서 뜬다 — 재배포는 필요 없다.
+이때 GitHub Actions 잡은 실패로 남는다. `aws ssm wait` 가 100초만 기다리고 끝나기 때문이라,
+**잡이 실패해도 인스턴스에서는 배포가 계속 돌고 있을 수 있다** — `get-command-invocation` 으로 본다.
 
 **시크릿을 바꿀 때는** Parameter Store 값만 고치고 재배포하면 된다.
 `deploy.sh` 가 매번 `.env` 를 새로 만든다.
