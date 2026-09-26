@@ -16,6 +16,8 @@ import store.moeum.moeum.support.IntegrationTest;
 import store.moeum.moeum.support.OrderFixture;
 
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -101,6 +103,78 @@ class StockHoldConcurrencyTest extends IntegrationTest {
 		assertThat(held).isEqualTo(stock);
 		assertThat(sold).isZero();
 		assertThat(stockHoldRepository.countByStatus(HoldStatus.HELD)).isEqualTo(stock);
+	}
+
+	/**
+	 * 위 테스트는 요청 200 개를 스레드 32 개로 나눠 던진다. 여기서는 1000 개가 정말로 같은 순간에 출발한다.
+	 *
+	 * 커넥션 풀(10)보다 훨씬 많은 스레드가 몰리므로 풀 대기 시간(connection-timeout)을 넘겨
+	 * 실패하는 요청이 나올 수 있다. 그건 허용한다 — 여기서 보는 것은 <b>과부하에서도 장부가 맞는가</b>다.
+	 * 실패한 요청이 재고나 홀드 행을 남기면 안 되고, 성공한 수와 잡힌 재고가 정확히 같아야 한다.
+	 */
+	@Test
+	@DisplayName("1000명이_동시에_주문해도_재고를_넘겨_팔지_않고_장부가_맞는다")
+	void 천명이_동시에_주문해도_재고를_넘겨_팔지_않고_장부가_맞는다() throws Exception {
+		int stock = 100;
+		int threads = 1000;
+		OrderFixture.Setup setup = fixture.saleForm(stock, null);
+
+		AtomicInteger success = new AtomicInteger();
+		AtomicInteger outOfStock = new AtomicInteger();
+		AtomicInteger other = new AtomicInteger();
+		Map<String, AtomicInteger> otherTypes = new ConcurrentHashMap<>();
+
+		CountDownLatch ready = new CountDownLatch(threads);
+		CountDownLatch start = new CountDownLatch(1);
+		CountDownLatch done = new CountDownLatch(threads);
+		ExecutorService pool = Executors.newFixedThreadPool(threads);   // 요청마다 스레드 하나
+
+		for (int i = 0; i < threads; i++) {
+			int index = i;
+			pool.submit(() -> {
+				SessionUser buyer = new SessionUser("kakao-crowd-" + index, "구매자" + index);
+				ready.countDown();
+				try {
+					start.await();
+					orderService.place(buyer, order(setup.optionId(), 1));
+					success.incrementAndGet();
+				} catch (OutOfStockException e) {
+					outOfStock.incrementAndGet();
+				} catch (Exception e) {
+					other.incrementAndGet();
+					otherTypes.computeIfAbsent(e.getClass().getSimpleName(), k -> new AtomicInteger())
+							.incrementAndGet();
+				} finally {
+					done.countDown();
+				}
+			});
+		}
+
+		assertThat(ready.await(60, TimeUnit.SECONDS)).isTrue();
+		long startedAt = System.nanoTime();
+		start.countDown();                       // 1000개를 한꺼번에 푼다
+		assertThat(done.await(300, TimeUnit.SECONDS)).isTrue();
+		long elapsedMs = (System.nanoTime() - startedAt) / 1_000_000;
+		pool.shutdown();
+
+		int held = intOf("SELECT held FROM sale_form WHERE id = ?", setup.saleFormId());
+		int sold = intOf("SELECT sold FROM sale_form WHERE id = ?", setup.saleFormId());
+		long heldRows = stockHoldRepository.countByStatus(HoldStatus.HELD);
+
+		System.out.printf("[1000명 동시 주문] %dms · 성공 %d · 품절 %d · 기타 %d %s · held %d · 홀드 행 %d%n",
+				elapsedMs, success.get(), outOfStock.get(), other.get(), otherTypes, held, heldRows);
+
+		assertThat(success.get() + outOfStock.get() + other.get()).isEqualTo(threads);
+
+		// ★ 확인 조건 — 과부하로 일부가 실패해도 이 셋은 어긋나면 안 된다
+		assertThat(held + sold).as("sold + held <= stock_max").isLessThanOrEqualTo(stock);
+		assertThat(held).as("잡힌 재고 = 성공한 주문 수 (실패한 요청이 재고를 남기지 않는다)")
+				.isEqualTo(success.get());
+		assertThat(heldRows).as("홀드 행 = 성공한 주문 수").isEqualTo(success.get());
+
+		// 수요(1000)가 재고(100)의 열 배라 과부하 실패를 빼고도 재고는 다 나가야 한다
+		assertThat(success.get()).as("재고가 남았는데 품절 처리되지 않는다")
+				.isEqualTo(Math.min(stock, threads - other.get()));
 	}
 
 	@Test
