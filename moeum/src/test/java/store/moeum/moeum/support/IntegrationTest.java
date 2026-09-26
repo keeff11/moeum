@@ -5,11 +5,12 @@ import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.MySQLContainer;
 import org.testcontainers.utility.DockerImageName;
 
 /**
- * 실제 MySQL 8.0 위에서 도는 통합 테스트의 부모.
+ * 실제 MySQL 8.0 과 Redis 7 위에서 도는 통합 테스트의 부모. Redis 는 세션 저장소다 (D-067).
  *
  * H2 로 대체하지 않는다. 3단계 이후 조건부 UPDATE · FOR UPDATE SKIP LOCKED · 락 타임아웃처럼
  * 엔진 동작에 의존하는 코드를 검증해야 하는데, H2 는 그 의미가 다르다.
@@ -41,6 +42,11 @@ public abstract class IntegrationTest {
 					)
 					.withReuse(true);
 
+	protected static final GenericContainer<?> REDIS =
+			new GenericContainer<>(DockerImageName.parse("redis:7-alpine"))
+					.withExposedPorts(6379)
+					.withReuse(true);
+
 	static {
 		// presigned URL 서명에만 쓰는 더미 자격증명. 네트워크로 나가지 않는다 —
 		// 서명은 전부 로컬 계산이라 실제 AWS 없이도 발급 로직을 검증할 수 있다.
@@ -49,6 +55,7 @@ public abstract class IntegrationTest {
 		System.setProperty("aws.region", "ap-northeast-2");
 
 		MYSQL.start();
+		REDIS.start();
 	}
 
 	@DynamicPropertySource
@@ -57,5 +64,7 @@ public abstract class IntegrationTest {
 		registry.add("spring.datasource.username", MYSQL::getUsername);
 		registry.add("spring.datasource.password", MYSQL::getPassword);
 		registry.add("spring.datasource.driver-class-name", MYSQL::getDriverClassName);
+		registry.add("spring.data.redis.host", REDIS::getHost);
+		registry.add("spring.data.redis.port", () -> REDIS.getMappedPort(6379));
 	}
 }
