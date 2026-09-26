@@ -1,0 +1,46 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "moeum-load",
+      "runtimeExecutable": "java",
+      "runtimeArgs": [
+        "-jar",
+        "moeum/build/libs/moeum-0.0.1-SNAPSHOT.jar",
+        "--spring.profiles.active=local",
+        "--spring.jpa.show-sql=false",
+        "--logging.level.org.hibernate.orm.jdbc.bind=info",
+        "--spring.datasource.hikari.maximum-pool-size=20"
+      ],
+      "port": 8080
+    },
+    {
+      "name": "moeum-load-timeout250",
+      "runtimeExecutable": "java",
+      "runtimeArgs": [
+        "-jar",
+        "moeum/build/libs/moeum-0.0.1-SNAPSHOT.jar",
+        "--spring.profiles.active=local",
+        "--spring.jpa.show-sql=false",
+        "--logging.level.org.hibernate.orm.jdbc.bind=info",
+        "--spring.datasource.hikari.maximum-pool-size=20",
+        "--spring.datasource.hikari.connection-timeout=250"
+      ],
+      "port": 8080
+    },
+    {
+      "name": "moeum-load-accept1000",
+      "runtimeExecutable": "java",
+      "runtimeArgs": [
+        "-jar",
+        "moeum/build/libs/moeum-0.0.1-SNAPSHOT.jar",
+        "--spring.profiles.active=local",
+        "--spring.jpa.show-sql=false",
+        "--logging.level.org.hibernate.orm.jdbc.bind=info",
+        "--spring.datasource.hikari.maximum-pool-size=20",
+        "--server.tomcat.accept-count=1000"
+      ],
+      "port": 8080
+    }
+  ]
+}
