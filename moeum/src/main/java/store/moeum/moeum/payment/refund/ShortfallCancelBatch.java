@@ -5,8 +5,11 @@ import lombok.extern.slf4j.Slf4j;
 import store.moeum.moeum.outbox.domain.OutboxEventType;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+import store.moeum.moeum.global.alert.AlertLevel;
+import store.moeum.moeum.global.alert.AlertSender;
 import store.moeum.moeum.payment.refund.dto.OrderRefundResponse;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -28,6 +31,13 @@ import java.util.List;
  * {@code shortfall_done_at} 을 찍고, 조회 자체를 {@code FOR UPDATE SKIP LOCKED} 로 잠근다.
  * 취소가 미확정({@code PROCESSING})으로 끝나도 done 을 찍는다 — 그 건은 취소 대사 배치가
  * 조회 → resume 으로 끝낸다. 여기서 다시 보내면 이중 환불이다.
+ *
+ * <b>사람이 손대야 하는 건은 Slack 으로 알린다 (D-069).</b> 폼마다 한 번만 돌아서 다시 볼 기회가 없다.
+ * <pre>
+ *   취소가 FAILED · SETTLED_MANUAL · 예외   → 폼마다 한 번에 모아 CRITICAL
+ *   EXTEND                                  → CRITICAL (연장 규칙이 없어 아무것도 하지 않았다)
+ *   PROCESSING                              → 알리지 않는다. 취소 대사 알림이 맡는다
+ * </pre>
  */
 @Slf4j
 @Component
@@ -39,6 +49,7 @@ public class ShortfallCancelBatch {
 
 	private final ShortfallWriter writer;
 	private final OrderRefundService orderRefundService;
+	private final AlertSender alertSender;
 
 	@Scheduled(fixedDelayString = "${moeum.batch.shortfall-delay:60000}")
 	public void run() {
@@ -85,11 +96,18 @@ public class ShortfallCancelBatch {
 				cancelAll(form);
 				notify(form, OutboxEventType.RECRUITMENT_FAILED, true);
 			}
-			case EXTEND -> log.warn(
-					// 몇 번까지 · 얼마나 미룰지가 기획 미확정이다 (domain.md). 임의로 정하지 않는다
-					"목표수량 미달인데 EXTEND 정책이다 — 연장 규칙이 아직 없어 수동 처리가 필요하다: "
-							+ "saleFormId={}, sold={}, target={}",
-					form.saleFormId(), form.sold(), form.targetQty());
+			case EXTEND -> {
+				// 몇 번까지 · 얼마나 미룰지가 기획 미확정이다 (domain.md). 임의로 정하지 않는다
+				log.warn("목표수량 미달인데 EXTEND 정책이다 — 연장 규칙이 아직 없어 수동 처리가 필요하다: "
+								+ "saleFormId={}, sold={}, target={}",
+						form.saleFormId(), form.sold(), form.targetQty());
+				alertSender.send(AlertLevel.CRITICAL, """
+						*[목표수량 미달] EXTEND 폼 — 수동 처리 필요*
+						saleFormId=%d · 판매 %d / 목표 %d
+						연장 규칙이 아직 없어 아무것도 하지 않았다. 폼은 CLOSED 이고 구매자에게 알리지 않았다.
+						셀러와 연장 · 진행 · 취소 중 하나를 정해 직접 처리한다.""".formatted(
+						form.saleFormId(), form.sold(), form.targetQty()));
+			}
 			case PROCEED -> {
 				log.info("목표수량 미달이지만 그대로 진행한다: saleFormId={}, sold={}, target={}",
 						form.saleFormId(), form.sold(), form.targetQty());
@@ -119,8 +137,21 @@ public class ShortfallCancelBatch {
 		log.info("목표수량 미달로 취소한다: saleFormId={}, sold={}, target={}, 주문 {}건",
 				form.saleFormId(), form.sold(), form.targetQty(), orderIds.size());
 
+		List<String> problems = new ArrayList<>();
 		for (Long orderId : orderIds) {
-			cancelOne(form.saleFormId(), orderId);
+			String problem = cancelOne(form.saleFormId(), orderId);
+			if (problem != null) {
+				problems.add("orderId=" + orderId + " " + problem);
+			}
+		}
+		if (!problems.isEmpty()) {
+			alertSender.send(AlertLevel.CRITICAL, """
+					*[목표수량 미달] 자동 취소 %d건 실패*
+					saleFormId=%d · 판매 %d / 목표 %d · 취소 대상 %d건
+					%s
+					이 폼은 다시 돌지 않는다. 건마다 상태를 확인하고 직접 환불한다.""".formatted(
+					problems.size(), form.saleFormId(), form.sold(), form.targetQty(), orderIds.size(),
+					String.join("\n", problems)));
 		}
 	}
 
@@ -129,18 +160,24 @@ public class ShortfallCancelBatch {
 	 *
 	 * <b>한 건이 터져도 나머지는 계속한다.</b> 앞에서 멈추면 뒤의 구매자들은 돈을 돌려받지 못한 채
 	 * 다음 주기를 기다리는데, 그 주기는 {@code shortfall_done_at} 때문에 오지 않는다.
+	 *
+	 * @return 사람이 봐야 하면 그 사유. 아니면 null
 	 */
-	private void cancelOne(Long saleFormId, Long orderId) {
+	private String cancelOne(Long saleFormId, Long orderId) {
 		try {
-			orderRefundService.cancelByOrder(orderId, REASON).ifPresent(result -> {
-				if (result.status() != OrderRefundResponse.Status.COMPLETED) {
-					// PROCESSING 은 대사 배치가 끝낸다. FAILED · SETTLED_MANUAL 은 사람이 봐야 한다
-					log.warn("미달 취소가 완료되지 않았다: saleFormId={}, orderId={}, status={}",
-							saleFormId, orderId, result.status());
-				}
-			});
+			OrderRefundResponse.Status status = orderRefundService.cancelByOrder(orderId, REASON)
+					.map(OrderRefundResponse::status)
+					.orElse(null);
+			if (status == null || status == OrderRefundResponse.Status.COMPLETED) {
+				return null;
+			}
+			log.warn("미달 취소가 완료되지 않았다: saleFormId={}, orderId={}, status={}",
+					saleFormId, orderId, status);
+			// PROCESSING 은 대사 배치가 끝낸다. 오래 남으면 취소 대사 알림이 울린다
+			return status == OrderRefundResponse.Status.PROCESSING ? null : status.name();
 		} catch (RuntimeException e) {
 			log.error("미달 취소 실패: saleFormId={}, orderId={}", saleFormId, orderId, e);
+			return e.getClass().getSimpleName();
 		}
 	}
 }

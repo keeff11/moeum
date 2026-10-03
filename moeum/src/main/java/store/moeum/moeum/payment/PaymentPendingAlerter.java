@@ -4,17 +4,15 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
+import store.moeum.moeum.global.alert.AlertCooldown;
 import store.moeum.moeum.global.alert.AlertLevel;
 import store.moeum.moeum.global.alert.AlertSender;
 
 import java.time.Clock;
 import java.time.Duration;
-import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 대사 배치가 끝내 확정하지 못하는 결제를 사람에게 넘긴다 (D-068).
@@ -51,7 +49,7 @@ public class PaymentPendingAlerter {
 	private final Duration warnAfter;
 	private final Duration criticalBefore;
 
-	private final Map<Integer, Instant> lastAuthAlert = new ConcurrentHashMap<>();
+	private final AlertCooldown authCooldown;
 
 	public PaymentPendingAlerter(
 			JdbcTemplate jdbcTemplate,
@@ -64,6 +62,7 @@ public class PaymentPendingAlerter {
 		this.clock = clock;
 		this.warnAfter = warnAfter;
 		this.criticalBefore = criticalBefore;
+		this.authCooldown = new AlertCooldown(AUTH_ALERT_COOLDOWN, clock);
 	}
 
 	/**
@@ -112,19 +111,17 @@ public class PaymentPendingAlerter {
 	 * 쿨다운은 인스턴스 메모리에 둔다. 인스턴스마다 한 번씩 울리는 것은 받아들인다.
 	 */
 	public void point3Rejected(Long paymentId, int status) {
-		Instant now = clock.instant();
-		Instant last = lastAuthAlert.get(status);
-		if (last != null && Duration.between(last, now).compareTo(AUTH_ALERT_COOLDOWN) < 0) {
+		String key = String.valueOf(status);
+		if (!authCooldown.tryAcquire(key)) {
 			return;
 		}
-		lastAuthAlert.put(status, now);
 
 		boolean delivered = alertSender.send(AlertLevel.CRITICAL, """
 				*[결제 대사] point3 가 조회를 %d 로 거부한다*
 				자격증명(POINT3_API_TOKEN) · 설정 문제다. 고치기 전까지 모든 미확정 결제가 확정되지 않는다.
 				처음 걸린 건: paymentId=%d""".formatted(status, paymentId));
 		if (!delivered) {
-			lastAuthAlert.remove(status);
+			authCooldown.release(key);
 		}
 	}
 

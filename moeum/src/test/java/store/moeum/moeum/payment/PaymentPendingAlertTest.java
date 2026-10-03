@@ -6,21 +6,20 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import store.moeum.moeum.global.alert.AlertLevel;
-import store.moeum.moeum.global.alert.AlertSender;
 import store.moeum.moeum.global.auth.SessionUser;
 import store.moeum.moeum.order.OrderService;
 import store.moeum.moeum.order.dto.OrderCreateRequest;
 import store.moeum.moeum.support.IntegrationTest;
+import store.moeum.moeum.support.MutableClock;
 import store.moeum.moeum.support.OrderFixture;
+import store.moeum.moeum.support.RecordingAlertSender;
+import store.moeum.moeum.support.RecordingAlertSender.Sent;
 
-import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static store.moeum.moeum.global.jpa.JpaAuditingConfig.KST;
 
 /**
  * 미확정 결제 알림 (D-068).
@@ -45,7 +44,7 @@ class PaymentPendingAlertTest extends IntegrationTest {
 	@Autowired
 	private OrderFixture fixture;
 
-	private final RecordingSender sender = new RecordingSender();
+	private final RecordingAlertSender sender = new RecordingAlertSender();
 	private Long orderGroupId;
 
 	@BeforeEach
@@ -200,44 +199,5 @@ class PaymentPendingAlertTest extends IntegrationTest {
 
 	private int alertRows() {
 		return jdbcTemplate.queryForObject("SELECT COUNT(*) FROM payment_alert", Integer.class);
-	}
-
-	private record Sent(AlertLevel level, String text) {
-	}
-
-	private static class RecordingSender implements AlertSender {
-		final List<Sent> sent = new ArrayList<>();
-		boolean succeed = true;
-
-		@Override
-		public boolean send(AlertLevel level, String text) {
-			if (succeed) {
-				sent.add(new Sent(level, text));
-			}
-			return succeed;
-		}
-	}
-
-	private static class MutableClock extends Clock {
-		LocalDateTime now;
-
-		MutableClock(LocalDateTime now) {
-			this.now = now;
-		}
-
-		@Override
-		public java.time.ZoneId getZone() {
-			return KST;
-		}
-
-		@Override
-		public Clock withZone(java.time.ZoneId zone) {
-			throw new UnsupportedOperationException();
-		}
-
-		@Override
-		public java.time.Instant instant() {
-			return now.atZone(KST).toInstant();
-		}
 	}
 }

@@ -32,11 +32,14 @@ public class OutboxRelayBatch {
 
 	private final OutboxWriter writer;
 	private final NotificationSender sender;
+	private final OutboxDeadAlerter deadAlerter;
 
 	@Scheduled(fixedDelayString = "${moeum.batch.outbox-delay:1000}")
 	public void run() {
 		try {
 			relayOnce();
+			// 쿨다운 동안 쌓인 DEAD 를 요약해 보낸다. 쌓인 게 없으면 아무것도 하지 않는다
+			deadAlerter.flush();
 		} catch (RuntimeException e) {
 			// 배치가 죽으면 다음 주기가 오지 않는다. 한 번의 실패로 멈추지 않게 한다
 			log.error("Outbox 릴레이 실패", e);
@@ -65,9 +68,13 @@ public class OutboxRelayBatch {
 			writer.markSent(message.id());
 			return true;
 		} catch (RuntimeException e) {
-			writer.markFailed(message.id(), e.getClass().getSimpleName() + ": " + e.getMessage());
+			String error = e.getClass().getSimpleName() + ": " + e.getMessage();
+			boolean dead = writer.markFailed(message.id(), error);
 			log.warn("알림 발송 실패: outboxId={}, eventType={}, retry={}",
 					message.id(), message.eventType(), message.retryCount());
+			if (dead) {
+				deadAlerter.dead(message, error);
+			}
 			return false;
 		}
 	}

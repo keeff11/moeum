@@ -31,7 +31,9 @@ class FlywayMigrationTest extends IntegrationTest {
 			"wishlist",          // V8
 			"second_charge",     // V11
 			"buyer_refund_account", // V15
-			"phone_verification"    // V18
+			"phone_verification",   // V18
+			"payment_alert",        // V19
+			"refund_alert"          // V20
 	);
 
 	/**

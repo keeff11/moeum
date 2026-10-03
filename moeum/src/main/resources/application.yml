@@ -282,6 +282,11 @@ moeum:
       warn-after: 15m
       # 승인 마감(커밋 다음 날 00:00 KST)까지 이만큼 남으면 CRITICAL(@channel)
       critical-before-deadline: 2h
+    refund-pending:
+      # 환불 결과를 모르는 채로 이만큼 남으면 WARN. EOB(23:30~00:30)는 세지 않는다
+      warn-after: 30m
+      # 이만큼이면 CRITICAL(@channel). 구매자가 하루 안에 돈을 못 받을 수 있다
+      critical-after: 6h
   point3:
     # 서버 전용 비밀값. 비어 있으면 결제 호출만 막히고 앱은 정상 기동한다
     base-url: ${POINT3_BASE_URL:https://api.point3.io}

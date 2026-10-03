@@ -12,7 +12,9 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import store.moeum.moeum.outbox.domain.Outbox;
 import store.moeum.moeum.outbox.domain.OutboxAggregate;
 import store.moeum.moeum.outbox.domain.OutboxEventType;
+import store.moeum.moeum.global.alert.AlertLevel;
 import store.moeum.moeum.support.IntegrationTest;
+import store.moeum.moeum.support.RecordingAlertSender;
 
 import java.time.Clock;
 import java.time.LocalDateTime;
@@ -29,7 +31,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <b>확인하려는 것은 유실과 중복이다.</b> 알림이 곧 결제 요청이라 유실되면 구매자가
  * 잔금을 낼 줄 모르고, 중복되면 같은 청구가 두 번 간다.
  */
-@Import({OutboxRelayTest.FixedClockConfig.class, OutboxRelayTest.FakeSenderConfig.class})
+@Import({OutboxRelayTest.FixedClockConfig.class, OutboxRelayTest.FakeSenderConfig.class,
+		OutboxRelayTest.AlertConfig.class})
 class OutboxRelayTest extends IntegrationTest {
 
 	private static final ZoneId KST = ZoneId.of("Asia/Seoul");
@@ -51,6 +54,15 @@ class OutboxRelayTest extends IntegrationTest {
 		@Primary
 		FakeSender fakeSender() {
 			return new FakeSender();
+		}
+	}
+
+	@TestConfiguration
+	static class AlertConfig {
+		@Bean
+		@Primary
+		RecordingAlertSender recordingAlertSender() {
+			return new RecordingAlertSender();
 		}
 	}
 
@@ -82,9 +94,13 @@ class OutboxRelayTest extends IntegrationTest {
 	@Autowired
 	private JdbcTemplate jdbcTemplate;
 
+	@Autowired
+	private RecordingAlertSender alerts;
+
 	@BeforeEach
 	void setUp() {
 		jdbcTemplate.execute("DELETE FROM outbox");
+		alerts.clear();
 		sender.calls.set(0);
 		sender.delivered.clear();
 		sender.fail = false;
@@ -185,6 +201,11 @@ class OutboxRelayTest extends IntegrationTest {
 
 		assertThat(statuses()).containsExactly("DEAD");
 		assertThat(retryCounts()).containsExactly(Outbox.MAX_RETRY);
+		// 재시도 중에는 조용하다가 DEAD 가 되는 순간 한 번 알린다 (D-069)
+		assertThat(alerts.sent).singleElement().satisfies(a -> {
+			assertThat(a.level()).isEqualTo(AlertLevel.CRITICAL);
+			assertThat(a.text()).contains("SECOND_PAYMENT_DUE DEAD", "알림톡 게이트웨이 응답 없음");
+		});
 
 		// 되살아나면 안 된다. 여기서부터는 사람이 본다
 		sender.fail = false;
