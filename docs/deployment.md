@@ -1,6 +1,6 @@
 # 배포
 
-EC2 한 대에 Docker Compose 로 앱·MySQL·Caddy 를 올린다.
+EC2 한 대에 Docker Compose 로 앱·MySQL·Redis·Caddy 를 올린다.
 `main` 에 푸시하면 GitHub Actions 가 테스트 → 이미지 빌드 → ECR 푸시 → SSM 배포까지 자동으로 한다.
 
 ```
@@ -16,7 +16,8 @@ GitHub Actions ── 테스트(Testcontainers)
                                           ├─ docker compose pull && up -d
                                           └─ readiness 확인 후 성공 처리
 
-                        Caddy(443) ─► app(8080) ─► mysql(3306)
+                        Caddy(443) ─► app(8080) ─┬─► mysql(3306)
+                                                 └─► redis(6379, 세션)
 ```
 
 리전은 `ap-northeast-2`(서울) 기준이다. 아래 명령의 `<ACCOUNT_ID>` 는 본인 계정 ID 로 바꾼다.
@@ -568,6 +569,10 @@ AWS 콘솔 → EC2 → Lifecycle Manager → 스냅샷 정책, 대상 태그 `Na
 
 **배포 중 수 초간 끊긴다.** 인스턴스가 한 대라 무중단이 안 된다.
 `server.shutdown: graceful` 이 켜져 있어 처리 중이던 결제 요청은 마무리되고 종료된다.
+
+**세션은 Redis 에 있고 디스크에 남기지 않는다 (D-067).** 앱만 교체하는 배포에서는 로그인이 유지되지만,
+Redis 컨테이너가 재시작되면(인스턴스 재부팅 포함) 전원 로그아웃된다. 2GB 를 나눠 쓰느라 `maxmemory 64mb` 로 묶었다.
+인스턴스 타입을 키우려면 계정 플랜을 먼저 올려야 한다 — 무료 플랜은 `FreeTierRestrictionError` 로 막힌다.
 
 **Flyway 는 앱 기동 시 자동 실행된다.** 마이그레이션이 실패하면 앱이 안 뜨고,
 헬스체크가 통과하지 않아 배포 잡이 실패한다. **이전 컨테이너는 남아 있지 않다** —

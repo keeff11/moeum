@@ -36,6 +36,34 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # 세션 저장소 (D-067). 세션은 30분이면 사라지는 값이라 디스크에 남기지 않는다 —
+  # 컨테이너가 재시작되면 전원 로그아웃되는 것을 받아들인다.
+  # 2GB 인스턴스라 64MB 로 묶는다. 차면 만료가 가까운 세션부터 밀어낸다(세션 키는 전부 TTL 이 있다).
+  redis:
+    image: redis:7-alpine
+    container_name: moeum-redis
+    restart: unless-stopped
+    command:
+      - redis-server
+      - --maxmemory
+      - 64mb
+      - --maxmemory-policy
+      - volatile-ttl
+      - --save
+      - ""
+      - --appendonly
+      - "no"
+    # maxmemory 는 데이터만 센다. 프로세스 오버헤드까지 넣어 컨테이너 상한을 둔다
+    mem_limit: 96m
+    expose:
+      - "6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    logging: *logging
+
   app:
     image: ${APP_IMAGE}
     container_name: moeum-app
@@ -43,8 +71,13 @@ services:
     depends_on:
       mysql:
         condition: service_healthy
+      # readiness 는 Redis 를 보지 않는다. Redis 없이 뜨면 healthy 인데 로그인이 전부 깨진다 (D-067)
+      redis:
+        condition: service_healthy
     environment:
       SPRING_PROFILES_ACTIVE: prod
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
       DB_URL: jdbc:mysql://mysql:3306/moeum?useSSL=false&allowPublicKeyRetrieval=true&characterEncoding=UTF-8&connectionTimeZone=Asia/Seoul&rewriteBatchedStatements=true
       DB_USERNAME: moeum
       DB_PASSWORD: ${MYSQL_PASSWORD}

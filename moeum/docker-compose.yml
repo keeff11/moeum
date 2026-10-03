@@ -25,5 +25,17 @@ services:
       timeout: 3s
       retries: 20
 
+  # 세션 저장소 (D-067). 세션은 30분이면 사라지는 값이라 볼륨을 두지 않는다
+  redis:
+    image: redis:7-alpine
+    container_name: moeum-redis
+    ports:
+      - "6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
 volumes:
   moeum-mysql-data:
