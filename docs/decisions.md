@@ -3399,5 +3399,12 @@ Tomcat 의 연결 수락 스레드가 비우는 속도보다 빨리 차고, 넘�
 
 ### 확인할 것
 
-- **운영 Redis 를 어디에 둘지** — EC2 안 컨테이너(메모리 2GB를 나눠 쓴다) 또는 ElastiCache(비용). 정하기 전에는 `main` 에 합치지 않는다
+- ~~**운영 Redis 를 어디에 둘지**~~ — **EC2 안 컨테이너로 정했다 (10-03).** 실사용이 아직 없어 ElastiCache 비용을 낼 이유가 없고,
+  인스턴스를 키우려 했으나 계정이 무료 플랜이라 타입 변경이 막혔다(`FreeTierRestrictionError`). 그래서 t3.small(2GB) 안에서 나눠 쓴다.
+  기동 직후 실측: 앱 1002MB · MySQL 402MB · Caddy 17MB, 여유 167MB(스왑 2GB 는 비어 있음).
+  - Redis 는 `maxmemory 64mb` · 컨테이너 상한 96MB. 세션 키는 전부 TTL 이 있어 차면 `volatile-ttl` 로 만료가 가까운 것부터 밀어낸다
+  - 디스크에 남기지 않는다(`--save ""`, AOF 끔). Redis 재시작 = 전원 로그아웃이고, 세션이라 받아들인다
+  - 그 몫으로 JVM `MaxRAMPercentage` 를 50 → 45 로 내렸다(약 95MB)
+  - 앱은 Redis 가 healthy 가 된 뒤에 뜬다 — readiness 가 Redis 를 보지 않으니 순서로 막는다
+  - 실사용이 붙어 메모리가 모자라면 플랜을 올려 t3.medium 으로 가거나 ElastiCache 로 뺀다
 - **`SPRING_SESSION` 테이블을 언제 지울지** — Redis 가 운영에서 안정되면 Flyway 로 지운다

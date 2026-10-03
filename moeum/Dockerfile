@@ -28,8 +28,9 @@ RUN apt-get update \
  && useradd --system --create-home --uid 10001 moeum
 
 ENV TZ=Asia/Seoul
-# t3.small(2GB)에 MySQL 과 같이 산다. 컨테이너가 메모리를 다 물면 OOM Killer 가 DB 를 친다.
-ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=50 -Duser.timezone=Asia/Seoul -Dfile.encoding=UTF-8"
+# t3.small(2GB)에 MySQL · Redis 와 같이 산다. 컨테이너가 메모리를 다 물면 OOM Killer 가 DB 를 친다.
+# 50 일 때 여유가 170MB 였다. Redis(최대 96MB) 몫으로 5%(약 95MB)를 내준다 (D-067)
+ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=45 -Duser.timezone=Asia/Seoul -Dfile.encoding=UTF-8"
 ENV SPRING_PROFILES_ACTIVE=prod
 
 WORKDIR /app
