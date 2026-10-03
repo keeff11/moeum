@@ -3408,3 +3408,68 @@ Tomcat 의 연결 수락 스레드가 비우는 속도보다 빨리 차고, 넘�
   - 앱은 Redis 가 healthy 가 된 뒤에 뜬다 — readiness 가 Redis 를 보지 않으니 순서로 막는다
   - 실사용이 붙어 메모리가 모자라면 플랜을 올려 t3.medium 으로 가거나 ElastiCache 로 뺀다
 - **`SPRING_SESSION` 테이블을 언제 지울지** — Redis 가 운영에서 안정되면 Flyway 로 지운다
+
+## D-068. 대사 배치가 못 푸는 결제를 Slack 으로 알린다 — 마감 전에 사람이 보게
+
+**결정:** `CAPTURE_PENDING` 이 오래 남은 결제를 Slack Incoming Webhook 으로 알린다. 대사 배치(`PaymentReconcileBatch`)가 매 회차 끝에 검사한다.
+
+### 왜
+
+대사 배치는 401/403, Uncertain, 처리 중 응답을 만나면 로그만 남기고 다음 회차로 넘긴다. 매분 다시 물어도 끝내 확정되지 않는 결제가 있고,
+승인 마감(결제일 다음 날 00:00)을 넘기면 돈이 묶이거나 사라진다. 로그만으로는 아무도 모른다.
+
+### 기준
+
+| 단계 | 조건 | 비고 |
+|---|---|---|
+| WARN | pending 15분 경과 | 배치가 매분 도니 10회 넘게 실패한 것 |
+| CRITICAL | 마감 2시간 전(22:00)부터, 또는 마감 지남 | `<!channel>` 멘션 |
+| CRITICAL | point3 401/403 | 즉시. 상태별 30분 쿨다운(인스턴스 메모리) |
+
+### 중복 방지
+
+- 알림 이력은 `payment_alert` 테이블에 둔다. `UNIQUE(session_id, level)` 에 `INSERT IGNORE` 로 먼저 자리를 잡고, 0행이면 보내지 않는다
+- 보내기에 실패하면 자리를 지워 다음 회차가 다시 보낸다
+- `payment` 행에 두지 않는다 — `updated_at` 이 `ON UPDATE` 라 알림 기록만으로 pending 시각과 마감 계산이 밀린다
+- 키가 `payment_id` 가 아니라 `session_id` 다 — 재결제(D-023)는 같은 행에 새 세션을 붙이므로 새로 알려야 한다
+- `ON DUPLICATE KEY UPDATE` 를 쓰지 않는다 — Connector/J 기본값이 found rows 를 돌려줘 중복에도 1이 나온다
+
+### 받아들인 것
+
+- 마감을 `updated_at` 날짜로 근사한다. 자정 직전 확정 후 자정을 넘겨 pending 이 된 경우(D-063 구조) 실제 마감이 하루 이르다
+- Webhook URL 이 비어 있으면 로그만 남긴다(로컬·테스트)
+- 전송 오류 로그에는 예외 클래스명만 남긴다 — 메시지에 URL(비밀값)이 섞인다
+- 배치 자체가 죽으면 알림도 없다. 실사용이 붙으면 지표(Prometheus/Grafana)로 "배치가 돌았는가" 를 밖에서 본다
+
+## D-069. 취소 대사 · 알림 DEAD · 미달 자동취소도 Slack 으로 알린다
+
+**결정:** D-068 의 Slack 알림을 돈이나 구매자 알림이 조용히 멈출 수 있는 배치 세 곳에 더 붙인다.
+
+| 배치 | 조건 | 단계 | 중복 방지 |
+|---|---|---|---|
+| 취소 대사 (`RefundReconcileBatch`) | 환불 `PROCESSING` 30분 경과 (EOB 23:30~00:30 제외) | WARN | `refund_alert UNIQUE(refund_id, level)` |
+| | 6시간 경과 | CRITICAL | 〃 |
+| | point3 401/403 | CRITICAL | 상태별 30분 쿨다운 |
+| Outbox 릴레이 | 알림 발송이 DEAD 가 됨 | CRITICAL | 이벤트 종류별 첫 건 즉시, 10분 동안은 세기만 하고 요약 한 번 |
+| 목표수량 미달 (`ShortfallCancelBatch`) | 자동 취소가 FAILED · SETTLED_MANUAL · 예외 | CRITICAL (폼마다 한 번에 모아서) | 폼마다 한 번만 돈다 (`shortfall_done_at`) |
+| | EXTEND 정책 | CRITICAL | 〃 |
+
+### 왜
+
+- 취소 대사는 결과를 모르면 새 취소를 만들지 않는다(이중 환불). point3 가 끝내 답하지 않으면 환불이 영영 `PROCESSING` 이고 구매자는 돈을 못 받는다
+- DEAD 는 재시도가 끝난 상태다. 잔금 요청 알림이 DEAD 면 구매자는 잔금을 낼 줄 모른 채 마감을 넘긴다
+- 미달 배치는 폼마다 한 번만 돈다. 그때 실패한 취소는 다시 볼 기회가 없다
+
+### 고른 것
+
+- 환불은 마감이 없어 경과 시간으로 본다. 기준은 `created_at` — 취소는 `PROCESSING` 으로 태어나고, `updated_at` 은 `ON UPDATE` 라 밀린다
+- EOB 시간은 세지 않는다. point3 도 대사 배치도 쉬는 시간이라 23:20 에 들어온 건이 00:40 에 울리면 안 된다
+- 환불 알림 이력은 `payment_alert` 와 따로 둔다(V20). 키가 다르다 — 환불은 재시도하면 새 행이다
+- 미달 배치의 `PROCESSING` 은 알리지 않는다. 취소 대사 알림이 맡는다
+- Slack 전송은 트랜잭션 밖에서 한다. `OutboxWriter.markFailed` 는 DEAD 여부만 돌려주고 릴레이가 보낸다
+
+### 받아들인 것
+
+- DEAD 묶기 상태는 인스턴스 메모리에 둔다. 재기동하면 첫 건이 한 번 더 울린다. DEAD 행은 DB 에 남아 있다
+- DEAD 알림 전송이 실패해도 보낸 것으로 친다 — Slack 이 죽었을 때 1초마다 두드리지 않게 하고, 10분 뒤 요약이 다시 알린다
+- 미달 알림은 전송 실패를 다시 보내지 않는다 — 로그(ERROR/WARN)에 같은 내용이 남는다

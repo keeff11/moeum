@@ -38,7 +38,7 @@ public class OrderFixture {
 	@Transactional
 	public void clean() {
 		for (String table : new String[]{
-				"second_charge", "payment_event", "refund", "payment", "outbox",
+				"second_charge", "payment_event", "payment_alert", "refund_alert", "refund", "payment", "outbox",
 				"stock_hold", "order_item", "orders", "shipping", "order_group",
 				"cart_item", "cart", "wishlist", "buyer_address", "buyer_refund_account", "phone_verification", "buyer",
 				"sale_form_history", "sale_form_image", "product_option", "product", "sale_form", "seller"}) {

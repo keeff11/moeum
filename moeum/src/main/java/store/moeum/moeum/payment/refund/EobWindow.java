@@ -1,5 +1,7 @@
 package store.moeum.moeum.payment.refund;
 
+import java.time.Duration;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 
@@ -36,5 +38,29 @@ public final class EobWindow {
 		LocalDateTime today = now.toLocalDate().atTime(END);
 		// 23:30~23:59 이면 다음 날 00:30, 00:00~00:29 이면 오늘 00:30
 		return now.toLocalTime().isBefore(END) ? today : today.plusDays(1);
+	}
+
+	/**
+	 * {@code from} 부터 {@code to} 까지 중 <b>취소가 열려 있던 시간</b>.
+	 *
+	 * 미확정 취소가 얼마나 묵었는지 잴 때 쓴다. 23:20 에 들어온 건이 00:40 에 70분이 아니라
+	 * 20분이어야 한다 — 그 사이 한 시간은 대사 배치도 쉬어서 아무도 손댈 수 없었다.
+	 */
+	public static Duration openDuration(LocalDateTime from, LocalDateTime to) {
+		if (!to.isAfter(from)) {
+			return Duration.ZERO;
+		}
+		Duration open = Duration.between(from, to);
+		// from 이 00:10 이면 전날 23:30 에 시작한 창에 걸려 있다. 하루 앞에서부터 본다
+		for (LocalDate day = from.toLocalDate().minusDays(1); !day.isAfter(to.toLocalDate()); day = day.plusDays(1)) {
+			LocalDateTime start = day.atTime(START);
+			LocalDateTime end = day.plusDays(1).atTime(END);
+			LocalDateTime overlapStart = start.isAfter(from) ? start : from;
+			LocalDateTime overlapEnd = end.isBefore(to) ? end : to;
+			if (overlapEnd.isAfter(overlapStart)) {
+				open = open.minus(Duration.between(overlapStart, overlapEnd));
+			}
+		}
+		return open;
 	}
 }

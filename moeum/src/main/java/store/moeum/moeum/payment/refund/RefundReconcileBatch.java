@@ -46,12 +46,20 @@ public class RefundReconcileBatch {
 	private final RefundWriter writer;
 	private final Point3Client point3Client;
 	private final Clock clock;
+	private final RefundPendingAlerter alerter;
 
 	@Scheduled(fixedDelayString = "${moeum.batch.refund-reconcile-delay:60000}")
 	public void run() {
 		int handled = reconcileOnce();
 		if (handled > 0) {
 			log.info("취소 대사 처리: {}건", handled);
+		}
+		// EOB 에도 돈다 — 시간 계산이 EOB 를 빼므로 그 사이 새로 울릴 건 없고, 직전 회차 실패분만 다시 보낸다
+		try {
+			alerter.checkStuck();
+		} catch (RuntimeException e) {
+			// 알림이 깨져도 대사는 계속 돌아야 한다
+			log.error("취소 미확정 알림 점검 실패", e);
 		}
 	}
 
@@ -83,6 +91,9 @@ public class RefundReconcileBatch {
 			status = point3Client.getRefund(snapshot.sessionId());
 		} catch (Point3RefundRejected e) {
 			log.error("취소 대사 조회 거부: refundId={}, status={} — 확정하지 않는다", refundId, e.status());
+			if (e.status() == 401 || e.status() == 403) {
+				alerter.point3Rejected(refundId, e.status());
+			}
 			return false;
 		} catch (Point3UncertainException e) {
 			log.warn("취소 대사 조회 실패: refundId={} — 다음 회차로 넘긴다", refundId);

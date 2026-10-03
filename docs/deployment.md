@@ -342,6 +342,30 @@ aws ssm put-parameter --region ap-northeast-2     --name /moeum/prod/SMART_TRACK
 
 끄는 것도 같은 명령에 `false` 다. **키를 지우지 않는다** — 급할 때 번거롭고 다시 찾아야 한다.
 
+### 운영 알림 Slack Webhook (D-068)
+
+승인 · 취소 대사 배치가 확정하지 못한 결제 · 환불, 발송을 포기한 알림, 실패한 미달 자동취소를 알린다
+(D-068, D-069). **URL 이 곧 비밀값이다** — 아는 사람은 누구나
+채널에 쓸 수 있다. 비어 있어도 앱은 뜨지만 알림이 로그에만 남는다.
+
+```bash
+# Slack 앱 → Incoming Webhooks → 채널 선택 후 발급
+read -rs SLACK_URL && put SLACK_WEBHOOK_URL "$SLACK_URL" && unset SLACK_URL
+```
+
+| 언제 | 단계 |
+|---|---|
+| `CAPTURE_PENDING` 이 15분 넘게 남음 | WARN |
+| 승인 마감(다음 날 00:00) 2시간 전 · 마감 지남 | CRITICAL (`@channel`) |
+| point3 가 대사 조회를 401 · 403 으로 거부 (승인 · 취소 각각) | CRITICAL, 30분에 한 번 |
+| 환불 `PROCESSING` 이 30분 넘게 남음 (EOB 제외) | WARN |
+| 환불 `PROCESSING` 이 6시간 넘게 남음 | CRITICAL |
+| 알림(outbox)이 DEAD 가 됨 | CRITICAL, 종류별 10분에 한 번 + "N건 더" 요약 |
+| 목표수량 미달 자동취소 실패 · EXTEND 정책 | CRITICAL, 폼마다 한 번 |
+
+같은 결제 · 같은 환불 · 같은 단계는 한 번만 울린다. 받으면 point3 관리자 화면에서 세션 상태를 확인한다.
+환불 알림을 받았다고 새 취소를 다시 보내지 않는다 — 이중 환불이다.
+
 한도가 걱정되면 꺼 둔 채로 배포해도 된다. 그때 구매자 화면은 배송조회 대신
 송장번호를 보여 주고, 셀러의 송장 등록은 택배사를 직접 입력받아 그대로 동작한다.
 

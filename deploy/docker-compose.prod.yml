@@ -101,6 +101,8 @@ services:
       SMART_TRACKER_API_KEY: ${SMART_TRACKER_API_KEY:-}
       # 만료 홀드를 풀기 전에 point3 에 구매자 확정을 묻는다 (D-063). false 면 이전 동작
       HOLD_EXPIRY_POINT3_CHECK: ${HOLD_EXPIRY_POINT3_CHECK:-true}
+      # 운영 알림 Slack Webhook (D-068). 비어 있으면 미확정 결제 알림이 로그에만 남는다
+      SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
       KAKAO_CLIENT_ID: ${KAKAO_CLIENT_ID}
       KAKAO_CLIENT_SECRET: ${KAKAO_CLIENT_SECRET}
       KAKAO_REDIRECT_URI: ${KAKAO_REDIRECT_URI}
