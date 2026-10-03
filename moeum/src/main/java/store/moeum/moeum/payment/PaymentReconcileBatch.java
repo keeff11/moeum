@@ -52,12 +52,20 @@ public class PaymentReconcileBatch {
 
 	private final PaymentWriter writer;
 	private final Point3Client point3Client;
+	private final PaymentPendingAlerter alerter;
 
 	@Scheduled(fixedDelayString = "${moeum.batch.payment-reconcile-delay:60000}")
 	public void run() {
 		int handled = reconcileOnce();
 		if (handled > 0) {
 			log.info("승인 대사 처리: {}건", handled);
+		}
+
+		// 이번 회차에 확정한 건을 빼고 남은 것만 본다. 알림이 실패해도 다음 회차 대사는 돌아야 한다
+		try {
+			alerter.checkStuck();
+		} catch (RuntimeException e) {
+			log.error("미확정 결제 알림 점검 실패", e);
 		}
 	}
 
@@ -100,6 +108,9 @@ public class PaymentReconcileBatch {
 				return true;
 			}
 			log.error("대사 조회 거부: paymentId={}, status={} — 확정하지 않는다", paymentId, e.status());
+			if (e.status() == 401 || e.status() == 403) {
+				alerter.point3Rejected(paymentId, e.status());
+			}
 			return false;
 		} catch (Point3UncertainException e) {
 			// point3 가 응답하지 않는다. 다음 회차에 다시 본다

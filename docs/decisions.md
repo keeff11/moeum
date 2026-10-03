@@ -3408,3 +3408,35 @@ Tomcat 의 연결 수락 스레드가 비우는 속도보다 빨리 차고, 넘�
   - 앱은 Redis 가 healthy 가 된 뒤에 뜬다 — readiness 가 Redis 를 보지 않으니 순서로 막는다
   - 실사용이 붙어 메모리가 모자라면 플랜을 올려 t3.medium 으로 가거나 ElastiCache 로 뺀다
 - **`SPRING_SESSION` 테이블을 언제 지울지** — Redis 가 운영에서 안정되면 Flyway 로 지운다
+
+## D-068. 대사 배치가 못 푸는 결제를 Slack 으로 알린다 — 마감 전에 사람이 보게
+
+**결정:** `CAPTURE_PENDING` 이 오래 남은 결제를 Slack Incoming Webhook 으로 알린다. 대사 배치(`PaymentReconcileBatch`)가 매 회차 끝에 검사한다.
+
+### 왜
+
+대사 배치는 401/403, Uncertain, 처리 중 응답을 만나면 로그만 남기고 다음 회차로 넘긴다. 매분 다시 물어도 끝내 확정되지 않는 결제가 있고,
+승인 마감(결제일 다음 날 00:00)을 넘기면 돈이 묶이거나 사라진다. 로그만으로는 아무도 모른다.
+
+### 기준
+
+| 단계 | 조건 | 비고 |
+|---|---|---|
+| WARN | pending 15분 경과 | 배치가 매분 도니 10회 넘게 실패한 것 |
+| CRITICAL | 마감 2시간 전(22:00)부터, 또는 마감 지남 | `<!channel>` 멘션 |
+| CRITICAL | point3 401/403 | 즉시. 상태별 30분 쿨다운(인스턴스 메모리) |
+
+### 중복 방지
+
+- 알림 이력은 `payment_alert` 테이블에 둔다. `UNIQUE(session_id, level)` 에 `INSERT IGNORE` 로 먼저 자리를 잡고, 0행이면 보내지 않는다
+- 보내기에 실패하면 자리를 지워 다음 회차가 다시 보낸다
+- `payment` 행에 두지 않는다 — `updated_at` 이 `ON UPDATE` 라 알림 기록만으로 pending 시각과 마감 계산이 밀린다
+- 키가 `payment_id` 가 아니라 `session_id` 다 — 재결제(D-023)는 같은 행에 새 세션을 붙이므로 새로 알려야 한다
+- `ON DUPLICATE KEY UPDATE` 를 쓰지 않는다 — Connector/J 기본값이 found rows 를 돌려줘 중복에도 1이 나온다
+
+### 받아들인 것
+
+- 마감을 `updated_at` 날짜로 근사한다. 자정 직전 확정 후 자정을 넘겨 pending 이 된 경우(D-063 구조) 실제 마감이 하루 이르다
+- Webhook URL 이 비어 있으면 로그만 남긴다(로컬·테스트)
+- 전송 오류 로그에는 예외 클래스명만 남긴다 — 메시지에 URL(비밀값)이 섞인다
+- 배치 자체가 죽으면 알림도 없다. 실사용이 붙으면 지표(Prometheus/Grafana)로 "배치가 돌았는가" 를 밖에서 본다

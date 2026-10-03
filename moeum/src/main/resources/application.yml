@@ -141,6 +141,10 @@ moeum:
   batch:
     # 만료 홀드를 풀기 전에 point3 에 구매자 확정을 묻는다 (D-063). false 면 이전 동작
     hold-expiry-point3-check: ${HOLD_EXPIRY_POINT3_CHECK:true}
+  alert:
+    slack:
+      # 운영 알림 (D-068). 비워 두면 Slack 으로 보내지 않고 로그만 남긴다
+      webhook-url: ${SLACK_WEBHOOK_URL:}
   oauth:
     kakao:
       client-id: ${KAKAO_CLIENT_ID:local-client-id}
@@ -268,6 +272,16 @@ moeum:
       # 올린 지 이 시간이 안 지난 객체는 건드리지 않는다.
       # 셀러가 이미지를 올려 두고 상세를 쓰는 동안은 아직 폼에 연결돼 있지 않다
       grace: 24h
+  alert:
+    slack:
+      # 운영 알림 (D-068). URL 이 곧 비밀값이다 — Parameter Store 에서 온다 (D-017).
+      # 비어 있어도 앱은 뜬다. 다만 그러면 미확정 결제 알림이 로그에만 남는다
+      webhook-url: ${SLACK_WEBHOOK_URL:}
+    payment-pending:
+      # 승인 결과를 모르는 채로 이만큼 남으면 WARN. 대사 배치가 1분마다 열 번 넘게 물어도 모른다는 뜻이다
+      warn-after: 15m
+      # 승인 마감(커밋 다음 날 00:00 KST)까지 이만큼 남으면 CRITICAL(@channel)
+      critical-before-deadline: 2h
   point3:
     # 서버 전용 비밀값. 비어 있으면 결제 호출만 막히고 앱은 정상 기동한다
     base-url: ${POINT3_BASE_URL:https://api.point3.io}
