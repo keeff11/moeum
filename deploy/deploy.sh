@@ -37,6 +37,39 @@ aws ecr get-login-password --region "$REGION" \
 
 # ── 3. 교체 ────────────────────────────────────────────────────────────
 docker compose -f docker-compose.prod.yml pull
+
+# 교체 직전에 오래 열린 트랜잭션이 있는지 본다 (2026-09-17 장애).
+# 있으면 새 앱의 Flyway ALTER TABLE 이 메타데이터 잠금을 끝없이 기다리는데,
+# 이전 컨테이너는 이미 내려가 있어 그동안 API 가 멈춘다. 교체 전에 멈추면 이전 앱이 계속 서비스한다.
+# lock_wait_timeout 으로 끊지 않는다 — MySQL 은 DDL 이 롤백되지 않아 Flyway 가 실패 기록을 남기고,
+# 잠금이 풀려도 repair 전까지 앱이 재시작마다 validate 에서 떨어진다.
+TRX_AGE_LIMIT=30
+if [ "$(docker inspect -f '{{.State.Running}}' moeum-mysql 2>/dev/null || echo false)" = "true" ]; then
+	set +e
+	long_trx="$(docker exec -i moeum-mysql sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysql -uroot -N -B' <<SQL
+SELECT t.trx_mysql_thread_id, TIMESTAMPDIFF(SECOND, t.trx_started, NOW()), p.user, p.host, p.command,
+       LEFT(COALESCE(p.info, ''), 80)
+FROM information_schema.innodb_trx t
+LEFT JOIN information_schema.processlist p ON p.id = t.trx_mysql_thread_id
+WHERE t.trx_started < NOW() - INTERVAL ${TRX_AGE_LIMIT} SECOND
+ORDER BY t.trx_started;
+SQL
+)"
+	trx_rc=$?
+	set -e
+	if [ $trx_rc -ne 0 ]; then
+		echo "경고: 열린 트랜잭션 검사에 실패했다. 검사 없이 계속한다" >&2
+	elif [ -n "$long_trx" ]; then
+		{
+			echo "배포 중단: ${TRX_AGE_LIMIT}초 넘게 열린 트랜잭션이 있다. 이전 앱은 그대로 돌고 있다."
+			echo "thread_id  초  user  host  command  query"
+			echo "$long_trx"
+			echo "콘솔 세션이면 COMMIT/ROLLBACK 하고 나가거나 KILL <thread_id> 한 뒤 다시 배포한다 (docs/deployment.md)."
+		} >&2
+		exit 1
+	fi
+fi
+
 docker compose -f docker-compose.prod.yml up -d --remove-orphans
 
 # ── 4. 확인 ────────────────────────────────────────────────────────────
