@@ -618,6 +618,15 @@ KILL <thread id>;
 이때 GitHub Actions 잡은 실패로 남는다. `aws ssm wait` 가 100초만 기다리고 끝나기 때문이라,
 **잡이 실패해도 인스턴스에서는 배포가 계속 돌고 있을 수 있다** — `get-command-invocation` 으로 본다.
 
+이후 `deploy.sh` 는 (D-070) 컨테이너를 교체하기 **직전에** `innodb_trx` 를 보고, 30초 넘게 열린 트랜잭션이 있으면
+`배포 중단: ...` 과 해당 thread id · 쿼리를 출력하고 교체 없이 끝낸다. 이전 앱이 그대로 돌므로 API 는 멈추지 않는다.
+세션을 정리하고 다시 배포한다. 배치가 길게 도는 중이어도 걸릴 수 있다 — 끝난 뒤 다시 돌리면 된다.
+검사와 교체 사이에 새로 열린 트랜잭션까지 막지는 못하므로 위 규칙은 그대로 지킨다.
+
+`spring.flyway` 에 `lock_wait_timeout` 을 거는 방법은 쓰지 않는다. MySQL 은 DDL 이 롤백되지 않아
+타임아웃이 나면 Flyway 가 `flyway_schema_history` 에 `success=0` 을 남기고, 잠금이 풀린 뒤에도
+`Detected failed migration` 으로 앱이 재시작마다 떨어진다 — 손으로 기록을 지워야 복구된다(재현 확인).
+
 **시크릿을 바꿀 때는** Parameter Store 값만 고치고 재배포하면 된다.
 `deploy.sh` 가 매번 `.env` 를 새로 만든다.
 
