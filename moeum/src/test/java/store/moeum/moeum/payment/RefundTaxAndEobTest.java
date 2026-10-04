@@ -164,6 +164,27 @@ class RefundTaxAndEobTest {
 			assertThat(EobWindow.nextOpenAt(at(12, 0, 0))).isNull();
 		}
 
+		@Test
+		@DisplayName("열려_있던_시간은_EOB_를_뺀다")
+		void 열린_시간() {
+			// 낮에는 그대로
+			assertThat(EobWindow.openDuration(at(12, 0, 0), at(13, 0, 0))).hasMinutes(60);
+			// 23:20 → 다음 날 00:40 : 앞 10분 + 뒤 10분
+			assertThat(EobWindow.openDuration(at(23, 20, 0), LocalDateTime.of(2026, 9, 8, 0, 40)))
+					.hasMinutes(20);
+			// EOB 안에서 시작해 안에서 끝나면 0
+			assertThat(EobWindow.openDuration(at(23, 40, 0), LocalDateTime.of(2026, 9, 8, 0, 10)))
+					.isZero();
+			// 00:10 에 시작하면 전날 밤에 시작한 창이 00:30 까지 걸려 있다
+			assertThat(EobWindow.openDuration(LocalDateTime.of(2026, 9, 8, 0, 10),
+					LocalDateTime.of(2026, 9, 8, 1, 0))).hasMinutes(30);
+			// 이틀이면 EOB 두 번을 뺀다
+			assertThat(EobWindow.openDuration(at(12, 0, 0), LocalDateTime.of(2026, 9, 9, 12, 0)))
+					.hasHours(46);
+			// 거꾸로면 0
+			assertThat(EobWindow.openDuration(at(13, 0, 0), at(12, 0, 0))).isZero();
+		}
+
 		private static LocalDateTime at(int hour, int minute, int second) {
 			return LocalDateTime.of(2026, 9, 7, hour, minute, second);
 		}

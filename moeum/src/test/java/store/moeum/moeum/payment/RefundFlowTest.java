@@ -98,6 +98,9 @@ class RefundFlowTest extends IntegrationTest {
 	@Autowired
 	private store.moeum.moeum.payment.infra.Point3Client point3Client;
 
+	@Autowired
+	private store.moeum.moeum.payment.refund.RefundPendingAlerter refundAlerter;
+
 	private OrderFixture.Setup setup;
 	private Long paymentId;
 
@@ -295,7 +298,7 @@ class RefundFlowTest extends IntegrationTest {
 		POINT3.resetAll();
 		stubInspectWithEntry("partiallyRefunded", "ref-1", "completed", 30000);
 
-		RefundReconcileBatch blocked = new RefundReconcileBatch(writer, point3Client, eobClock());
+		RefundReconcileBatch blocked = new RefundReconcileBatch(writer, point3Client, eobClock(), refundAlerter);
 
 		// 그 시간엔 point3 가 취소를 처리하지 않아 조회·재개가 의미 없다
 		assertThat(blocked.reconcileOnce()).isZero();

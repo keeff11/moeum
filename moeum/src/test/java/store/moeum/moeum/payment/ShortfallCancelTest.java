@@ -12,12 +12,14 @@ import org.springframework.context.annotation.Primary;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import store.moeum.moeum.global.alert.AlertLevel;
 import store.moeum.moeum.global.auth.SessionUser;
 import store.moeum.moeum.order.OrderService;
 import store.moeum.moeum.order.dto.OrderCreateRequest;
 import store.moeum.moeum.payment.refund.ShortfallCancelBatch;
 import store.moeum.moeum.support.IntegrationTest;
 import store.moeum.moeum.support.OrderFixture;
+import store.moeum.moeum.support.RecordingAlertSender;
 
 import java.time.Clock;
 import java.time.LocalDateTime;
@@ -38,7 +40,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <b>이 배치는 이미 받은 돈을 돌려준다.</b> 두 번 돌면 이중 환불이고, 한 건이 터졌다고
  * 멈추면 뒤의 구매자들이 돈을 못 받는다. 확인할 것은 그 두 가지다.
  */
-@Import(ShortfallCancelTest.FixedClockConfig.class)
+@Import({ShortfallCancelTest.FixedClockConfig.class, ShortfallCancelTest.AlertConfig.class})
 class ShortfallCancelTest extends IntegrationTest {
 
 	private static final ZoneId KST = ZoneId.of("Asia/Seoul");
@@ -50,6 +52,15 @@ class ShortfallCancelTest extends IntegrationTest {
 		@Primary
 		Clock testClock() {
 			return Clock.fixed(LocalDateTime.of(2026, 9, 8, 12, 0).atZone(KST).toInstant(), KST);
+		}
+	}
+
+	@TestConfiguration
+	static class AlertConfig {
+		@Bean
+		@Primary
+		RecordingAlertSender recordingAlertSender() {
+			return new RecordingAlertSender();
 		}
 	}
 
@@ -86,12 +97,16 @@ class ShortfallCancelTest extends IntegrationTest {
 	@Autowired
 	private OrderFixture fixture;
 
+	@Autowired
+	private RecordingAlertSender alerts;
+
 	private OrderFixture.Setup setup;
 
 	@BeforeEach
 	void setUp() {
 		POINT3.resetAll();
 		fixture.clean();
+		alerts.clear();
 		fixture.buyerWithAddress("kakao-shortfall-a", "미달가");
 		fixture.buyerWithAddress("kakao-shortfall-b", "미달나");
 		setup = fixture.saleForm(100, null);
@@ -113,6 +128,8 @@ class ShortfallCancelTest extends IntegrationTest {
 		assertThat(refundAmounts()).containsExactlyInAnyOrder(DEPOSIT1 * 2, DEPOSIT1 * 3);
 		assertThat(orderStatuses()).containsOnly("CANCELED");
 		assertThat(groupStatuses()).containsOnly("CANCELED");
+		// 다 끝났으면 사람을 부르지 않는다
+		assertThat(alerts.sent).isEmpty();
 	}
 
 	@Test
@@ -148,6 +165,12 @@ class ShortfallCancelTest extends IntegrationTest {
 		assertThat(refundStatuses()).containsExactlyInAnyOrder("FAILED", "COMPLETED");
 		// 공동구매는 결제 확정 시 RECRUITING 이 된다 (D-049). 남은 주문은 그대로다
 		assertThat(orderStatuses()).containsExactlyInAnyOrder("RECRUITING", "CANCELED");
+		// 이 폼은 다시 돌지 않는다. 사람이 알아야 A 가 돈을 돌려받는다 (D-069)
+		assertThat(alerts.sent).singleElement().satisfies(a -> {
+			assertThat(a.level()).isEqualTo(AlertLevel.CRITICAL);
+			assertThat(a.text()).contains("자동 취소 1건 실패", "saleFormId=" + setup.saleFormId(), "FAILED")
+					.doesNotContain("COMPLETED");
+		});
 	}
 
 	// ---------------------------------------------------------------- 멱등
@@ -182,6 +205,8 @@ class ShortfallCancelTest extends IntegrationTest {
 		// 결과를 모르는 건을 다시 보내면 두 번 환불된다. 취소 대사 배치가 끝낸다
 		assertThat(batch.handleOnce()).isZero();
 		POINT3.verify(1, postRequestedFor(urlPathEqualTo("/refunds/v1/" + SESSION_A)));
+		// 미확정은 취소 대사가 끝내고, 오래 남으면 거기서 알린다. 여기서 또 울리지 않는다
+		assertThat(alerts.sent).isEmpty();
 	}
 
 	// ---------------------------------------------------------------- 다른 정책
@@ -223,6 +248,11 @@ class ShortfallCancelTest extends IntegrationTest {
 		assertThat(refundAmounts()).isEmpty();
 		// 공동구매는 결제 확정 시 RECRUITING 이다 (D-049) — 취소가 안 나갔다는 뜻은 그대로다
 		assertThat(orderStatuses()).containsOnly("RECRUITING");
+		// 아무것도 안 했으니 사람이 정해야 한다
+		assertThat(alerts.sent).singleElement().satisfies(a -> {
+			assertThat(a.level()).isEqualTo(AlertLevel.CRITICAL);
+			assertThat(a.text()).contains("EXTEND", "saleFormId=" + setup.saleFormId(), "판매 2 / 목표 10");
+		});
 	}
 
 	@Test

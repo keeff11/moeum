@@ -67,17 +67,23 @@ public class OutboxWriter {
 				.ifPresent(row -> row.markSent(LocalDateTime.now(clock)));
 	}
 
-	/** 발송 실패. 다음 시도를 뒤로 밀고, 상한을 넘기면 DEAD 로 내린다 */
+	/**
+	 * 발송 실패. 다음 시도를 뒤로 밀고, 상한을 넘기면 DEAD 로 내린다.
+	 *
+	 * @return 이번 실패로 DEAD 가 됐으면 true. 알림은 호출부가 트랜잭션 밖에서 보낸다 (CLAUDE.md 규칙 1)
+	 */
 	@Transactional(propagation = Propagation.REQUIRES_NEW)
-	public void markFailed(Long outboxId, String error) {
-		outboxRepository.findById(outboxId).ifPresent(row -> {
+	public boolean markFailed(Long outboxId, String error) {
+		return outboxRepository.findById(outboxId).map(row -> {
 			row.markFailed(error, LocalDateTime.now(clock).plus(backoffOf(row.getRetryCount())));
 			if (row.isDead()) {
 				// 알림이 곧 결제 요청이다. 조용히 버리면 구매자는 잔금을 낼 줄 모른다
 				log.error("알림 발송을 포기한다 (DEAD): outboxId={}, eventType={}, retry={}, error={}",
 						row.getId(), row.getEventType(), row.getRetryCount(), row.getLastError());
+				return true;
 			}
-		});
+			return false;
+		}).orElse(false);
 	}
 
 	/**
