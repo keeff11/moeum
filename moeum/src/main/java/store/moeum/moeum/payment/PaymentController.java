@@ -118,6 +118,10 @@ public class PaymentController {
 					결제 결과를 확인한다. 부작용이 없어 몇 번을 불러도 안전하다.
 
 					승인이 PENDING 으로 돌아왔을 때 이 API 만 반복하면 된다.
+
+					★ pendingReason=AWAITING_PAYMENT 면 결제창을 닫고 나온 것이다. 폴링하지 말고
+					응답의 sessionToken 으로 POST /checkout-sessions/{sessionToken}/pay 를 다시 불러
+					새 결제창을 연다. orderToken 은 바뀌지 않는다.
 					""")
 	@GetMapping("/orders/{orderToken}")
 	public PaymentResultResponse status(@LoginUser SessionUser user,
@@ -139,7 +143,8 @@ public class PaymentController {
 
 					pendingReason 으로 다음 행동이 갈린다.
 					- AWAITING_PAYMENT — 결제창을 아직 끝내지 않았다. <b>이어서 결제해야 한다.</b>
-                      폴링만 해서는 영원히 안 바뀐다
+                      폴링만 해서는 영원히 안 바뀐다. 1차금이면 sessionToken 으로
+                      POST /checkout-sessions/{sessionToken}/pay 를 다시 불러 새 결제창을 연다
 					- CONFIRMING — 승인 결과 대기 중이다. <b>다시 결제시키면 이중 결제다.</b>
                       상태 조회만 반복한다
 

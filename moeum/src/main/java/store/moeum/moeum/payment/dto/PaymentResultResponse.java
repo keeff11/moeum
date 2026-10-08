@@ -33,6 +33,13 @@ public record PaymentResultResponse(
 				+ "PENDING 이 아니면 null")
 		PendingReason pendingReason,
 
+		@Schema(description = "결제를 이어서 진행할 때 쓰는 체크아웃 세션 토큰. "
+				+ "<b>1차금이 AWAITING_PAYMENT 일 때만 채워진다</b> — 이 값으로 "
+				+ "POST /checkout-sessions/{sessionToken}/pay 를 다시 불러 새 결제창을 연다. "
+				+ "그 외에는 null 이다. 상태 조회에만 실린다",
+				example = "cs_9f3a...")
+		String sessionToken,
+
 		@Schema(description = "사용자에게 그대로 보여도 되는 안내 문구")
 		String message,
 
@@ -168,24 +175,24 @@ public record PaymentResultResponse(
 	}
 
 	public static PaymentResultResponse paid(String orderToken) {
-		return new PaymentResultResponse(orderToken, Status.PAID, null,
+		return new PaymentResultResponse(orderToken, Status.PAID, null, null,
 				"결제가 완료되었습니다.", false, 0, null, List.of());
 	}
 
 	/** 승인 결과 대기. 폴링만 해야 하는 쪽이다 */
 	public static PaymentResultResponse pending(String orderToken) {
-		return new PaymentResultResponse(orderToken, Status.PENDING, PendingReason.CONFIRMING,
+		return new PaymentResultResponse(orderToken, Status.PENDING, PendingReason.CONFIRMING, null,
 				"결제 결과를 확인하고 있습니다. 잠시만 기다려 주세요.", false, 0, null, List.of());
 	}
 
 	/** 결제창을 아직 끝내지 않았다. 이어서 결제해야 하는 쪽이다 */
 	public static PaymentResultResponse awaitingPayment(String orderToken) {
-		return new PaymentResultResponse(orderToken, Status.PENDING, PendingReason.AWAITING_PAYMENT,
+		return new PaymentResultResponse(orderToken, Status.PENDING, PendingReason.AWAITING_PAYMENT, null,
 				"결제가 완료되지 않았습니다. 결제를 이어서 진행해 주세요.", false, 0, null, List.of());
 	}
 
 	public static PaymentResultResponse failed(String orderToken, String message) {
-		return new PaymentResultResponse(orderToken, Status.FAILED, null, message,
+		return new PaymentResultResponse(orderToken, Status.FAILED, null, null, message,
 				false, 0, null, List.of());
 	}
 
@@ -197,11 +204,14 @@ public record PaymentResultResponse(
 	 *
 	 * 전부 취소면 안내 문구도 바꾼다 — "결제가 완료되었습니다" 를 그대로 두면
 	 * 취소한 구매자가 결제가 살아 있다고 읽는다.
+	 *
+	 * {@code resumeSessionToken} 은 결제를 이어서 할 수 있을 때만 넘긴다 — 1차금이
+	 * AWAITING_PAYMENT 일 때다. 그 밖의 상태에서 내려주면 프론트가 결제창을 또 띄울 수 있다.
 	 */
-	public PaymentResultResponse withOrderDetail(boolean canceled, int refundedAmount,
+	public PaymentResultResponse withOrderDetail(String resumeSessionToken, boolean canceled, int refundedAmount,
 	                                             RefundRequester canceledBy, List<OrderLine> orders) {
 		String text = canceled ? "취소가 완료된 주문입니다." : message;
-		return new PaymentResultResponse(orderToken, status, pendingReason, text,
+		return new PaymentResultResponse(orderToken, status, pendingReason, resumeSessionToken, text,
 				canceled, refundedAmount, canceledBy, orders);
 	}
 

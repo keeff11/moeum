@@ -570,6 +570,32 @@ class PaymentFlowTest extends IntegrationTest {
 	}
 
 	@Test
+	@DisplayName("결제창을_닫고_다시_결제하면_같은_orderToken_으로_승인된다")
+	void 창_닫고_재결제() {
+		String orderToken = startPayment();
+
+		// 창을 닫고 상세로 나갔다. 이어서 결제할 세션 토큰이 실려 있어야 한다
+		PaymentResultResponse detail = paymentService.status(buyer(), orderToken);
+		assertThat(detail.pendingReason()).isEqualTo(PaymentResultResponse.PendingReason.AWAITING_PAYMENT);
+		assertThat(detail.sessionToken()).isEqualTo(sessionToken);
+
+		PaySessionResponse retry = paymentService.pay(buyer(), detail.sessionToken());
+
+		// 새 토큰을 내려주면 DB 에 없는 값이라 승인·조회가 주문을 못 찾는다
+		assertThat(retry.orderToken()).isEqualTo(orderToken);
+		POINT3.verify(2, postRequestedFor(urlPathEqualTo("/payment/v3/session")));
+
+		stubCapture(200, """
+				{"id":"%s","status":"captured"}""".formatted(SESSION_ID));
+		PaymentResultResponse result = paymentService.confirm(buyer(), retry.orderToken(), retry.sessionId(), null);
+
+		assertThat(result.status()).isEqualTo(PaymentResultResponse.Status.PAID);
+		assertThat(paymentStatus()).containsExactly("CAPTURED");
+		// 결제가 끝나면 이어하기 토큰을 내려주지 않는다
+		assertThat(paymentService.status(buyer(), orderToken).sessionToken()).isNull();
+	}
+
+	@Test
 	@DisplayName("결과_불명인_주문에_새_세션을_열지_않는다")
 	void 진행중이면_새_세션을_막는다() {
 		String orderToken = startPayment();

@@ -122,6 +122,8 @@ class InProgressOrderTest extends IntegrationTest {
 		assertThat(item.phase()).isEqualTo(PaymentPhase.FIRST);
 		assertThat(item.amount()).isEqualTo(20000);
 		assertThat(item.title()).isEqualTo("아크릴 스탠드 — 2차 공구");
+		// 이 값으로 /pay 를 다시 불러 새 결제창을 연다
+		assertThat(item.sessionToken()).isEqualTo(group.getSessionToken());
 	}
 
 	@Test
@@ -132,6 +134,7 @@ class InProgressOrderTest extends IntegrationTest {
 
 		// 여기서 다시 결제시키면 이중 결제다. 실제로 출금됐을 수 있다
 		assertThat(items().get(0).pendingReason()).isEqualTo(PendingReason.CONFIRMING);
+		assertThat(items().get(0).sessionToken()).isNull();
 	}
 
 	@Test
@@ -145,6 +148,8 @@ class InProgressOrderTest extends IntegrationTest {
 				.satisfies(item -> {
 					assertThat(item.phase()).isEqualTo(PaymentPhase.SECOND);
 					assertThat(item.amount()).isEqualTo(15000);
+					// 2차금은 orderToken 으로 재결제한다
+					assertThat(item.sessionToken()).isNull();
 				});
 	}
 

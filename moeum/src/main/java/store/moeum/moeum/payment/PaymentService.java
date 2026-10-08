@@ -76,8 +76,8 @@ public class PaymentService {
 		Point3Session session = point3Client.createSession(Point3SessionRequest.general(
 				prepared.amount(), prepared.productName(), null));
 
-		String orderToken = newOrderToken();
-		writer.attachSession(prepared.paymentId(), session, orderToken);
+		// 재결제(창을 닫고 다시 누른 경우)면 처음 발급한 토큰이 돌아온다
+		String orderToken = writer.attachSession(prepared.paymentId(), session, newOrderToken());
 
 		return new PaySessionResponse(session.id(), orderToken, prepared.amount(),
 				point3Properties.clientId(), prepared.payerId());
