@@ -407,12 +407,18 @@ public class PaymentWriter {
 				.findByOrderGroupIdAndPhase(group.getId(), phase)
 				.orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_NOT_FOUND));
 
+		// 홀드가 만료돼 묶음이 걷혔으면 결제창을 다시 열 수 없다. AWAITING_PAYMENT 로 두면
+		// 프론트가 "이어서 결제" 를 띄우고, 누르면 HOLD_EXPIRED 가 난다
+		boolean expired = phase == PaymentPhase.FIRST && group.getStatus() == OrderGroupStatus.EXPIRED;
+
 		PaymentResultResponse result = switch (payment.getStatus()) {
 			case CAPTURED -> PaymentResultResponse.paid(orderToken);
 			case FAILED -> PaymentResultResponse.failed(orderToken, "결제가 완료되지 않았습니다.");
 			// 둘 다 PENDING 이지만 대응이 정반대라 이유를 갈라 준다.
 			// CREATED 는 승인 요청이 안 온 것이라 폴링만 해서는 영원히 안 바뀐다
-			case CREATED -> PaymentResultResponse.awaitingPayment(orderToken);
+			case CREATED -> expired
+					? PaymentResultResponse.failed(orderToken, "주문 시간이 만료되었습니다. 다시 주문해 주세요.")
+					: PaymentResultResponse.awaitingPayment(orderToken);
 			case CAPTURE_PENDING -> PaymentResultResponse.pending(orderToken);
 		};
 
@@ -431,7 +437,8 @@ public class PaymentWriter {
 		return result.withOrderDetail(
 				// 결제창을 닫고 나간 구매자가 상세에서 결제를 이어갈 수 있게 한다.
 				// 2차금은 orderToken 으로 재결제하므로 필요 없다
-				phase == PaymentPhase.FIRST && payment.getStatus() == PaymentStatus.CREATED
+				result.pendingReason() == PaymentResultResponse.PendingReason.AWAITING_PAYMENT
+						&& phase == PaymentPhase.FIRST
 						? group.getSessionToken() : null,
 				group.getStatus() == OrderGroupStatus.CANCELED,
 				Math.toIntExact(refunded),

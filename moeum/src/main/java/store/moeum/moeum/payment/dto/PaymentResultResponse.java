@@ -63,13 +63,15 @@ public record PaymentResultResponse(
 ) {
 
 	@Schema(description = """
-			PAID=결제 완료 · PENDING=결과 확인 중(다시 결제시키지 말고 상태 조회를 반복한다) · FAILED=실패""")
+			PAID=결제 완료 · PENDING=결과 확인 중(다시 결제시키지 말고 상태 조회를 반복한다) · FAILED=실패. \
+			1차금 FAILED 는 홀드가 풀린 상태라 같은 주문으로 다시 결제할 수 없다 — 다시 주문하게 한다 \
+			(주문 시간 만료도 FAILED 로 내려온다). 2차금 FAILED 는 같은 orderToken 으로 다시 결제한다""")
 	public enum Status {
 		/** 출금 완료. 이것만이 성공이다 */
 		PAID,
 		/** 결과 확인 중. 대사 배치가 확정한다 — 다시 결제하게 하면 안 된다 */
 		PENDING,
-		/** 확정 실패. 홀드가 풀렸고 다시 시도할 수 있다 */
+		/** 확정 실패(1차금은 주문 시간 만료 포함). 1차금은 홀드가 풀려 주문부터 다시 해야 한다 */
 		FAILED
 	}
 

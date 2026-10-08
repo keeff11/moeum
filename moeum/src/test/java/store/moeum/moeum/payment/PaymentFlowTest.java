@@ -126,6 +126,23 @@ class PaymentFlowTest extends IntegrationTest {
 	}
 
 	@Test
+	@DisplayName("point3_세션_생성이_실패하면_재시도_가능한_오류로_알리고_홀드는_그대로다")
+	void 세션_생성_실패() {
+		POINT3.stubFor(post(urlPathEqualTo("/payment/v3/session"))
+				.willReturn(json(500, "{}")));
+
+		// 결제창을 못 봤으니 돈이 나갔을 수 없다. 같은 버튼을 다시 누르면 된다
+		assertThatThrownBy(() -> paymentService.pay(buyer(), sessionToken))
+				.isInstanceOf(BusinessException.class)
+				.extracting(e -> ((BusinessException) e).errorCode())
+				.isEqualTo(ErrorCode.TEMPORARY_ERROR);
+		assertThat(held()).isEqualTo(3);
+
+		stubCreateSession();
+		assertThat(paymentService.pay(buyer(), sessionToken).sessionId()).isEqualTo(SESSION_ID);
+	}
+
+	@Test
 	@DisplayName("남의_주문으로는_결제할_수_없다")
 	void 남의_주문() {
 		assertThatThrownBy(() -> paymentService.pay(other(), sessionToken))
@@ -392,6 +409,24 @@ class PaymentFlowTest extends IntegrationTest {
 		assertThat(holdStatus()).containsExactly("RELEASED");
 		assertThat(paymentStatus()).containsExactly("CREATED");
 		POINT3.verify(0, postRequestedFor(urlPathEqualTo("/capture/v2/" + SESSION_ID)));
+	}
+
+	@Test
+	@DisplayName("만료_배치가_걷은_주문은_이어서_결제하라고_안내하지_않는다")
+	void 만료된_주문_조회() {
+		String orderToken = startPayment();
+		expireHolds();
+		stubGetSession("""
+				{"id":"%s","status":"initiated"}""".formatted(SESSION_ID));
+		holdExpiryBatch.expireOnce();
+
+		PaymentResultResponse detail = paymentService.status(buyer(), orderToken);
+
+		// AWAITING_PAYMENT 로 두면 "결제 이어하기" 가 뜨고, 누르면 HOLD_EXPIRED 가 난다
+		assertThat(detail.status()).isEqualTo(PaymentResultResponse.Status.FAILED);
+		assertThat(detail.pendingReason()).isNull();
+		assertThat(detail.sessionToken()).isNull();
+		assertThat(detail.message()).contains("만료");
 	}
 
 	@Test
