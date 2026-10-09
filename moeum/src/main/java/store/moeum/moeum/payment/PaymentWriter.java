@@ -166,20 +166,24 @@ public class PaymentWriter {
 	 *
 	 * <b>여기서 저장에 실패하면 sessionId 를 잃는다.</b> point3 세션 생성 요청에는
 	 * 가맹점 주문번호를 넣을 필드가 없어서, 어느 주문의 세션인지 아는 곳이 이 행뿐이다.
+	 *
+	 * @return 이 묶음에 실제로 저장된 orderToken. 프론트에는 반드시 이 값을 내려준다
 	 */
 	@Transactional(propagation = Propagation.REQUIRES_NEW)
-	public void attachSession(Long paymentId, Point3Session session, String orderToken) {
+	public String attachSession(Long paymentId, Point3Session session, String orderToken) {
 		Payment payment = paymentRepository.findById(paymentId)
 				.orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_NOT_FOUND));
 
 		payment.attachSession(session.id(), session.supplyAmount(), session.vat(), session.taxFreeAmount());
+		OrderGroup group = payment.getOrderGroup();
 		if (payment.isFirst()) {
-			OrderGroup group = payment.getOrderGroup();
 			group.markPayPending(orderToken);
 			snapshotShipping(group);
 		} else {
-			payment.getOrderGroup().markSecondPending();
+			group.markSecondPending();
 		}
+		// 재결제면 처음 발급한 토큰이 그대로 남는다. 넘겨받은 값을 돌려주면 DB 에 없는 토큰이 나간다
+		return group.getOrderToken();
 	}
 
 	/**
@@ -403,12 +407,18 @@ public class PaymentWriter {
 				.findByOrderGroupIdAndPhase(group.getId(), phase)
 				.orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_NOT_FOUND));
 
+		// 홀드가 만료돼 묶음이 걷혔으면 결제창을 다시 열 수 없다. AWAITING_PAYMENT 로 두면
+		// 프론트가 "이어서 결제" 를 띄우고, 누르면 HOLD_EXPIRED 가 난다
+		boolean expired = phase == PaymentPhase.FIRST && group.getStatus() == OrderGroupStatus.EXPIRED;
+
 		PaymentResultResponse result = switch (payment.getStatus()) {
 			case CAPTURED -> PaymentResultResponse.paid(orderToken);
 			case FAILED -> PaymentResultResponse.failed(orderToken, "결제가 완료되지 않았습니다.");
 			// 둘 다 PENDING 이지만 대응이 정반대라 이유를 갈라 준다.
 			// CREATED 는 승인 요청이 안 온 것이라 폴링만 해서는 영원히 안 바뀐다
-			case CREATED -> PaymentResultResponse.awaitingPayment(orderToken);
+			case CREATED -> expired
+					? PaymentResultResponse.failed(orderToken, "주문 시간이 만료되었습니다. 다시 주문해 주세요.")
+					: PaymentResultResponse.awaitingPayment(orderToken);
 			case CAPTURE_PENDING -> PaymentResultResponse.pending(orderToken);
 		};
 
@@ -425,6 +435,11 @@ public class PaymentWriter {
 				.stream().findFirst().orElse(null);
 
 		return result.withOrderDetail(
+				// 결제창을 닫고 나간 구매자가 상세에서 결제를 이어갈 수 있게 한다.
+				// 2차금은 orderToken 으로 재결제하므로 필요 없다
+				result.pendingReason() == PaymentResultResponse.PendingReason.AWAITING_PAYMENT
+						&& phase == PaymentPhase.FIRST
+						? group.getSessionToken() : null,
 				group.getStatus() == OrderGroupStatus.CANCELED,
 				Math.toIntExact(refunded),
 				canceledBy,

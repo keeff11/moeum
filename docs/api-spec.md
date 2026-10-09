@@ -371,9 +371,18 @@ B5 에서만 타이머를 띄우면 사용자는 이미 흘러간 시간을 모�
 **서버 동작**
 
 - 홀드 유효성 재확인 → 만료면 `409 HOLD_EXPIRED`
+- point3 세션 생성 실패(타임아웃 · 5xx 등) → `503 TEMPORARY_ERROR`. 결제창을 못 봤으니 돈은 안 나갔고 홀드도 그대로다 — 같은 버튼으로 다시 부르면 된다
 - 배송지 · 환불 계좌 확인 → 없으면 `400 SHIPPING_ADDRESS_REQUIRED` · `400 REFUND_ACCOUNT_REQUIRED`
 - 금액은 **서버가 DB에서 계산**한다. 요청에 금액을 받지 않는다
 - point3 세션 생성 후 `payment(FIRST)` 저장
+
+**결제창을 닫았다가 다시 누르면 (재결제)** 🆕
+
+- 같은 `sessionToken` 으로 다시 부르면 된다. point3 세션은 **새로 만들고** `sessionId` 를 바꿔 끼운다
+- 응답의 `orderToken` 은 **처음 발급한 값 그대로**다. 주문번호도 바뀌지 않는다
+- 이전 `sessionId` 로는 승인이 거절된다 — 반드시 새 응답의 `sessionId` 로 결제창을 연다
+- 승인 결과 대기 중(`CONFIRMING`)이면 `409 PAYMENT_IN_PROGRESS` — 이중 결제 방지
+- 결제 페이지를 떠났다면 `GET /orders/{orderToken}` · `GET /me/orders/in-progress` 의 `sessionToken` 으로 부른다
 
 프론트는 `pgParams`로 SDK를 호출한다.
 
@@ -429,6 +438,11 @@ successUrl 도달 후 **반드시 호출**해야 결제가 완료된다.
 | `orders[].items[]` 🆕 | 옵션 · 수량 · 금액 | 주문 시점 스냅샷 (D-010) |
 | `canceled` / `refundedAmount` | 취소 내역 | 취소해도 `status` 는 `PAID` 다 (D-036) |
 | `canceledBy` 🆕 | 취소 안내 문구 분기 | `BUYER` · `SELLER` · `SYSTEM`. 확정된 취소가 없으면 `null` (D-051) |
+| `pendingReason` | 미완료 화면 분기 | `AWAITING_PAYMENT`(결제창 미완료 → 이어서 결제) · `CONFIRMING`(승인 대기 → 폴링만) |
+| `sessionToken` 🆕 | "결제 이어하기" 버튼 | **1차금이 `AWAITING_PAYMENT` 일 때만** 채워진다. `POST /checkout-sessions/{sessionToken}/pay` 로 새 결제창을 연다. 그 외엔 `null` |
+
+⚠️ **`status` 가 `PAID` 가 아니면 결제 완료 화면을 그리지 않는다.** 결제창을 닫은 주문도
+`orders[].status` 는 `CREATED` 로 내려온다 — 진행 단계는 `status` 를 먼저 보고 그린다.
 
 ⚠️ **이 API에서 승인을 시도하면 안 된다.** 폴링 대상이므로 부작용이 없어야 한다.
 
@@ -437,9 +451,9 @@ successUrl 도달 후 **반드시 호출**해야 결제가 완료된다.
 | status | 의미 | 프론트 |
 |---|---|---|
 | `PAID` | 확정 성공 | 완료 화면 |
-| `FAILED` | 확정 실패 | 실패 화면 + 재시도(새 세션) |
+| `FAILED` | 확정 실패 · 주문 시간 만료 | 실패 화면 + **다시 주문하기**. 1차금은 홀드가 풀려 같은 주문으로 재결제할 수 없다 (2차금은 같은 `orderToken` 으로 재결제) |
 | `CONFIRMING` | **결과 불명 — 확인 중** | 폴링 3초. **결제 버튼 노출 금지** |
-| `EXPIRED` | 세션 만료 | 처음부터 다시 |
+| `EXPIRED` | ⚠️ 별도 값으로 내려오지 않는다 | 만료된 주문은 `FAILED` + 만료 문구로 내려온다 |
 | `CANCELED` | 취소됨 | 취소 내역 |
 
 **실패 화면은 서버가 `FAILED`라고 명시했을 때만 띄운다.**

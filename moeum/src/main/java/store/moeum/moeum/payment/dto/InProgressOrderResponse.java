@@ -40,6 +40,13 @@ public record InProgressOrderResponse(
 					+ "AWAITING_PAYMENT 는 결제를 이어서 진행해야 하고, CONFIRMING 은 기다려야 한다")
 			PaymentResultResponse.PendingReason pendingReason,
 
+			@Schema(description = "결제를 이어서 진행할 때 쓰는 체크아웃 세션 토큰. "
+					+ "<b>1차금이 AWAITING_PAYMENT 일 때만 채워진다</b> — 이 값으로 "
+					+ "POST /checkout-sessions/{sessionToken}/pay 를 다시 불러 새 결제창을 연다. "
+					+ "2차금은 orderToken 으로 재결제하므로 null 이다",
+					example = "cs_9f3a...")
+			String sessionToken,
+
 			@Schema(description = "이 차수에 청구된 금액", example = "20000")
 			int amount,
 
@@ -65,6 +72,8 @@ public record InProgressOrderResponse(
 				group.getOrderToken(),
 				payment.getPhase(),
 				reasonOf(payment.getStatus()),
+				payment.isFirst() && payment.getStatus() == PaymentStatus.CREATED
+						? group.getSessionToken() : null,
 				payment.getAmount(),
 				group.representativeTitle(),
 				payment.getCreatedAt());

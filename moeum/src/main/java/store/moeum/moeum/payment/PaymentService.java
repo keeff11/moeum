@@ -73,11 +73,10 @@ public class PaymentService {
 		PaymentWriter.Prepared prepared = writer.prepareFirst(user.kakaoId(), sessionToken);
 
 		// 트랜잭션 밖이다. point3 가 느려도 DB 락을 잡지 않는다
-		Point3Session session = point3Client.createSession(Point3SessionRequest.general(
-				prepared.amount(), prepared.productName(), null));
+		Point3Session session = createSession(prepared);
 
-		String orderToken = newOrderToken();
-		writer.attachSession(prepared.paymentId(), session, orderToken);
+		// 재결제(창을 닫고 다시 누른 경우)면 처음 발급한 토큰이 돌아온다
+		String orderToken = writer.attachSession(prepared.paymentId(), session, newOrderToken());
 
 		return new PaySessionResponse(session.id(), orderToken, prepared.amount(),
 				point3Properties.clientId(), prepared.payerId());
@@ -204,8 +203,7 @@ public class PaymentService {
 	public PaySessionResponse paySecond(SessionUser user, String orderToken) {
 		PaymentWriter.Prepared prepared = writer.prepareSecond(user.kakaoId(), orderToken);
 
-		Point3Session session = point3Client.createSession(Point3SessionRequest.general(
-				prepared.amount(), prepared.productName(), null));
+		Point3Session session = createSession(prepared);
 
 		writer.attachSession(prepared.paymentId(), session, orderToken);
 
@@ -216,6 +214,21 @@ public class PaymentService {
 	/** 2차금 승인 확정 */
 	public PaymentResultResponse confirmSecond(SessionUser user, String orderToken, String sessionId) {
 		return confirm(user, orderToken, sessionId, null, PaymentPhase.SECOND);
+	}
+
+	/**
+	 * 세션 생성 실패는 재시도 가능한 오류로 알린다 (payment-flow 3절 A).
+	 *
+	 * 구매자는 결제창을 보지 못했으니 돈이 나갔을 수 없다. 홀드도 그대로라 같은 버튼을
+	 * 다시 누르면 된다 — 500 으로 내보내면 프론트가 재시도해도 되는지 알 수 없다.
+	 */
+	private Point3Session createSession(PaymentWriter.Prepared prepared) {
+		try {
+			return point3Client.createSession(Point3SessionRequest.general(prepared.amount(), prepared.productName(), null));
+		} catch (Point3Exception e) {
+			log.error("point3 세션 생성 실패: paymentId={}", prepared.paymentId(), e);
+			throw new BusinessException(ErrorCode.TEMPORARY_ERROR);
+		}
 	}
 
 	private static String newOrderToken() {
