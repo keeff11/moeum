@@ -40,7 +40,7 @@ BFF 계층은 두지 않는다. CORS·SameSite는 브라우저 발 호출(CSR)�
 | 7 | `POST /checkout-sessions/{id}/pay` | 주문 확정 + PG 결제 준비 | B5 결제하기 | 필요 |
 | **8** 🆕 | `POST /orders/{orderToken}/confirm` | **승인 확정** | 복귀 페이지 | 필요 + 소유권 |
 | 9 | `GET /orders/{orderToken}` | 결제 결과 조회 (읽기 전용) | 복귀 페이지 | 필요 + 소유권 |
-| **10** 🆕 | `GET /orders/{orderToken}/second-payment` | 2차금 청구 내역 | B9 | 필요 + 소유권 |
+| **10** 🆕 | `GET /orders/{orderToken}/second-payment` | 2차금 상태 조회 (읽기 전용). 금액은 없다 — 8절 | B9 | 필요 + 소유권 |
 | **11** 🆕 | `POST /orders/{orderToken}/second-payment` | 2차금 PG 준비 | B10 | 필요 + 소유권 |
 | 12 | `GET /auth/kakao/login` | state 발급 + 카카오 인가 URL로 302 | B3 진입 | 불필요 |
 | 13 | `GET /auth/kakao/callback` | state 검증 → 토큰 교환 → 세션 발급 | B3 콜백 | 불필요 |
@@ -481,17 +481,44 @@ successUrl 도달 후 **반드시 호출**해야 결제가 완료된다.
 
 두 항목을 나누는 이유는 개념(상품 잔금 vs 배송비)이 다르기 때문이고, 청구는 한 번에 합쳐서 이뤄진다.
 
-### `GET /orders/{orderToken}/second-payment`
+### `GET /orders/{orderToken}/second-payment` — 2차금 상태 조회 (읽기 전용)
+
+**청구 금액을 주는 API 가 아니다.** 응답은 `#9 GET /orders/{orderToken}` 과 **같은 구조**이고,
+값이 2차금 기준일 뿐이다. 금액은 아래 ⚠️ 를 본다.
 
 ```json
+// 200 — 청구됐고 아직 결제창을 열지 않았다 (또는 열고 닫았다)
 {
-  "amount": 16500,
-  "breakdown": { "deposit2Amount": 12000, "shippingFee": 4500 },
-  "requestedAt": "2026-09-12T10:00:00+09:00",
-  "paid": false,
-  "shipping": { ... }
+  "orderToken": "ord_AY5i...",
+  "status": "PENDING",
+  "pendingReason": "AWAITING_PAYMENT",
+  "sessionToken": null,
+  "message": "결제가 완료되지 않았습니다. 결제를 이어서 진행해 주세요.",
+  "canceled": false,
+  "refundedAmount": 0,
+  "canceledBy": null,
+  "orders": [ ... ]   // #9 의 orders[] 와 같다
 }
 ```
+
+| 상황 | 응답 | 프론트 |
+|---|---|---|
+| 청구됐고 결제 전 · 결제창을 닫음 | `PENDING` + `AWAITING_PAYMENT` | 결제 버튼 → `POST /second-payment` |
+| 승인 결과 대기 | `PENDING` + `CONFIRMING` | 폴링만. **결제 버튼 노출 금지** |
+| 결제 완료 | `PAID` | 완료 화면 |
+| 승인 실패 | `FAILED` | **같은 `orderToken` 으로 다시 결제** (1차금과 다르다) |
+| 청구 전 (입고 전 · 2차금 0원 · 2차금 없는 묶음) | `404 PAYMENT_NOT_FOUND` | 2차금 화면을 띄우지 않는다 |
+| 남의 주문 | `403 FORBIDDEN` | |
+| 없는 토큰 | `404 ORDER_GROUP_NOT_FOUND` | |
+
+- `sessionToken` 은 **항상 `null`** 이다. 1차금 이어하기 전용이고, 2차금은 `orderToken` 으로 `POST /second-payment` 를 다시 부른다.
+- 결제창을 열기 전에도 `404` 가 아니다 (10-11 수정). 그 전에는 청구가 됐는데도 `404` 가 나왔다.
+- 부작용이 없다. 몇 번을 불러도 결제 행이 생기거나 상태가 바뀌지 않는다.
+
+> ⚠️ **청구 금액은 여기 없다.** 화면에 띄울 금액은 둘 중 하나에서 받는다.
+> - 결제 전 안내: `GET /me/orders` 의 `secondPaymentAmount`(잔금 + 배송비). 내역을 펼칠 때만
+>   `shippingFee` 를 쓴다 — **이미 들어 있으니 더하지 않는다**
+> - 결제창 직전: `POST /second-payment` 응답의 `amount` — 실제로 청구되는 값이다
 
 ### `POST /orders/{orderToken}/second-payment`
 
