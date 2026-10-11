@@ -135,7 +135,7 @@ public class PaymentWriter {
 
 		int amount = group.secondPaymentAmount();
 		if (amount <= 0) {
-			// 2차금이 0원인 구성이다. 청구할 것이 없다
+			// 2차금이 0원인 구성이다. 청구할 것이 없다. 조회 쪽 조건(isSecondPaymentOpen)과 같이 맞춘다
 			throw new BusinessException(ErrorCode.SECOND_PAYMENT_NOT_DUE, "청구할 2차금이 없습니다.");
 		}
 
@@ -405,7 +405,18 @@ public class PaymentWriter {
 
 		Payment payment = paymentRepository
 				.findByOrderGroupIdAndPhase(group.getId(), phase)
-				.orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_NOT_FOUND));
+				.orElse(null);
+
+		if (payment == null) {
+			// 2차금 payment 행은 결제 세션을 만들 때(POST) 처음 생긴다. 청구는 됐는데 아직 결제창을
+			// 열지 않은 묶음은 행이 없는 게 정상이라 404 가 아니라 "결제해야 한다" 로 답한다
+			if (phase == PaymentPhase.SECOND && isSecondPaymentOpen(group)) {
+				// sessionToken 은 넘기지 않는다 — 2차금은 orderToken 으로 POST /second-payment 를 부른다
+				return PaymentResultResponse.awaitingPayment(orderToken).withOrderDetail(
+						null, false, 0, null, PaymentResultResponse.linesOf(group));
+			}
+			throw new BusinessException(ErrorCode.PAYMENT_NOT_FOUND);
+		}
 
 		// 홀드가 만료돼 묶음이 걷혔으면 결제창을 다시 열 수 없다. AWAITING_PAYMENT 로 두면
 		// 프론트가 "이어서 결제" 를 띄우고, 누르면 HOLD_EXPIRED 가 난다
@@ -445,6 +456,12 @@ public class PaymentWriter {
 				canceledBy,
 				// 지연 로딩이다. 이 트랜잭션 안에서 조립을 끝낸다
 				PaymentResultResponse.linesOf(group));
+	}
+
+	/** prepareSecond 가 세션을 열어 주는 조건과 같다. 둘이 어긋나면 조회와 결제가 서로 다른 말을 한다 */
+	private static boolean isSecondPaymentOpen(OrderGroup group) {
+		return (group.isSecondPaymentDue() || group.getStatus() == OrderGroupStatus.SECOND_PENDING)
+				&& group.secondPaymentAmount() > 0;
 	}
 
 	/**

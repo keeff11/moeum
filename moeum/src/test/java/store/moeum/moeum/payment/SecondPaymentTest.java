@@ -129,6 +129,38 @@ class SecondPaymentTest extends IntegrationTest {
 		assertThat(paymentService.paySecond(buyer(), orderToken).sessionId()).isEqualTo(SESSION_ID);
 	}
 
+	// ---------------------------------------------------------------- 2차금 조회
+
+	@Test
+	@DisplayName("청구됐지만_결제창을_아직_안_열었으면_조회는_404_가_아니라_결제하라고_답한다")
+	void 세션_전_조회() {
+		String orderToken = payFirst(3);
+		saleFormService.markArrived(sellerKakaoId, setup.saleFormId());
+
+		// 2차금 payment 행은 POST 때 처음 생긴다. 그 전에 조회했다고 404 를 주면
+		// 프론트는 청구가 없는 것으로 읽는다
+		PaymentResultResponse result = paymentService.secondStatus(buyer(), orderToken);
+
+		assertThat(result.status()).isEqualTo(PaymentResultResponse.Status.PENDING);
+		assertThat(result.pendingReason()).isEqualTo(PaymentResultResponse.PendingReason.AWAITING_PAYMENT);
+		assertThat(result.orders()).hasSize(1);
+		// 1차금 이어하기용 토큰이다. 2차금은 orderToken 으로 다시 결제한다
+		assertThat(result.sessionToken()).isNull();
+		// 조회는 부작용이 없다 — 행을 만들지 않는다
+		assertThat(paymentPhases()).containsExactly("FIRST");
+	}
+
+	@Test
+	@DisplayName("입고_전_2차금_조회는_여전히_찾을_수_없다")
+	void 입고_전_조회() {
+		String orderToken = payFirst(3);
+
+		assertThatThrownBy(() -> paymentService.secondStatus(buyer(), orderToken))
+				.isInstanceOf(BusinessException.class)
+				.extracting(e -> ((BusinessException) e).errorCode())
+				.isEqualTo(ErrorCode.PAYMENT_NOT_FOUND);
+	}
+
 	// ---------------------------------------------------------------- 2차금 결제
 
 	@Test
