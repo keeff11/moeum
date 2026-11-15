@@ -104,7 +104,7 @@ B1 헤드라인 가격은 `options[0].deposit1Amount`. 상품 자체의 `price` 
 
 | 필드 | 화면 표시 | 비고 |
 |---|---|---|
-| `maxPerUser` | 1인당 최대 2개 구매 가능 | 스티퍼 상한 = `min(stock, maxPerUser)` |
+| `maxPerUser` | 1인당 최대 N개 구매 가능 (null 이면 표시하지 않는다) | 셀러가 폼마다 정하는 값, null 이면 무제한. 스티퍼 상한 = `min(stock, maxPerUser)`. 주문 1회 수량만 검사한다 — 이전 주문 · 살아 있는 홀드와 합산하지 않는다 |
 | `options[].id` | — | 결제 세션 생성에 전달 |
 | `options[].name` | 옵션 A | 옵션 1개뿐인 상품은 상품명과 같을 수 있음 |
 | `options[].deposit1Amount` | 32,000원 | **1차금 절대값** — B5 청구 전액 |
