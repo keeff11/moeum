@@ -43,7 +43,9 @@ class SessionStoreTest extends IntegrationTest {
 	@Test
 	@DisplayName("세션_저장소_구현은_Redis_다")
 	void 세션_저장소_구현은_Redis_다() {
-		assertThat(sessionRepository)
+		// 연장 저장 실패를 넘기는 래퍼가 감싸고 있다 (D-072). 그 안이 Redis 여야 한다
+		assertThat(sessionRepository).isInstanceOf(TouchTolerantSessionRepository.class);
+		assertThat(((TouchTolerantSessionRepository<?>) sessionRepository).delegate())
 				.as("설정이 어긋나면 조용히 톰캣 인메모리로 돌아간다. 배포마다 전원 로그아웃이 다시 시작된다")
 				.isInstanceOf(RedisSessionRepository.class);
 	}

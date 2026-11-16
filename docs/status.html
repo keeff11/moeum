@@ -447,8 +447,9 @@
         ["Origin 검증 필터 + CORS", "AllowedOrigins 하나를 셋이 공유한다", "done"],
         ["카카오 앱 1개 정책", "D-019. 판매자·구매자 겸업 시 동일인으로 기록", "done"],
         ["세션 저장소", "Spring Session Redis (D-067, D-020 을 이어받는다). 배포해도 로그인이 유지되고, 세션 저장이 주문과 MySQL 커넥션을 다투지 않는다", "done"],
+        ["세션 연장 실패 허용", "D-072. 커밋 뒤 세션 연장 저장이 Redis 장애로 실패해도 500 이 아니라 원래 응답이 나간다. 새 세션 · 속성 변경 저장은 그대로 실패시킨다 — 로그인된 척하지 않는다. SessionSaveFailureTest 로 재현 (500 → 201)", "done"],
         ["Vercel 프리뷰 로그인", "등록 도메인이 달라 쿠키가 실리지 않는다. 대응 미정", "check"],
-        ["테스트 23개", "AuthControllerTest · ReturnToTest · SessionStoreTest", "done"]
+        ["테스트 26개", "AuthControllerTest · ReturnToTest · SessionStoreTest · SessionSaveFailureTest", "done"]
       ]
     },
     {
