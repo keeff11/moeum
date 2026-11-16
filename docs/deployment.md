@@ -596,6 +596,18 @@ AWS 콘솔 → EC2 → Lifecycle Manager → 스냅샷 정책, 대상 태그 `Na
 
 **세션은 Redis 에 있고 디스크에 남기지 않는다 (D-067).** 앱만 교체하는 배포에서는 로그인이 유지되지만,
 Redis 컨테이너가 재시작되면(인스턴스 재부팅 포함) 전원 로그아웃된다. 2GB 를 나눠 쓰느라 `maxmemory 64mb` 로 묶었다.
+
+**Redis 이미지는 digest 까지 고정해 두고 손으로 올린다.** `deploy.sh` 는 배포마다 모든 이미지를 pull 한다.
+`redis:7-alpine` 처럼 열어 두면 Redis 패치가 나온 뒤 첫 배포에서 Redis 가 같이 재생성돼 예고 없이 전원 로그아웃된다.
+공식 이미지는 같은 패치 태그도 alpine 갱신 때 다시 올리므로 태그만으로는 막지 못해 digest 를 붙였다.
+올리는 절차:
+
+1. 새 태그의 digest 를 확인한다 (`<태그>` 자리에 `7.4.13-alpine` 같은 값):
+   `curl -s https://hub.docker.com/v2/repositories/library/redis/tags/<태그> | python -c "import sys,json; print(json.load(sys.stdin)['digest'])"`
+2. `deploy/docker-compose.prod.yml` 의 `image:` 를 `redis:<태그>@<digest>` 로 바꿔 머지한다.
+3. 그 배포에서 Redis 가 재생성되어 **전원 로그아웃된다.** 결제가 몰리지 않는 시간에 배포한다.
+
+Redis 블록의 다른 값(`command` · `mem_limit` 등)을 바꿔도 똑같이 재생성되니 같은 시간대를 고른다.
 인스턴스 타입을 키우려면 계정 플랜을 먼저 올려야 한다 — 무료 플랜은 `FreeTierRestrictionError` 로 막힌다.
 
 **Flyway 는 앱 기동 시 자동 실행된다.** 마이그레이션이 실패하면 앱이 안 뜨고,

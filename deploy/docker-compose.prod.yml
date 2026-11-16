@@ -39,8 +39,13 @@ services:
   # 세션 저장소 (D-067). 세션은 30분이면 사라지는 값이라 디스크에 남기지 않는다 —
   # 컨테이너가 재시작되면 전원 로그아웃되는 것을 받아들인다.
   # 2GB 인스턴스라 64MB 로 묶는다. 차면 만료가 가까운 세션부터 밀어낸다(세션 키는 전부 TTL 이 있다).
+  #
+  # 이미지는 digest 까지 고정한다. deploy.sh 가 배포마다 모든 이미지를 pull 하는데,
+  # redis:7-alpine 처럼 열어 두면 Redis 패치가 나온 뒤 첫 배포에서 컨테이너가 다시 만들어져
+  # 세션이 전부 사라진다. 패치 태그(7.4.12-alpine)도 공식 이미지는 alpine 갱신 때 같은 태그로
+  # 다시 올라오므로 태그만으로는 막지 못한다. 올릴 때는 docs/deployment.md 의 절차를 따른다.
   redis:
-    image: redis:7-alpine
+    image: redis:7.4.12-alpine@sha256:7f7d30b7fdd09467bac58198a1f166dd69789d348d4fe859cccb20e0cf287fbe
     container_name: moeum-redis
     restart: unless-stopped
     command:
