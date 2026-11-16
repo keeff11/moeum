@@ -141,6 +141,13 @@ catch (HttpServerErrorException | ResourceAccessException e) -> pending()  // 5x
 
 **단계적 확장 순서:** 조건부 UPDATE → 마감 폼 캐시 차단 → Redis 카운터 → 대기열
 
+**구현:** `StockLedger` 가 `StockGuard` 를 구현하고, 주문 생성(`OrderCreator`)은 인터페이스만 본다.
+
+인터페이스에는 **확보만** 둔다. 대기열은 확보를 감싸는 구현이라 이것으로 충분하다.
+Redis 카운터는 다르다 — 해제 · 확정 · 되돌림도 같은 카운터를 움직여야 하므로, 그때는
+`StockLedger` 의 나머지 세 동작까지 함께 옮긴다. 지금 그 넷을 다 인터페이스로 빼지 않은 것은
+교체할 구현이 아직 하나도 없어서다.
+
 ---
 
 ## D-009. 주문을 `order_group` / `orders` 두 계층으로 나눈다

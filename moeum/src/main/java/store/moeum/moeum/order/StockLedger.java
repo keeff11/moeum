@@ -33,11 +33,13 @@ import java.util.Map;
  * 스냅샷하고 있어서 홀드 테이블을 옵션 단위로 쪼갤 이유가 없다.
  *
  * 잠금 순서: 폼 → 그 폼의 옵션 id 오름차순. 두 요청이 반대 순서로 잠그면 데드락이 난다.
+ *
+ * 확보는 {@link StockGuard} 의 지금 구현이다. 주문 생성은 이 클래스가 아니라 인터페이스를 본다 (D-008).
  */
 @Slf4j
 @Component
 @RequiredArgsConstructor
-public class StockLedger {
+public class StockLedger implements StockGuard {
 
 	private final SaleFormRepository saleFormRepository;
 	private final ProductOptionRepository optionRepository;
@@ -51,6 +53,7 @@ public class StockLedger {
 	 *
 	 * @param qtyByOption 옵션 id → 수량. 이 폼의 옵션만 들어 있어야 한다
 	 */
+	@Override
 	public void acquire(SaleForm form, List<ProductOption> options, Map<Long, Integer> qtyByOption) {
 		int totalQty = options.stream().mapToInt(option -> qtyByOption.get(option.getId())).sum();
 
