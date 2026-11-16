@@ -53,7 +53,8 @@ public class OrderCreator {
 	private final ProductOptionRepository optionRepository;
 	private final OrderGroupRepository orderGroupRepository;
 	private final StockHoldRepository stockHoldRepository;
-	private final StockLedger stockLedger;
+	/** 재고 확보는 인터페이스로만 부른다. 확보 방식을 바꿀 때 여기는 그대로다 (D-008) */
+	private final StockGuard stockGuard;
 
 	@Transactional(propagation = Propagation.REQUIRES_NEW)
 	public OrderGroupResponse create(Buyer buyer, OrderCreateRequest request) {
@@ -81,7 +82,7 @@ public class OrderCreator {
 
 			validatePerUserLimit(form, totalQty);
 			// ★ 폼 재고와 옵션 재고를 같이 확보한다. 어느 하나라도 0 이면 여기서 던진다
-			stockLedger.acquire(form, formOptions, qtyByOption);
+			stockGuard.acquire(form, formOptions, qtyByOption);
 
 			Order order = Order.create(form);
 			for (ProductOption option : formOptions) {
