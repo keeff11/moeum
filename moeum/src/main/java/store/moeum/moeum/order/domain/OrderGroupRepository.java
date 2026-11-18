@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -44,6 +45,25 @@ public interface OrderGroupRepository extends JpaRepository<OrderGroup, Long> {
 			 order by g.id desc
 			""")
 	List<OrderGroup> findActiveByBuyer(@Param("buyerId") Long buyerId);
+
+	/**
+	 * 이 구매자가 주어진 판매 폼 중 하나라도 홀드로 잡고 있는 묶음 (D-073).
+	 *
+	 * <b>묶음 상태로 거르지 않는다.</b> 결제창까지 간 묶음도 돌려줘야 부르는 쪽이 "결제 진행 중" 으로
+	 * 막을 수 있다. 홀드가 HELD 인지만 본다 — 끝난 묶음은 홀드가 이미 RELEASED 나 COMMITTED 다.
+	 *
+	 * id 오름차순이라 같은 구매자의 두 요청이 묶음을 같은 순서로 잠근다.
+	 */
+	@Query("""
+			select distinct g.id from StockHold h
+			  join h.order o
+			  join o.orderGroup g
+			 where g.buyer.id = :buyerId
+			   and h.status = store.moeum.moeum.order.domain.HoldStatus.HELD
+			   and h.saleForm.id in :formIds
+			 order by g.id
+			""")
+	List<Long> findIdsHoldingForms(@Param("buyerId") Long buyerId, @Param("formIds") Collection<Long> formIds);
 
 	Optional<OrderGroup> findByOrderNo(String orderNo);
 

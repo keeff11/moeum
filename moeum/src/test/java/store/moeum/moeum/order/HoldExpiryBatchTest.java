@@ -139,7 +139,8 @@ class HoldExpiryBatchTest extends IntegrationTest {
 
 		// 방금 고른 것과 다른 것을 결제하게 할 수는 없다
 		assertThat(other.sessionToken()).isNotEqualTo(first.sessionToken());
-		assertThat(held(setup)).isEqualTo(8);
+		// 이전 3개는 기다리지 않고 바로 풀린다 (D-073). 교체 자체는 CheckoutReplaceTest 가 본다
+		assertThat(held(setup)).isEqualTo(5);
 	}
 
 	@Test
