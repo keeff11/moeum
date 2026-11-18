@@ -33,13 +33,14 @@ import java.util.Base64;
  * (CLAUDE.md 규칙 1). DB 쓰기는 전부 {@link PaymentWriter} 의 짧은 트랜잭션으로 나간다.
  *
  * <pre>
- *   TX1  홀드 유효성 · 마감 확인 + payment 준비
+ *   TX1  재고 홀드 + 주문 생성                    ← OrderCreator. 이 클래스 앞 단계다
+ *   TX2  홀드 유효성 · 마감 확인 + payment 준비
  *   ---  point3 세션 생성                       ← 트랜잭션 밖
- *   TX2  sessionId 저장 + PAY_PENDING
+ *   TX3  sessionId 저장 + PAY_PENDING
  *        ... 구매자가 결제창에서 확정 ...
- *   TX3  검증 4종 + CAPTURE_PENDING 커밋          ← 승인 전에 반드시 커밋 (D-004)
+ *   TX4  검증 4종 + CAPTURE_PENDING 커밋          ← 승인 전에 반드시 커밋 (D-004)
  *   ---  승인 호출                               ← 트랜잭션 밖
- *   TX4  확정 또는 확인된 실패
+ *   TX5  확정 또는 확인된 실패
  * </pre>
  *
  * <b>승인 결과를 모르면 아무것도 하지 않는다.</b> 타임아웃·5xx·processing 은 CAPTURE_PENDING 을
@@ -211,9 +212,11 @@ public class PaymentService {
 	/**
 	 * 2차금 결제 세션을 만든다 (payment-flow 2절).
 	 *
-	 * 1차금과 다른 점은 둘뿐이다 — 홀드가 없고, 저장해 둔 payerId 를 프론트에 함께 내려준다.
-	 * payerId 는 세션 생성 요청에 넣는 값이 아니라 SDK 의 customerKey 로 쓰이는 값이다
-	 * (point3-api 6절). 있으면 인증 단계가 줄고, 없으면 ANONYMOUS 로 진행된다.
+	 * 1차금과 달리 홀드 · 배송지 · 환불 계좌를 보지 않고, 대신 <b>모든 주문이 입고됐는지</b>를 본다
+	 * ({@link PaymentWriter#prepareSecond}). 주문을 찾는 키도 sessionToken 이 아니라 orderToken 이다.
+	 *
+	 * 응답의 payerId 는 1차금 확정 때 저장해 둔 값이다. 세션 생성 요청에 넣는 값이 아니라
+	 * SDK 의 customerKey 로 쓰이는 값이고(point3-api 6절), 있으면 인증 단계가 준다.
 	 */
 	public PaySessionResponse paySecond(SessionUser user, String orderToken) {
 		PaymentWriter.Prepared prepared = writer.prepareSecond(user.kakaoId(), orderToken);

@@ -382,9 +382,9 @@
     <div class="eyebrow">
       <span>moeum · 공동구매 결제 플랫폼</span>
       <span class="sep">/</span>
-      <span>2026-09-17 기준</span>
+      <span>2026-11-18 기준</span>
       <span class="sep">/</span>
-      <span>main @ ee08223</span>
+      <span>main @ eaa5592</span>
     </div>
     <h1>도메인별 개발 현황</h1>
     <p class="lede">
@@ -525,6 +525,7 @@
       items: [
         ["POST · GET /checkout-sessions", "B2 옵션·수량 확정 시 홀드 (D-001)", "done"],
         ["조건부 UPDATE 한 방 재고 확보", "영향 행 0이면 품절 또는 마감", "done"],
+        ["StockGuard 교체 지점", "D-008. 주문 생성은 StockGuard 인터페이스만 본다. 지금 구현은 StockLedger 의 조건부 UPDATE 다. 대기열은 확보를 감싸는 구현으로 붙이고, Redis 카운터로 바꿀 때는 해제 · 확정 · 되돌림까지 함께 옮긴다", "done"],
         ["옵션 재고 두 층 확보 · 해제 · 확정 · 되돌림", "D-054. 폼 조건부 UPDATE 뒤에 옵션 조건부 UPDATE 를 한 번 더 건다. 네 동작이 네 군데(주문 생성 · 만료 배치 · 결제 확정 · 환불)에 흩어져 있어 StockLedger 로 모았다 — 한 군데라도 옵션 층을 빠뜨리면 카운터가 어긋난다. 옵션 수량은 홀드 행이 아니라 order_item 에서 읽는다", "done"],
         ["판매 폼 id 오름차순 잠금", "두 구매자가 반대 순서로 잠그면 데드락. D-054 부터 폼 다음에 그 폼의 옵션 id 오름차순이 붙는다", "done"],
         ["@Retryable 을 트랜잭션 바깥에 배치", "품절은 재시도하지 않는다 (D-003)", "done"],
@@ -533,6 +534,7 @@
         ["만료 전 point3 구매자 확정 확인", "D-063. 결제창까지 간 묶음은 풀기 전에 세션을 조회해 committed 면 CAPTURE_PENDING 으로 넘긴다. 늦게 온 confirm 도 회수 전이면 승인한다. 테스트 11개. <b>09-17 운영 배포</b> — 끄는 스위치 HOLD_EXPIRY_POINT3_CHECK", "done"],
         ["동시성 · 만료 · 이어받기 · 옵션 재고 테스트 23개", "200스레드 동시 주문, 중복 회수 방지, 이어받기 4종, 옵션 재고 8종(OptionStockHoldTest)", "done"],
         ["진행 중 세션 이어받기", "D-037. 같은 선택으로 다시 부르면 홀드를 새로 잡지 않는다. CheckoutResumer 를 별도 빈으로 뺀 것은 트랜잭션 경계 때문", "done"],
+        ["같은 폼 재담기 시 이전 홀드 교체", "D-073. 같은 구매자가 같은 폼을 다시 담으면 이전 묶음을 풀고 새로 잡는다 — 이중 점유가 30분 남지 않는다. 같은 트랜잭션이라 새 확보가 품절이면 이전 홀드가 남는다. 결제창을 연 묶음(FIRST payment 행 있음)은 풀지 않고 CHECKOUT_PAYMENT_IN_PROGRESS(409). 1인 제한이 없는 기획이라 악의적 잠금은 막지 못한다. CheckoutReplaceTest 9개", "done"],
         ["배송비 계산", "D-032. 항목을 다 담은 뒤 무료배송 기준을 적용해 확정한다. 한 번 정해지면 굳는다. 기본값은 D-053 부터 담긴 폼의 배송비 중 최대값 — 폼 값이 없으면 셀러 기본값", "done"],
         ["POST /checkout-sessions/{id}/pay", "PaymentController 로 구현됨", "done"],
         ["일시중지된 폼의 거절 코드", "D-056. 재고 확보 실패를 전부 OUT_OF_STOCK 으로 답하고 있었다 — hold 의 WHERE 가 status='SELLING' 이라 일시중지도 같이 떨어진다. code 로 화면을 가르는 약속이라(ErrorResponse) 문구만으로는 모자라 <b>SALE_PAUSED(409)</b> 를 더했다. 예외 <b>타입</b>은 OutOfStockException 그대로다 — 새 타입을 만들면 재시도 제외 규칙에서 빠져 같은 실패를 3회 두들긴다", "done"]
@@ -551,6 +553,7 @@
         ["finalizeCapture 멱등 확정", "실시간과 배치가 같은 메서드를 부른다. 재고 이중 차감 방지", "done"],
         ["승인 대사 배치", "D-005. captured 확정 · committed 재승인 · failed 홀드 해제. SKIP LOCKED. D-074 에서 오래 안 본 건부터 집게 바꿨다 — 미확정이 50건을 넘어도 뒤쪽 건이 막히지 않는다", "done"],
         ["승인 호출은 한 곳에서만", "D-075. confirm 이 결제 행을 잠그고, CREATED 를 CAPTURE_PENDING 으로 바꾼 요청만 승인을 부른다. 이미 진행 중이면 202 CONFIRMING 만 주고 재승인은 대사 배치가 한다 — 동시 승인 호출이 겹쳐 한쪽이 4xx 를 받으면 출금된 결제를 실패로 내릴 수 있었다. FAILED 에 captured 가 오면 확정하지 않고 CRITICAL 알림", "done"],
+        ["결제 세션 덮어쓰기 경합", "D-076. D-075 와 짝이다. /pay 가 point3 세션을 만드는 사이 다른 탭이 승인을 시작하면 attachSession 이 출금 중인 행의 sessionId 와 상태를 덮었다 — 승인이 타임아웃이면 대사 배치가 못 집고 만료 배치가 엉뚱한 세션을 물어 홀드를 풀었다. 이제 잠그고 CREATED 일 때만 붙이고 아니면 PAYMENT_IN_PROGRESS(409). 프론트 변경 없음", "done"],
         ["payment_event 기록", "전이마다 한 행. 재결제해도 이력이 남는다 (D-023)", "done"],
         ["WireMock 실패 테스트", "로드맵 필수 8종 포함 33개. 타임아웃 · 5xx · processing · 중복 confirm", "done"],
         ["uk_payment_group_phase 재결제 정책", "D-023. 실패한 행을 재사용한다. FAILED 일 때만 — CAPTURE_PENDING 은 절대 덮지 않는다", "done"],
@@ -633,7 +636,7 @@
         ["운영 로그인 왕복 확인", "카카오 키 등록 후 실제 성공 여부 미확인", "check"],
         ["로그 마스킹", "토큰 · PIN · 전체 payer_id", "todo"],
         ["부하 테스트", "재고 확보 구간. 1000명 동시 주문 실측 — 초과 판매 0. 커밋된 주문이 세션 저장 실패로 500 이 되던 것을 세션 Redis 전환으로 막았다 — 서버 불안정 가정(커넥션 대기 0.25초)에서도 장부 4/4 일치 (D-067). 처리량 병목은 세션이 아니다 (D-066)", "done"],
-        ["운영 Redis", "EC2 안 컨테이너 (D-067). t3.small 을 나눠 쓰느라 maxmemory 64MB · 컨테이너 상한 96MB, JVM 힙은 50 → 45%. 앱은 Redis 가 healthy 가 된 뒤에 뜬다", "done"],
+        ["운영 Redis", "EC2 안 컨테이너 (D-067). t3.small 을 나눠 쓰느라 maxmemory 64MB · 컨테이너 상한 96MB, JVM 힙은 50 → 45%. 앱은 Redis 가 healthy 가 된 뒤에 뜬다. 이미지는 7.4.12-alpine 을 digest 까지 고정했다 — 배포마다 pull 하므로 열어 두면 패치가 나온 뒤 첫 배포에서 Redis 가 재생성돼 전원 로그아웃된다. 올리는 절차는 deployment.md", "done"],
         ["연결 거부 원인", "로컬 부하 테스트의 연결 거부는 Windows 가 연결 대기열을 200 에서 자르고 넘치면 즉시 거절해서다. accept-count 를 1000 으로 올려도 200 이다. 운영(Linux + Caddy)에서는 이 모양이 나지 않아 앱 설정은 그대로 둔다 (D-067)", "done"],
         ["README 아키텍처 다이어그램", "", "todo"]
       ]

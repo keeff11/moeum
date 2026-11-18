@@ -23,6 +23,7 @@ import store.moeum.moeum.payment.domain.CapturedAfterFailureException;
 import store.moeum.moeum.payment.domain.PaymentActor;
 import store.moeum.moeum.payment.dto.PaySessionResponse;
 import store.moeum.moeum.payment.dto.PaymentResultResponse;
+import store.moeum.moeum.payment.infra.Point3Session;
 import store.moeum.moeum.support.IntegrationTest;
 import store.moeum.moeum.support.OrderFixture;
 import store.moeum.moeum.support.RecordingAlertSender;
@@ -82,10 +83,10 @@ class PaymentFlowTest extends IntegrationTest {
 	private PaymentService paymentService;
 
 	@Autowired
-	private PaymentReconcileBatch reconcileBatch;
+	private PaymentWriter paymentWriter;
 
 	@Autowired
-	private PaymentWriter paymentWriter;
+	private PaymentReconcileBatch reconcileBatch;
 
 	@Autowired
 	private HoldExpiryBatch holdExpiryBatch;
@@ -791,6 +792,55 @@ class PaymentFlowTest extends IntegrationTest {
 				.isEqualTo(ErrorCode.PAYMENT_IN_PROGRESS);
 	}
 
+	/**
+	 * 다른 탭에서 결제하기를 또 눌렀는데, 그 요청이 point3 세션을 만드는 사이에
+	 * 첫 탭이 승인을 시작한 경우 (D-076). 세션 생성은 트랜잭션 밖이라 그 틈을 writer 로 쪼개 재현한다.
+	 */
+	@Test
+	@DisplayName("세션을_만드는_사이_승인이_시작됐으면_새_세션을_붙이지_않는다")
+	void 세션_생성_중_승인_시작() {
+		String orderToken = startPayment();
+
+		// 탭 B: 준비는 통과했다 (아직 CREATED)
+		PaymentWriter.Prepared prepared = paymentWriter.prepareFirst(buyer().kakaoId(), sessionToken);
+
+		// 탭 A: 승인을 불렀는데 결과를 모른다
+		stubCapture(500, "{}");
+		paymentService.confirm(buyer(), orderToken, SESSION_ID, null);
+		assertThat(paymentStatus()).containsExactly("CAPTURE_PENDING");
+
+		// 탭 B: point3 세션을 받아 와 붙이려 한다
+		assertThatThrownBy(() -> paymentWriter.attachSession(prepared.paymentId(), otherSession(), "ord_other"))
+				.isInstanceOf(BusinessException.class)
+				.extracting(e -> ((BusinessException) e).errorCode())
+				.isEqualTo(ErrorCode.PAYMENT_IN_PROGRESS);
+
+		// 출금 중인 건의 기록이 그대로여야 대사 배치가 이전 세션으로 확정한다
+		assertThat(paymentStatus()).containsExactly("CAPTURE_PENDING");
+		assertThat(paymentSessionId()).containsExactly(SESSION_ID);
+		assertThat(held()).isEqualTo(3);
+	}
+
+	@Test
+	@DisplayName("세션을_만드는_사이_결제가_끝났으면_새_세션을_붙이지_않는다")
+	void 세션_생성_중_결제_완료() {
+		String orderToken = startPayment();
+		PaymentWriter.Prepared prepared = paymentWriter.prepareFirst(buyer().kakaoId(), sessionToken);
+
+		stubCapture(200, """
+				{"id":"%s","status":"captured"}""".formatted(SESSION_ID));
+		paymentService.confirm(buyer(), orderToken, SESSION_ID, null);
+
+		// 전에는 묶음 상태 검사(IllegalStateException)에 걸려 500 이었다
+		assertThatThrownBy(() -> paymentWriter.attachSession(prepared.paymentId(), otherSession(), "ord_other"))
+				.isInstanceOf(BusinessException.class)
+				.extracting(e -> ((BusinessException) e).errorCode())
+				.isEqualTo(ErrorCode.PAYMENT_IN_PROGRESS);
+
+		assertThat(paymentStatus()).containsExactly("CAPTURED");
+		assertThat(paymentSessionId()).containsExactly(SESSION_ID);
+	}
+
 	@Test
 	@DisplayName("상태_조회는_부작용이_없다")
 	void 상태_조회() {
@@ -894,6 +944,16 @@ class PaymentFlowTest extends IntegrationTest {
 
 	private List<String> paymentStatus() {
 		return jdbcTemplate.queryForList("SELECT status FROM payment", String.class);
+	}
+
+	private List<String> paymentSessionId() {
+		return jdbcTemplate.queryForList("SELECT session_id FROM payment", String.class);
+	}
+
+	/** 다른 탭이 새로 받아 온 point3 세션 */
+	private static Point3Session otherSession() {
+		return new Point3Session("pymt_sess-019f0000-0000-7000-9000-000000000001",
+				null, 99000, 90000, 9000, 0, "KRW");
 	}
 
 	private List<String> groupStatus() {

@@ -55,6 +55,7 @@ public class OrderCreator {
 	private final StockHoldRepository stockHoldRepository;
 	/** 재고 확보는 인터페이스로만 부른다. 확보 방식을 바꿀 때 여기는 그대로다 (D-008) */
 	private final StockGuard stockGuard;
+	private final CheckoutReplacer checkoutReplacer;
 
 	@Transactional(propagation = Propagation.REQUIRES_NEW)
 	public OrderGroupResponse create(Buyer buyer, OrderCreateRequest request) {
@@ -69,6 +70,10 @@ public class OrderCreator {
 		List<SaleForm> forms = byForm.keySet().stream()
 				.sorted(Comparator.comparing(SaleForm::getId))
 				.toList();
+
+		// 같은 폼을 이미 잡고 있으면 그 묶음을 먼저 푼다 (D-073). 같은 트랜잭션이라
+		// 아래 확보가 품절로 실패하면 이것도 롤백되어 원래 자리가 남는다
+		checkoutReplacer.releasePrevious(buyer, forms.stream().map(SaleForm::getId).toList());
 
 		// 배송비는 일단 기본값으로 두고 항목을 다 담은 뒤 무료배송 기준을 적용한다.
 		// 기본값은 담긴 폼들의 배송비 중 가장 큰 것이다 — 묶음당 1회라 하나만 받는다 (D-053)

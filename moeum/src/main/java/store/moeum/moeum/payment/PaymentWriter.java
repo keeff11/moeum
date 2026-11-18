@@ -167,12 +167,26 @@ public class PaymentWriter {
 	 * <b>여기서 저장에 실패하면 sessionId 를 잃는다.</b> point3 세션 생성 요청에는
 	 * 가맹점 주문번호를 넣을 필드가 없어서, 어느 주문의 세션인지 아는 곳이 이 행뿐이다.
 	 *
+	 * <b>잠그고 CREATED 인지 다시 본다 (D-076).</b> prepare 와 여기 사이에 point3 세션 생성이 끼어 있어
+	 * 수백 ms~수 초가 빈다. 그 사이 다른 탭이 승인을 시작하면(CAPTURE_PENDING) 이 행은 출금 중이다.
+	 * 그대로 덮으면 sessionId 가 아무도 확정하지 않은 새 세션으로 바뀌고, 엔티티가 전체 컬럼을 쓰므로
+	 * 상태도 prepare 때 읽은 CREATED 로 돌아간다 — 승인이 타임아웃이면 대사 배치는 이 건을 못 집고
+	 * 만료 배치는 새 세션을 물어 홀드를 푼다. 실제 출금은 이전 세션으로 일어났는데도.
+	 * 그래서 CREATED 가 아니면 붙이지 않는다. 방금 만든 point3 세션은 아무도 열지 않아 버려진다.
+	 *
 	 * @return 이 묶음에 실제로 저장된 orderToken. 프론트에는 반드시 이 값을 내려준다
+	 * @throws BusinessException 그 사이 승인이 시작됐거나 끝났으면 {@link ErrorCode#PAYMENT_IN_PROGRESS}
 	 */
 	@Transactional(propagation = Propagation.REQUIRES_NEW)
 	public String attachSession(Long paymentId, Point3Session session, String orderToken) {
-		Payment payment = paymentRepository.findById(paymentId)
+		Payment payment = paymentRepository.findByIdForUpdate(paymentId)
 				.orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_NOT_FOUND));
+
+		if (payment.getStatus() != PaymentStatus.CREATED) {
+			log.warn("세션을 만드는 사이 결제가 진행돼 새 세션을 붙이지 않는다: paymentId={}, status={}",
+					payment.getId(), payment.getStatus());
+			throw new BusinessException(ErrorCode.PAYMENT_IN_PROGRESS);
+		}
 
 		payment.attachSession(session.id(), session.supplyAmount(), session.vat(), session.taxFreeAmount());
 		OrderGroup group = payment.getOrderGroup();
