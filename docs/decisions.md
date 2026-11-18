@@ -3724,3 +3724,47 @@ confirm 은 `202 CONFIRMING` 으로 답하고(돈은 나갔으니 실패라고 �
 
 `PaymentFlowTest` 에 동시 confirm · 진행 중 재confirm · 실패 뒤 승인 성공 · `FAILED` 확정 거부를 넣었다.
 고치기 전 코드로 돌리면 앞의 둘과 D-063 테스트가 실패한다.
+
+---
+
+## D-076. 결제 세션은 잠그고 CREATED 일 때만 붙인다
+
+**결정:** `PaymentWriter.attachSession` 이 payment 행을 `findByIdForUpdate` 로 잠그고, 상태가 `CREATED` 가 아니면
+새 point3 세션을 붙이지 않고 `PAYMENT_IN_PROGRESS`(409) 로 막는다. 1차금 · 2차금 둘 다 이 경로다.
+
+### 계기
+
+중복 결제 요청 점검에서 나왔다. `/pay` 는 prepare(TX) → point3 세션 생성(트랜잭션 밖) → attachSession(TX) 순인데,
+prepare 의 "진행 중이면 막는다"(`isPending`) 검사와 attach 사이에 세션 생성 시간(수백 ms~수 초)이 빈다.
+
+1. 탭 A 가 결제창을 열어 둔 상태(payment `CREATED`, 세션 S1)에서 탭 B 가 결제하기를 다시 누른다. prepare 통과
+2. B 가 point3 세션 S2 를 만드는 사이 A 가 확정 → `CAPTURE_PENDING` 커밋 → S1 으로 승인 호출
+3. B 의 attach 가 잠금도 상태 확인도 없이 sessionId 를 S2 로 바꾼다. `Payment` 는 `@DynamicUpdate` 가 없어
+   전체 컬럼을 쓰므로 **상태도 B 가 읽은 `CREATED` 로 돌아간다**
+
+A 의 승인이 바로 성공하면 `finalizeCapture` 가 확정해 문제가 드러나지 않는다. **타임아웃이면** 대사 배치는
+`CAPTURE_PENDING` 만 집으니 이 건을 못 보고, 만료 배치는 S2(아무도 확정하지 않음)를 물어 홀드를 풀고 실패로 내린다.
+실제 출금은 S1 으로 일어났다. 환불도 저장된 sessionId 로 나가니 S2 로 간다. D-004 가 지키려던 "결과를 모르는
+건의 유일한 기록" 이 덮이는 경로다. A 가 이미 `CAPTURED` 였다면 `markPayPending` 의 상태 검사에 걸려 500 이었다.
+
+### 왜 여기서 막는가
+
+- **prepare 에서 잠가도 소용없다.** 세션 생성이 트랜잭션 밖이라 잠금이 그 구간까지 이어지지 않는다(규칙 1)
+- **attach 가 행을 쓰는 마지막 지점이다.** 여기서 잠그고 다시 보면 A 의 `CAPTURE_PENDING` 커밋 뒤에는 반드시 막히고,
+  커밋 전이면 B 가 먼저 S2 를 붙여 A 의 confirm 이 `SESSION_MISMATCH` 로 승인 전에 거절된다. 어느 순서든 돈이 나간
+  세션과 저장된 sessionId 가 어긋나지 않는다
+- D-075 부터 `markCapturePending` 도 같은 payment 행을 잠근다. 승인 시작과 세션 붙이기가 그 행에서 한 줄로 선다
+- 잠금 순서는 payment → order_group 으로 `finalizeCapture` 와 같다
+
+### 프론트
+
+바꿀 것이 없다. `/pay` 는 이미 `409 PAYMENT_IN_PROGRESS` 를 낸다(승인 결과 대기 중). 같은 응답이 좁은 경합에서도
+나올 뿐이다. B 가 받은 S2 세션은 결제창이 열리지 않아 버려진다.
+
+### 받아들인 것
+
+- 같은 묶음에 `/pay` 가 동시에 두 번 들어와 둘 다 payment 행이 없다고 보면, 유니크 키(`uk_payment_group_phase`)에
+  걸린 쪽이 500 이다. 돈은 안전하다. 이번에 고치지 않았다
+- 담기 버튼 더블클릭으로 같은 폼 홀드가 두 벌 잡히는 경합(D-073 이 커밋된 것만 본다)도 그대로다. 돈 문제는 없다
+
+테스트: `PaymentFlowTest` 2개 추가(세션 생성 중 승인 시작 · 결제 완료). 수정 전에는 둘 다 실패한다.

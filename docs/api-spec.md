@@ -387,6 +387,7 @@ B5 에서만 타이머를 띄우면 사용자는 이미 흘러간 시간을 모�
 - 응답의 `orderToken` 은 **처음 발급한 값 그대로**다. 주문번호도 바뀌지 않는다
 - 이전 `sessionId` 로는 승인이 거절된다 — 반드시 새 응답의 `sessionId` 로 결제창을 연다
 - 승인 결과 대기 중(`CONFIRMING`)이면 `409 PAYMENT_IN_PROGRESS` — 이중 결제 방지
+- 🆕 세션을 만드는 사이 다른 탭에서 승인이 시작되거나 끝났어도 `409 PAYMENT_IN_PROGRESS` 다 (D-076). 처리는 위와 같다
 - 결제 페이지를 떠났다면 `GET /orders/{orderToken}` · `GET /me/orders/in-progress` 의 `sessionToken` 으로 부른다
 
 프론트는 `pgParams`로 SDK를 호출한다.
