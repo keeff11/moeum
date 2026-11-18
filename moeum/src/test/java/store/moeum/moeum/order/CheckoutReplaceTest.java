@@ -14,7 +14,15 @@ import store.moeum.moeum.order.exception.OutOfStockException;
 import store.moeum.moeum.support.IntegrationTest;
 import store.moeum.moeum.support.OrderFixture;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -183,7 +191,73 @@ class CheckoutReplaceTest extends IntegrationTest {
 		assertThat(formHeld(setup)).isEqualTo(2);
 	}
 
+	/**
+	 * 담기 버튼을 여러 번 누른 경우 (D-077). 이어받기와 교체는 커밋된 묶음만 보므로, 구매자 단위로
+	 * 줄을 세우기 전에는 동시에 온 요청이 서로를 못 보고 각자 홀드를 잡았다.
+	 */
+	@Test
+	@DisplayName("같은_담기가_동시에_여러_번_와도_홀드는_한_벌이고_같은_세션을_돌려준다")
+	void 동시에_같은_담기() throws Exception {
+		OrderFixture.Setup setup = fixture.saleForm(100, null);
+		fixture.buyerWithAddress("kakao-double", "구매자");
+		SessionUser user = buyer("kakao-double");
+		int threads = 8;
+
+		List<OrderGroupResponse> responses = concurrently(threads,
+				() -> orderService.place(user, order(setup.optionId(), 3)));
+
+		assertThat(responses).hasSize(threads);
+		assertThat(responses).extracting(OrderGroupResponse::sessionToken).containsOnly(responses.get(0).sessionToken());
+		assertThat(formHeld(setup)).isEqualTo(3);
+		assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM order_group", Integer.class)).isEqualTo(1);
+	}
+
+	@Test
+	@DisplayName("동시에_다른_수량으로_담으면_하나만_남는다")
+	void 동시에_다른_수량() throws Exception {
+		OrderFixture.Setup setup = fixture.saleForm(100, null);
+		fixture.buyerWithAddress("kakao-race", "구매자");
+		SessionUser user = buyer("kakao-race");
+		AtomicInteger qty = new AtomicInteger();
+
+		concurrently(6, () -> orderService.place(user, order(setup.optionId(), qty.incrementAndGet())));
+
+		// 마지막에 커밋된 것 하나만 HELD 로 남고 나머지는 교체돼 풀렸다
+		Integer live = jdbcTemplate.queryForObject(
+				"SELECT COUNT(*) FROM stock_hold WHERE status = 'HELD'", Integer.class);
+		Integer liveQty = jdbcTemplate.queryForObject(
+				"SELECT COALESCE(SUM(qty), 0) FROM stock_hold WHERE status = 'HELD'", Integer.class);
+		assertThat(live).isEqualTo(1);
+		assertThat(formHeld(setup)).isEqualTo(liveQty);
+	}
+
 	// ---------------------------------------------------------------- 도우미
+
+	/** 준비된 스레드를 한꺼번에 출발시킨다. 하나라도 예외면 그대로 던진다 */
+	private <T> List<T> concurrently(int threads, Callable<T> task) throws Exception {
+		ExecutorService pool = Executors.newFixedThreadPool(threads);
+		CountDownLatch ready = new CountDownLatch(threads);
+		CountDownLatch start = new CountDownLatch(1);
+		try {
+			List<Future<T>> futures = new ArrayList<>();
+			for (int i = 0; i < threads; i++) {
+				futures.add(pool.submit(() -> {
+					ready.countDown();
+					start.await();
+					return task.call();
+				}));
+			}
+			ready.await();
+			start.countDown();
+			List<T> results = new ArrayList<>();
+			for (Future<T> future : futures) {
+				results.add(future.get(30, TimeUnit.SECONDS));
+			}
+			return results;
+		} finally {
+			pool.shutdownNow();
+		}
+	}
 
 	private void openPayment(String sessionToken) {
 		jdbcTemplate.update("""

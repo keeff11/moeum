@@ -6,6 +6,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import store.moeum.moeum.buyer.domain.Buyer;
+import store.moeum.moeum.buyer.domain.BuyerRepository;
 import store.moeum.moeum.global.error.BusinessException;
 import store.moeum.moeum.global.error.ErrorCode;
 import store.moeum.moeum.order.domain.Order;
@@ -28,6 +29,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import static store.moeum.moeum.global.jpa.JpaAuditingConfig.KST;
 
@@ -56,9 +58,25 @@ public class OrderCreator {
 	/** 재고 확보는 인터페이스로만 부른다. 확보 방식을 바꿀 때 여기는 그대로다 (D-008) */
 	private final StockGuard stockGuard;
 	private final CheckoutReplacer checkoutReplacer;
+	private final CheckoutResumer checkoutResumer;
+	private final BuyerRepository buyerRepository;
 
 	@Transactional(propagation = Propagation.REQUIRES_NEW)
-	public OrderGroupResponse create(Buyer buyer, OrderCreateRequest request) {
+	public OrderGroupResponse create(Buyer requester, OrderCreateRequest request) {
+		// ★ 같은 구매자의 담기를 한 줄로 세운다 (D-077). 이어받기(D-037)와 교체(D-073)는 커밋된 묶음만
+		// 보므로, 더블클릭처럼 거의 동시에 온 두 요청은 서로를 못 보고 홀드를 두 벌 잡았다.
+		// 트랜잭션의 첫 쿼리여야 한다. REPEATABLE READ 의 스냅샷은 첫 일반 SELECT 에서 찍힌다 —
+		// 잠금 앞에서 다른 것을 읽으면 앞 요청이 커밋한 묶음이 뒤의 조회에 안 보인다
+		Buyer buyer = buyerRepository.findByIdForUpdate(requester.getId())
+				.orElseThrow(() -> new BusinessException(ErrorCode.BUYER_NOT_FOUND));
+
+		// 줄을 서는 동안 앞 요청이 같은 것을 담아 커밋했으면 그것을 돌려준다. 교체로 넘어가면
+		// 두 응답의 sessionToken 이 갈려 먼저 받은 쪽이 만료된 세션을 들고 있게 된다
+		Optional<OrderGroupResponse> resumed = checkoutResumer.resume(buyer, request);
+		if (resumed.isPresent()) {
+			return resumed.get();
+		}
+
 		Map<Long, Integer> qtyByOption = mergeQuantities(request);
 		List<ProductOption> options = loadOptions(qtyByOption.keySet().stream().toList());
 		Seller seller = singleSellerOf(options);
