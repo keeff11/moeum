@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import store.moeum.moeum.global.jpa.JpaAuditingConfig;
+import store.moeum.moeum.payment.domain.CapturedAfterFailureException;
 import store.moeum.moeum.payment.domain.PaymentActor;
 import store.moeum.moeum.payment.exception.Point3FailedException;
 import store.moeum.moeum.payment.exception.Point3UncertainException;
@@ -81,8 +82,14 @@ public class PaymentReconcileBatch {
 
 		int handled = 0;
 		for (Long paymentId : pendingIds) {
-			if (reconcile(paymentId)) {
-				handled++;
+			try {
+				if (reconcile(paymentId)) {
+					handled++;
+				}
+			} catch (CapturedAfterFailureException e) {
+				// 집은 뒤 확정 전에 실패로 내려간 건이다 (D-075). 상태는 그대로 두고 사람에게 넘긴다.
+				// FAILED 는 다시 집히지 않으므로 이 알림은 한 번만 나간다
+				alerter.capturedAfterFailure(e.paymentId(), e.sessionId(), PaymentActor.BATCH);
 			}
 		}
 		return handled;

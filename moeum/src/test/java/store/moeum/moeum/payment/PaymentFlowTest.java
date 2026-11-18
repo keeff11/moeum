@@ -11,6 +11,7 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import store.moeum.moeum.global.auth.SessionUser;
 import store.moeum.moeum.global.error.BusinessException;
+import store.moeum.moeum.global.alert.AlertLevel;
 import store.moeum.moeum.global.error.ErrorCode;
 import store.moeum.moeum.global.jpa.JpaAuditingConfig;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -18,13 +19,22 @@ import store.moeum.moeum.order.HoldExpiryBatch;
 import store.moeum.moeum.order.OrderService;
 import store.moeum.moeum.order.dto.OrderCreateRequest;
 import store.moeum.moeum.order.dto.OrderGroupResponse;
+import store.moeum.moeum.payment.domain.CapturedAfterFailureException;
+import store.moeum.moeum.payment.domain.PaymentActor;
 import store.moeum.moeum.payment.dto.PaySessionResponse;
 import store.moeum.moeum.payment.dto.PaymentResultResponse;
 import store.moeum.moeum.support.IntegrationTest;
 import store.moeum.moeum.support.OrderFixture;
+import store.moeum.moeum.support.RecordingAlertSender;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.post;
@@ -77,6 +87,9 @@ class PaymentFlowTest extends IntegrationTest {
 
 	@Autowired
 	private HoldExpiryBatch holdExpiryBatch;
+
+	@Autowired
+	private PaymentPendingAlerter alerter;
 
 	@Autowired
 	private JdbcTemplate jdbcTemplate;
@@ -568,11 +581,112 @@ class PaymentFlowTest extends IntegrationTest {
 				{"id":"%s","status":"captured"}""".formatted(SESSION_ID));
 		PaymentResultResponse result = paymentService.confirm(buyer(), orderToken, SESSION_ID, null);
 
-		assertThat(result.status()).isEqualTo(PaymentResultResponse.Status.PAID);
+		// 이미 CAPTURE_PENDING 이라 confirm 은 승인을 부르지 않고 배치에 맡긴다 (D-075)
+		assertThat(result.status()).isEqualTo(PaymentResultResponse.Status.PENDING);
+		POINT3.verify(0, postRequestedFor(urlPathEqualTo("/capture/v2/" + SESSION_ID)));
+
 		agePending();
-		assertThat(reconcileBatch.reconcileOnce()).isZero();
+		assertThat(reconcileBatch.reconcileOnce()).isEqualTo(1);
+		POINT3.verify(1, postRequestedFor(urlPathEqualTo("/capture/v2/" + SESSION_ID)));
 		assertThat(sold()).isEqualTo(3);
 		assertThat(held()).isZero();
+	}
+
+	// ---------------------------------------------------------------- 승인은 한 곳에서만 부른다 (D-075)
+
+	@Test
+	@DisplayName("승인_결과를_모르는_건에_confirm_이_다시_와도_승인을_또_부르지_않는다")
+	void 진행중_재confirm() {
+		String orderToken = startPayment();
+		stubCapture(500, "{}");
+		paymentService.confirm(buyer(), orderToken, SESSION_ID, null);
+
+		stubCapture(200, """
+				{"id":"%s","status":"captured"}""".formatted(SESSION_ID));
+		PaymentResultResponse retry = paymentService.confirm(buyer(), orderToken, SESSION_ID, null);
+
+		// 다시 부르면 앞선 호출과 겹칠 수 있다. 확정은 배치가 한다
+		assertThat(retry.status()).isEqualTo(PaymentResultResponse.Status.PENDING);
+		POINT3.verify(1, postRequestedFor(urlPathEqualTo("/capture/v2/" + SESSION_ID)));
+		assertThat(paymentStatus()).containsExactly("CAPTURE_PENDING");
+	}
+
+	@Test
+	@DisplayName("confirm_이_동시에_두_번_와도_승인은_한_번만_부른다")
+	void 동시_confirm() throws Exception {
+		String orderToken = startPayment();
+		// 승인이 느리게 돌아오게 해 두 요청이 확실히 겹치게 한다
+		POINT3.stubFor(post(urlPathEqualTo("/capture/v2/" + SESSION_ID))
+				.willReturn(json(200, """
+						{"id":"%s","status":"captured"}""".formatted(SESSION_ID)).withFixedDelay(200)));
+
+		ExecutorService pool = Executors.newFixedThreadPool(2);
+		CountDownLatch start = new CountDownLatch(1);
+		try {
+			Callable<PaymentResultResponse.Status> confirm = () -> {
+				start.await();
+				return paymentService.confirm(buyer(), orderToken, SESSION_ID, null).status();
+			};
+			Future<PaymentResultResponse.Status> a = pool.submit(confirm);
+			Future<PaymentResultResponse.Status> b = pool.submit(confirm);
+			start.countDown();
+
+			assertThat(List.of(a.get(5, TimeUnit.SECONDS), b.get(5, TimeUnit.SECONDS)))
+					.containsExactlyInAnyOrder(PaymentResultResponse.Status.PAID, PaymentResultResponse.Status.PENDING);
+		} finally {
+			pool.shutdownNow();
+		}
+		POINT3.verify(1, postRequestedFor(urlPathEqualTo("/capture/v2/" + SESSION_ID)));
+		assertThat(sold()).isEqualTo(3);
+	}
+
+	@Test
+	@DisplayName("실패로_내려간_결제에_승인_성공이_오면_확정하지_않고_사람에게_알린다")
+	void 실패_뒤_승인_성공() throws Exception {
+		String orderToken = startPayment();
+		POINT3.stubFor(post(urlPathEqualTo("/capture/v2/" + SESSION_ID))
+				.willReturn(json(200, """
+						{"id":"%s","status":"captured"}""".formatted(SESSION_ID)).withFixedDelay(300)));
+
+		RecordingAlertSender sender = new RecordingAlertSender();
+		Object original = ReflectionTestUtils.getField(alerter, "alertSender");
+		ReflectionTestUtils.setField(alerter, "alertSender", sender);
+		ExecutorService pool = Executors.newSingleThreadExecutor();
+		try {
+			Future<PaymentResultResponse> result = pool.submit(
+					() -> paymentService.confirm(buyer(), orderToken, SESSION_ID, null));
+
+			// 승인 응답을 기다리는 사이에 다른 경로가 실패로 내렸다고 친다
+			awaitPaymentStatus("CAPTURE_PENDING");
+			jdbcTemplate.update("UPDATE payment SET status = 'FAILED'");
+
+			// 돈은 나갔다. 실패라고 답하면 구매자가 다시 결제한다
+			assertThat(result.get(5, TimeUnit.SECONDS).status()).isEqualTo(PaymentResultResponse.Status.PENDING);
+		} finally {
+			pool.shutdownNow();
+			ReflectionTestUtils.setField(alerter, "alertSender", original);
+		}
+
+		assertThat(paymentStatus()).containsExactly("FAILED");
+		assertThat(sold()).isZero();
+		assertThat(sender.sent).singleElement()
+				.satisfies(s -> assertThat(s.level()).isEqualTo(AlertLevel.CRITICAL))
+				.satisfies(s -> assertThat(s.text()).contains("point3 에서 승인됐다", SESSION_ID));
+	}
+
+	@Test
+	@DisplayName("확정은_FAILED_에서_CAPTURED_로_올리지_않는다")
+	void 실패_결제는_확정하지_않는다() {
+		String orderToken = startPayment();
+		stubCapture(500, "{}");
+		paymentService.confirm(buyer(), orderToken, SESSION_ID, null);
+		jdbcTemplate.update("UPDATE payment SET status = 'FAILED'");
+		Long paymentId = jdbcTemplate.queryForObject("SELECT id FROM payment", Long.class);
+
+		assertThatThrownBy(() -> paymentWriter.finalizeCapture(paymentId, PaymentActor.BATCH))
+				.isInstanceOf(CapturedAfterFailureException.class);
+		assertThat(paymentStatus()).containsExactly("FAILED");
+		assertThat(sold()).isZero();
 	}
 
 	@Test
@@ -763,6 +877,17 @@ class PaymentFlowTest extends IntegrationTest {
 
 	private OrderCreateRequest order(int qty) {
 		return new OrderCreateRequest(List.of(new OrderCreateRequest.Item(setup.optionId(), qty)));
+	}
+
+	/** 다른 스레드의 confirm 이 CAPTURE_PENDING 을 커밋할 때까지 기다린다 */
+	private void awaitPaymentStatus(String status) throws InterruptedException {
+		long until = System.currentTimeMillis() + 3000;
+		while (!paymentStatus().contains(status)) {
+			if (System.currentTimeMillis() > until) {
+				throw new AssertionError("결제가 " + status + " 가 되지 않았다: " + paymentStatus());
+			}
+			Thread.sleep(10);
+		}
 	}
 
 	private List<String> paymentStatus() {

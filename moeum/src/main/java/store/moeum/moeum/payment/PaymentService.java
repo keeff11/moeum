@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 import store.moeum.moeum.global.auth.SessionUser;
 import store.moeum.moeum.global.error.BusinessException;
 import store.moeum.moeum.global.error.ErrorCode;
+import store.moeum.moeum.payment.domain.CapturedAfterFailureException;
 import store.moeum.moeum.payment.domain.PaymentActor;
 import store.moeum.moeum.payment.domain.PaymentPhase;
 import store.moeum.moeum.payment.dto.PaymentResultResponse;
@@ -55,6 +56,7 @@ public class PaymentService {
 	private final PaymentWriter writer;
 	private final Point3Client point3Client;
 	private final Point3Properties point3Properties;
+	private final PaymentPendingAlerter alerter;
 
 	/**
 	 * 홀드 만료 시 point3 에 구매자 확정을 물어볼지 (D-063). 만료 배치와 같은 스위치다.
@@ -116,12 +118,25 @@ public class PaymentService {
 			return PaymentResultResponse.paid(orderToken);
 		}
 
+		if (pending.inProgress()) {
+			// 앞선 승인 요청의 결과를 아직 모른다 (D-075). 여기서 또 부르면 앞선 호출과 겹칠 수 있어
+			// 대사 배치에 맡긴다. 결과 모름 뒤의 재시도는 배치 주기만큼 늦게 확정된다
+			log.info("승인 진행 중이라 다시 부르지 않는다: paymentId={}", pending.paymentId());
+			return PaymentResultResponse.pending(orderToken);
+		}
+
 		// 여기서부터 CAPTURE_PENDING 이 커밋돼 있다. 서버가 죽어도 대사 배치가 이어받는다
 		try {
 			Point3Capture capture = point3Client.capture(pending.sessionId());
 
 			if (capture.isCaptured()) {
-				writer.finalizeCapture(pending.paymentId(), PaymentActor.USER, payerId);
+				try {
+					writer.finalizeCapture(pending.paymentId(), PaymentActor.USER, payerId);
+				} catch (CapturedAfterFailureException e) {
+					// 승인 호출 사이에 실패로 내려간 결제다. 돈은 나갔으니 실패라고 답하지 않는다
+					alerter.capturedAfterFailure(e.paymentId(), e.sessionId(), PaymentActor.USER);
+					return PaymentResultResponse.pending(orderToken);
+				}
 				return PaymentResultResponse.paid(orderToken);
 			}
 
