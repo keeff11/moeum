@@ -550,6 +550,7 @@
         ["GET /orders/{token} 상태 조회", "부작용 없음 (D-014). 프론트는 조회만 반복한다. D-051 에서 orders[] (폼별 진행 단계 · 옵션 · 금액)와 canceledBy 를 함께 실었다 — 상세(B8)가 이 응답 하나로 화면을 그린다. 상세를 따로 열면 같은 주문을 두 번 조회하고 두 응답의 취소 상태가 어긋난다", "done"],
         ["finalizeCapture 멱등 확정", "실시간과 배치가 같은 메서드를 부른다. 재고 이중 차감 방지", "done"],
         ["승인 대사 배치", "D-005. captured 확정 · committed 재승인 · failed 홀드 해제. SKIP LOCKED. D-074 에서 오래 안 본 건부터 집게 바꿨다 — 미확정이 50건을 넘어도 뒤쪽 건이 막히지 않는다", "done"],
+        ["승인 호출은 한 곳에서만", "D-075. confirm 이 결제 행을 잠그고, CREATED 를 CAPTURE_PENDING 으로 바꾼 요청만 승인을 부른다. 이미 진행 중이면 202 CONFIRMING 만 주고 재승인은 대사 배치가 한다 — 동시 승인 호출이 겹쳐 한쪽이 4xx 를 받으면 출금된 결제를 실패로 내릴 수 있었다. FAILED 에 captured 가 오면 확정하지 않고 CRITICAL 알림", "done"],
         ["payment_event 기록", "전이마다 한 행. 재결제해도 이력이 남는다 (D-023)", "done"],
         ["WireMock 실패 테스트", "로드맵 필수 8종 포함 33개. 타임아웃 · 5xx · processing · 중복 confirm", "done"],
         ["uk_payment_group_phase 재결제 정책", "D-023. 실패한 행을 재사용한다. FAILED 일 때만 — CAPTURE_PENDING 은 절대 덮지 않는다", "done"],

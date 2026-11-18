@@ -7,6 +7,7 @@ import org.springframework.stereotype.Component;
 import store.moeum.moeum.global.alert.AlertCooldown;
 import store.moeum.moeum.global.alert.AlertLevel;
 import store.moeum.moeum.global.alert.AlertSender;
+import store.moeum.moeum.payment.domain.PaymentActor;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -123,6 +124,26 @@ public class PaymentPendingAlerter {
 		if (!delivered) {
 			authCooldown.release(key);
 		}
+	}
+
+	/**
+	 * FAILED 로 내린 결제에 point3 의 captured 가 도착했다 (D-075).
+	 *
+	 * 돈은 빠졌는데 우리 쪽은 실패라 홀드가 풀렸을 수 있다. 자동으로 고칠 수 없다 — 재고가 남아 있으면
+	 * 주문을 되살리고, 이미 남에게 팔렸으면 point3 로 취소해야 한다. 사람이 판단한다.
+	 *
+	 * {@code payment_alert} 선점을 쓰지 않는다. 같은 세션의 미확정 CRITICAL 이 이미 나갔으면 막혀서
+	 * 이 알림이 사라진다. 반복될 수 없는 사건이라(FAILED 는 다시 집히지 않는다) 중복 걱정도 없다.
+	 * 전송이 실패해도 남도록 ERROR 로그를 먼저 남긴다.
+	 */
+	public void capturedAfterFailure(Long paymentId, String sessionId, PaymentActor actor) {
+		log.error("실패 처리된 결제에 승인 성공이 도착했다 — 사람이 처리해야 한다: paymentId={}, sessionId={}, actor={}",
+				paymentId, sessionId, actor);
+		alertSender.send(AlertLevel.CRITICAL, """
+				*[결제] 실패로 처리한 결제가 point3 에서 승인됐다*
+				돈은 빠졌는데 주문은 실패 상태고 홀드가 풀렸을 수 있다. 상태는 건드리지 않았다.
+				재고가 남아 있으면 주문을 되살리고, 이미 팔렸으면 point3 로 취소한다.
+				paymentId=%d, sessionId=%s, 발견=%s""".formatted(paymentId, sessionId, actor));
 	}
 
 	private AlertLevel levelOf(Stuck s, LocalDateTime now) {

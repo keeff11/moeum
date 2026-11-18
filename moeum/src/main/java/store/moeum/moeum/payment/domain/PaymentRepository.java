@@ -17,6 +17,18 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
 
 	Optional<Payment> findByOrderGroupIdAndPhase(Long orderGroupId, PaymentPhase phase);
 
+	/**
+	 * confirm 이 승인을 부를지 정하는 잠금 조회 (D-075).
+	 *
+	 * 잠그지 않으면 거의 동시에 들어온 confirm 둘이 모두 CREATED 를 읽고 각자 CAPTURE_PENDING 으로
+	 * 바꿨다고 믿어 승인을 두 번 부른다. 잠그면 뒤에 온 쪽은 앞쪽 커밋을 기다렸다가
+	 * CAPTURE_PENDING 을 보고 승인을 부르지 않는다.
+	 */
+	@Lock(LockModeType.PESSIMISTIC_WRITE)
+	@Query("select p from Payment p where p.orderGroup.id = :orderGroupId and p.phase = :phase")
+	Optional<Payment> findByOrderGroupIdAndPhaseForUpdate(@Param("orderGroupId") Long orderGroupId,
+	                                                      @Param("phase") PaymentPhase phase);
+
 	Optional<Payment> findBySessionId(String sessionId);
 
 	/**

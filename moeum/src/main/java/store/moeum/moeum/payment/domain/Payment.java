@@ -131,6 +131,7 @@ public class Payment extends BaseTimeEntity {
 	 * 승인을 부르기 직전에 커밋할 상태 (D-004).
 	 *
 	 * 이미 PENDING 이면 그대로 둔다 — confirm 이 두 번 들어와도 한 번만 처리되게 하는 가드다.
+	 * 동시에 들어온 confirm 을 가르려면 호출자가 이 행을 잠근 채로 불러야 한다 (D-075).
 	 *
 	 * @return 이번 호출로 상태가 바뀌었으면 true. false 면 이미 진행 중이라 승인을 또 부르지 않는다
 	 */
@@ -149,11 +150,18 @@ public class Payment extends BaseTimeEntity {
 	/**
 	 * 출금 확정. <b>멱등하다</b> — 실시간 처리와 대사 배치가 같은 건을 확정할 수 있다.
 	 *
+	 * <b>FAILED 에서는 올리지 않는다 (D-075).</b> 실패 처리 때 홀드가 풀렸을 수 있어, 여기서 확정하면
+	 * 이미 남에게 넘어간 재고를 다시 확정하게 된다. 재결제는 CREATED 로 되돌린 뒤에 오므로 이 길을 타지 않는다.
+	 *
 	 * @return 이번 호출로 확정됐으면 true. false 면 이미 확정돼 있어 재고를 또 차감하면 안 된다
+	 * @throws CapturedAfterFailureException FAILED 인 결제에 승인 성공이 왔다. 사람이 처리해야 한다
 	 */
 	public boolean markCaptured() {
 		if (status == PaymentStatus.CAPTURED) {
 			return false;
+		}
+		if (status == PaymentStatus.FAILED) {
+			throw new CapturedAfterFailureException(id, sessionId);
 		}
 		this.status = PaymentStatus.CAPTURED;
 		this.capturedAt = LocalDateTime.now(JpaAuditingConfig.KST);

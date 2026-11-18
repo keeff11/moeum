@@ -264,8 +264,9 @@ public class PaymentWriter {
 			return Pending.alreadyPaid(group.getId());
 		}
 
+		// 잠근다 (D-075). 동시에 온 confirm 중 CREATED 를 CAPTURE_PENDING 으로 바꾼 한 쪽만 승인을 부른다
 		Payment payment = paymentRepository
-				.findByOrderGroupIdAndPhase(group.getId(), phase)
+				.findByOrderGroupIdAndPhaseForUpdate(group.getId(), phase)
 				.orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_NOT_FOUND));
 
 		// ③ 세션 대조 — sessionId 에 서명이 없어 우리가 저장한 값과 비교하는 것이 유일한 검증이다
@@ -276,6 +277,13 @@ public class PaymentWriter {
 
 		if (payment.getStatus() == PaymentStatus.CAPTURED) {
 			return Pending.alreadyPaid(group.getId());
+		}
+
+		// 이미 승인 요청이 나간 건이다 (D-075). 다시 부르면 앞선 호출과 겹칠 수 있다 — 겹친 쪽이 4xx 를
+		// 받으면 다른 쪽이 출금했는데 실패로 내리게 된다. 확정은 대사 배치 한 곳에서만 한다.
+		// 돈을 새로 보내지 않으므로 홀드 검사보다 먼저 돌려준다
+		if (payment.getStatus() == PaymentStatus.CAPTURE_PENDING) {
+			return Pending.inProgress(payment.getId(), group.getId());
 		}
 
 		// ④ 홀드 유효성 — 돈이 나가기 전에 막는다. 만료된 재고로 결제를 받으면 초과 판매다.
@@ -289,13 +297,8 @@ public class PaymentWriter {
 		}
 
 		PaymentStatus before = payment.getStatus();
-		boolean changed = payment.markCapturePending();
-		if (changed) {
-			record(payment, before, PaymentStatus.CAPTURE_PENDING, "승인 요청", PaymentActor.USER);
-		}
-
-		// changed=false 면 이미 진행 중이다. 승인은 멱등하므로 다시 불러도 되지만,
-		// 중복 호출을 줄이려고 그대로 진행한다 — 결과 판정은 어차피 응답을 보고 한다
+		payment.markCapturePending();
+		record(payment, before, PaymentStatus.CAPTURE_PENDING, "승인 요청", PaymentActor.USER);
 		return Pending.ready(payment.getId(), group.getId(), payment.getSessionId());
 	}
 
@@ -676,14 +679,24 @@ public class PaymentWriter {
 	 *
 	 * @param alreadyPaid 이미 확정된 주문이면 true — 승인을 부르지 않고 성공 응답을 준다
 	 */
-	public record Pending(Long paymentId, Long orderGroupId, String sessionId, boolean alreadyPaid) {
+	/**
+	 * confirm 이 다음에 할 일. {@code alreadyPaid} · {@code inProgress} 가 둘 다 false 일 때만 승인을 부른다.
+	 *
+	 * @param inProgress 이미 CAPTURE_PENDING 이다. 승인을 다시 부르지 않고 대사 배치에 맡긴다 (D-075)
+	 */
+	public record Pending(Long paymentId, Long orderGroupId, String sessionId,
+	                      boolean alreadyPaid, boolean inProgress) {
 
 		static Pending ready(Long paymentId, Long orderGroupId, String sessionId) {
-			return new Pending(paymentId, orderGroupId, sessionId, false);
+			return new Pending(paymentId, orderGroupId, sessionId, false, false);
 		}
 
 		static Pending alreadyPaid(Long orderGroupId) {
-			return new Pending(null, orderGroupId, null, true);
+			return new Pending(null, orderGroupId, null, true, false);
+		}
+
+		static Pending inProgress(Long paymentId, Long orderGroupId) {
+			return new Pending(paymentId, orderGroupId, null, false, true);
 		}
 	}
 }
