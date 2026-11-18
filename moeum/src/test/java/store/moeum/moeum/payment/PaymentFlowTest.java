@@ -70,7 +70,9 @@ class PaymentFlowTest extends IntegrationTest {
 	static void point3(DynamicPropertyRegistry registry) {
 		registry.add("moeum.point3.base-url", POINT3::baseUrl);
 		registry.add("moeum.point3.api-token", () -> "test-token");
-		registry.add("moeum.point3.read-timeout", () -> "500ms");
+		// 타임아웃 분기를 보려고 짧게 잡되, 너무 짧으면 안 된다 — 클래스의 첫 요청은 JVM 이 덜 데워져
+		// 500ms 를 넘겨 엉뚱한 테스트가 세션 생성 타임아웃으로 깨졌다 (RefundFlowTest 와 같은 이유)
+		registry.add("moeum.point3.read-timeout", () -> "2s");
 	}
 
 	@Autowired
@@ -196,7 +198,7 @@ class PaymentFlowTest extends IntegrationTest {
 		POINT3.stubFor(post(urlPathEqualTo("/capture/v2/" + SESSION_ID))
 				.willReturn(json(200, """
 						{"id":"%s","status":"captured"}""".formatted(SESSION_ID))
-						.withFixedDelay(2000)));
+						.withFixedDelay(4000)));   // 읽기 타임아웃(2s)보다 길어야 한다
 
 		PaymentResultResponse result = paymentService.confirm(buyer(), orderToken, SESSION_ID, null);
 
