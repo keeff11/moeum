@@ -12,6 +12,7 @@ import org.springframework.test.context.DynamicPropertySource;
 import store.moeum.moeum.global.auth.SessionUser;
 import store.moeum.moeum.global.error.BusinessException;
 import store.moeum.moeum.global.error.ErrorCode;
+import store.moeum.moeum.global.jpa.JpaAuditingConfig;
 import org.springframework.test.util.ReflectionTestUtils;
 import store.moeum.moeum.order.HoldExpiryBatch;
 import store.moeum.moeum.order.OrderService;
@@ -22,6 +23,7 @@ import store.moeum.moeum.payment.dto.PaymentResultResponse;
 import store.moeum.moeum.support.IntegrationTest;
 import store.moeum.moeum.support.OrderFixture;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
@@ -47,6 +49,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class PaymentFlowTest extends IntegrationTest {
 
 	private static final String SESSION_ID = "pymt_sess-019f0000-0000-7000-9000-000000000000";
+	private static final String SESSION_ID_2 = "pymt_sess-019f0000-0000-7000-9000-000000000001";
 	private static final WireMockServer POINT3 = new WireMockServer(wireMockConfig().dynamicPort());
 
 	static {
@@ -68,6 +71,9 @@ class PaymentFlowTest extends IntegrationTest {
 
 	@Autowired
 	private PaymentReconcileBatch reconcileBatch;
+
+	@Autowired
+	private PaymentWriter paymentWriter;
 
 	@Autowired
 	private HoldExpiryBatch holdExpiryBatch;
@@ -363,6 +369,31 @@ class PaymentFlowTest extends IntegrationTest {
 		// 실시간 confirm 이 아직 진행 중일 수 있다
 		assertThat(reconcileBatch.reconcileOnce()).isZero();
 		assertThat(paymentStatus()).containsExactly("CAPTURE_PENDING");
+	}
+
+	@Test
+	@DisplayName("대사_배치는_집어간_건을_줄_뒤로_보내_미확정_건을_돌아가며_본다")
+	void 미확정_건_순환() {
+		Long older = pendingPayment(buyer(), sessionToken, SESSION_ID);
+		fixture.buyerWithAddress("kakao-payer2", "이도윤");
+		SessionUser secondBuyer = new SessionUser("kakao-payer2", "결제자2");
+		String secondToken = orderService.place(secondBuyer, order(2)).sessionToken();
+		Long newer = pendingPayment(secondBuyer, secondToken, SESSION_ID_2);
+
+		// older 가 더 오래 멈춰 있다. updated_at 순이면 한 건씩 집을 때 매번 older 만 나온다
+		jdbcTemplate.update(
+				"UPDATE payment SET updated_at = DATE_SUB(NOW(6), INTERVAL 10 MINUTE) WHERE id = ?", older);
+		jdbcTemplate.update(
+				"UPDATE payment SET updated_at = DATE_SUB(NOW(6), INTERVAL 5 MINUTE) WHERE id = ?", newer);
+		List<LocalDateTime> updatedBefore = updatedAts();
+
+		LocalDateTime threshold = LocalDateTime.now(JpaAuditingConfig.KST).minusMinutes(1);
+		assertThat(paymentWriter.claimPending(threshold, 1)).containsExactly(older);
+		assertThat(paymentWriter.claimPending(threshold, 1)).containsExactly(newer);
+		assertThat(paymentWriter.claimPending(threshold, 1)).containsExactly(older);
+
+		// 멈춤 알림이 updated_at 으로 멈춘 시간을 잰다. 집어갔다고 바뀌면 알림이 울리지 않는다
+		assertThat(updatedAts()).isEqualTo(updatedBefore);
 	}
 
 	// ---------------------------------------------------------------- 만료 시 구매자 확정 확인 (D-063)
@@ -669,11 +700,32 @@ class PaymentFlowTest extends IntegrationTest {
 	}
 
 	private void stubCreateSession() {
+		stubCreateSession(SESSION_ID);
+	}
+
+	private void stubCreateSession(String sessionId) {
 		POINT3.stubFor(post(urlPathEqualTo("/payment/v3/session"))
 				.willReturn(json(200, """
 						{"id":"%s","status":"created","amount":99000,
 						 "supplyAmount":90000,"vat":9000,"taxFreeAmount":0,"currency":"KRW"}
-						""".formatted(SESSION_ID))));
+						""".formatted(sessionId))));
+	}
+
+	/** 승인 호출이 500 으로 끝나 CAPTURE_PENDING 에 남은 결제를 만든다. 결제 id 를 돌려준다 */
+	private Long pendingPayment(SessionUser user, String checkoutToken, String sessionId) {
+		stubCreateSession(sessionId);
+		String orderToken = paymentService.pay(user, checkoutToken).orderToken();
+		POINT3.stubFor(post(urlPathEqualTo("/capture/v2/" + sessionId))
+				.willReturn(json(500, "{}")));
+		paymentService.confirm(user, orderToken, sessionId, null);
+		return jdbcTemplate.queryForObject(
+				"SELECT id FROM payment WHERE session_id = ? AND status = 'CAPTURE_PENDING'",
+				Long.class, sessionId);
+	}
+
+	private List<LocalDateTime> updatedAts() {
+		return jdbcTemplate.queryForList(
+				"SELECT updated_at FROM payment ORDER BY id", LocalDateTime.class);
 	}
 
 	private void stubCapture(int status, String body) {
