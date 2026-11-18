@@ -39,6 +39,7 @@ import store.moeum.moeum.order.StockLedger;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -111,7 +112,7 @@ public class PaymentWriter {
 		}
 
 		return new Prepared(payment.getId(), group.getId(), amount,
-				productNameOf(group), group.getBuyer().getPayerId());
+				productNameOf(group), group.getBuyer().getPayerId(), payment.getSessionId());
 	}
 
 	/**
@@ -158,7 +159,7 @@ public class PaymentWriter {
 		}
 
 		return new Prepared(payment.getId(), group.getId(), amount,
-				productNameOf(group) + " 잔금", group.getBuyer().getPayerId());
+				productNameOf(group) + " 잔금", group.getBuyer().getPayerId(), payment.getSessionId());
 	}
 
 	/**
@@ -174,17 +175,25 @@ public class PaymentWriter {
 	 * 만료 배치는 새 세션을 물어 홀드를 푼다. 실제 출금은 이전 세션으로 일어났는데도.
 	 * 그래서 CREATED 가 아니면 붙이지 않는다. 방금 만든 point3 세션은 아무도 열지 않아 버려진다.
 	 *
+	 * <b>prepare 이후 다른 요청이 먼저 세션을 붙였어도 막는다 (D-077).</b> 결제하기를 두 번 누르면 두 요청이
+	 * 모두 prepare 를 통과하고 각자 세션을 받아 온다. 둘 다 붙이면 나중 것이 이겨서, 프론트가 먼저 받은
+	 * 응답으로 결제창을 열었다면 승인이 SESSION_MISMATCH 로 거절된다. 먼저 붙인 쪽만 남긴다.
+	 *
 	 * @return 이 묶음에 실제로 저장된 orderToken. 프론트에는 반드시 이 값을 내려준다
 	 * @throws BusinessException 그 사이 승인이 시작됐거나 끝났으면 {@link ErrorCode#PAYMENT_IN_PROGRESS}
 	 */
 	@Transactional(propagation = Propagation.REQUIRES_NEW)
-	public String attachSession(Long paymentId, Point3Session session, String orderToken) {
-		Payment payment = paymentRepository.findByIdForUpdate(paymentId)
+	public String attachSession(Prepared prepared, Point3Session session, String orderToken) {
+		Payment payment = paymentRepository.findByIdForUpdate(prepared.paymentId())
 				.orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_NOT_FOUND));
 
 		if (payment.getStatus() != PaymentStatus.CREATED) {
 			log.warn("세션을 만드는 사이 결제가 진행돼 새 세션을 붙이지 않는다: paymentId={}, status={}",
 					payment.getId(), payment.getStatus());
+			throw new BusinessException(ErrorCode.PAYMENT_IN_PROGRESS);
+		}
+		if (!Objects.equals(payment.getSessionId(), prepared.sessionIdAtPrepare())) {
+			log.info("다른 요청이 먼저 세션을 붙였다. 이 세션은 버린다: paymentId={}", payment.getId());
 			throw new BusinessException(ErrorCode.PAYMENT_IN_PROGRESS);
 		}
 
@@ -683,9 +692,11 @@ public class PaymentWriter {
 	 * 세션 생성에 필요한 값. 트랜잭션 밖으로 엔티티를 들고 나가지 않는다.
 	 *
 	 * @param payerId 저장해 둔 결제자 식별값. 없으면 null 이고 프론트가 ANONYMOUS 로 진행한다
+	 * @param sessionIdAtPrepare prepare 때 행에 붙어 있던 sessionId. 첫 결제면 null.
+	 *                           attachSession 이 이 값이 그대로일 때만 새 세션을 붙인다 (D-077)
 	 */
 	public record Prepared(Long paymentId, Long orderGroupId, int amount,
-	                       String productName, String payerId) {
+	                       String productName, String payerId, String sessionIdAtPrepare) {
 	}
 
 	/**

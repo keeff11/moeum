@@ -3,6 +3,8 @@ package store.moeum.moeum.payment;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import store.moeum.moeum.global.auth.SessionUser;
 import store.moeum.moeum.global.error.BusinessException;
@@ -25,6 +27,7 @@ import store.moeum.moeum.payment.infra.Point3SessionStatus;
 
 import java.security.SecureRandom;
 import java.util.Base64;
+import java.util.function.Supplier;
 
 /**
  * 1차금 결제 오케스트레이션.
@@ -73,13 +76,13 @@ public class PaymentService {
 	 * 여기서 재고를 풀면 30분 타이머의 의미가 없어진다.
 	 */
 	public PaySessionResponse pay(SessionUser user, String sessionToken) {
-		PaymentWriter.Prepared prepared = writer.prepareFirst(user.kakaoId(), sessionToken);
+		PaymentWriter.Prepared prepared = prepare(() -> writer.prepareFirst(user.kakaoId(), sessionToken));
 
 		// 트랜잭션 밖이다. point3 가 느려도 DB 락을 잡지 않는다
 		Point3Session session = createSession(prepared);
 
 		// 재결제(창을 닫고 다시 누른 경우)면 처음 발급한 토큰이 돌아온다
-		String orderToken = writer.attachSession(prepared.paymentId(), session, newOrderToken());
+		String orderToken = writer.attachSession(prepared, session, newOrderToken());
 
 		return new PaySessionResponse(session.id(), orderToken, prepared.amount(),
 				point3Properties.clientId(), prepared.payerId());
@@ -219,11 +222,11 @@ public class PaymentService {
 	 * SDK 의 customerKey 로 쓰이는 값이고(point3-api 6절), 있으면 인증 단계가 준다.
 	 */
 	public PaySessionResponse paySecond(SessionUser user, String orderToken) {
-		PaymentWriter.Prepared prepared = writer.prepareSecond(user.kakaoId(), orderToken);
+		PaymentWriter.Prepared prepared = prepare(() -> writer.prepareSecond(user.kakaoId(), orderToken));
 
 		Point3Session session = createSession(prepared);
 
-		writer.attachSession(prepared.paymentId(), session, orderToken);
+		writer.attachSession(prepared, session, orderToken);
 
 		return new PaySessionResponse(session.id(), orderToken, prepared.amount(),
 				point3Properties.clientId(), prepared.payerId());
@@ -232,6 +235,21 @@ public class PaymentService {
 	/** 2차금 승인 확정 */
 	public PaymentResultResponse confirmSecond(SessionUser user, String orderToken, String sessionId) {
 		return confirm(user, orderToken, sessionId, null, PaymentPhase.SECOND);
+	}
+
+	/**
+	 * 결제하기가 동시에 두 번 들어오면 둘 다 "payment 행 없음" 을 보고 만들다가 한쪽이
+	 * {@code uk_payment_group_phase} 에 걸린다 (D-077). 다른 요청이 결제창을 여는 중이라는 뜻이라
+	 * 500 이 아니라 {@link ErrorCode#PAYMENT_IN_PROGRESS} 로 알린다. 이긴 쪽의 세션은 그대로 유효하다.
+	 * 셋 이상이 겹치면 유니크 인덱스 대기가 데드락으로 끝날 수도 있어 잠금 실패도 같이 받는다.
+	 */
+	private static PaymentWriter.Prepared prepare(Supplier<PaymentWriter.Prepared> preparing) {
+		try {
+			return preparing.get();
+		} catch (DataIntegrityViolationException | PessimisticLockingFailureException e) {
+			log.info("결제하기가 동시에 들어와 늦은 쪽을 막는다: {}", e.getMostSpecificCause().getMessage());
+			throw new BusinessException(ErrorCode.PAYMENT_IN_PROGRESS);
+		}
 	}
 
 	/**

@@ -8,9 +8,8 @@ import java.util.Map;
 /**
  * {@code POST /messages/v4/send-many/detail} 요청 본문.
  *
- * @param allowDuplicates 같은 번호로 같은 내용이 중복 접수되는 것을 SOLAPI 쪽에서 막는다.
- *                        <b>false 로 둔다</b> — 릴레이 재시도가 실제로 두 번 나가는 것을
- *                        한 겹 더 막아 준다. 우리 쪽 멱등 가드(outbox 상태 전이)와 이중 방어다
+ * @param allowDuplicates 한 요청 안에 같은 수신번호가 여럿이면 거른다(SOLAPI "중복 수신번호 허용 여부", 오류 1026).
+ *                        false 로 둔다. <b>재시도 중복은 막지 못한다</b> — 재시도는 별개 요청이다 (D-077)
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record SolapiSendRequest(List<Message> messages, boolean allowDuplicates) {

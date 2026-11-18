@@ -810,7 +810,7 @@ class PaymentFlowTest extends IntegrationTest {
 		assertThat(paymentStatus()).containsExactly("CAPTURE_PENDING");
 
 		// 탭 B: point3 세션을 받아 와 붙이려 한다
-		assertThatThrownBy(() -> paymentWriter.attachSession(prepared.paymentId(), otherSession(), "ord_other"))
+		assertThatThrownBy(() -> paymentWriter.attachSession(prepared, otherSession(), "ord_other"))
 				.isInstanceOf(BusinessException.class)
 				.extracting(e -> ((BusinessException) e).errorCode())
 				.isEqualTo(ErrorCode.PAYMENT_IN_PROGRESS);
@@ -832,12 +832,78 @@ class PaymentFlowTest extends IntegrationTest {
 		paymentService.confirm(buyer(), orderToken, SESSION_ID, null);
 
 		// 전에는 묶음 상태 검사(IllegalStateException)에 걸려 500 이었다
-		assertThatThrownBy(() -> paymentWriter.attachSession(prepared.paymentId(), otherSession(), "ord_other"))
+		assertThatThrownBy(() -> paymentWriter.attachSession(prepared, otherSession(), "ord_other"))
 				.isInstanceOf(BusinessException.class)
 				.extracting(e -> ((BusinessException) e).errorCode())
 				.isEqualTo(ErrorCode.PAYMENT_IN_PROGRESS);
 
 		assertThat(paymentStatus()).containsExactly("CAPTURED");
+		assertThat(paymentSessionId()).containsExactly(SESSION_ID);
+	}
+
+	/**
+	 * 재결제에서 결제하기를 두 번 누른 경우 (D-077). 둘 다 prepare 를 통과하고 각자 세션을 받아 온다.
+	 * 나중 것이 덮으면 먼저 받은 응답으로 연 결제창이 SESSION_MISMATCH 로 거절된다.
+	 */
+	@Test
+	@DisplayName("세션을_먼저_붙인_요청만_남고_늦은_요청은_막는다")
+	void 결제하기_두_번() {
+		startPayment();
+		PaymentWriter.Prepared first = paymentWriter.prepareFirst(buyer().kakaoId(), sessionToken);
+		PaymentWriter.Prepared second = paymentWriter.prepareFirst(buyer().kakaoId(), sessionToken);
+
+		paymentWriter.attachSession(first, otherSession(), "ord_first");
+
+		assertThatThrownBy(() -> paymentWriter.attachSession(second, new Point3Session(
+				"pymt_sess-019f0000-0000-7000-9000-000000000002", null, 99000, 90000, 9000, 0, "KRW"), "ord_second"))
+				.isInstanceOf(BusinessException.class)
+				.extracting(e -> ((BusinessException) e).errorCode())
+				.isEqualTo(ErrorCode.PAYMENT_IN_PROGRESS);
+		assertThat(paymentSessionId()).containsExactly(otherSession().id());
+	}
+
+	/**
+	 * 첫 결제하기가 동시에 여러 번 온 경우 (D-077). 전에는 payment 행을 같이 만들다 유니크 키에 걸린 쪽이 500 이었다.
+	 */
+	@Test
+	@DisplayName("첫_결제하기가_동시에_와도_하나만_통과하고_나머지는_진행_중으로_답한다")
+	void 동시_첫_결제하기() throws Exception {
+		POINT3.stubFor(post(urlPathEqualTo("/payment/v3/session"))
+				.willReturn(json(200, """
+						{"id":"%s","status":"created","amount":99000,
+						 "supplyAmount":90000,"vat":9000,"taxFreeAmount":0,"currency":"KRW"}
+						""".formatted(SESSION_ID)).withFixedDelay(500)));
+
+		int threads = 6;
+		ExecutorService pool = Executors.newFixedThreadPool(threads);
+		CountDownLatch start = new CountDownLatch(1);
+		List<String> outcomes = new java.util.ArrayList<>();
+		try {
+			Callable<String> pay = () -> {
+				start.await();
+				try {
+					paymentService.pay(buyer(), sessionToken);
+					return "OK";
+				} catch (BusinessException e) {
+					return e.errorCode().name();
+				}
+			};
+			List<Future<String>> futures = new java.util.ArrayList<>();
+			for (int i = 0; i < threads; i++) {
+				futures.add(pool.submit(pay));
+			}
+			start.countDown();
+			for (Future<String> future : futures) {
+				outcomes.add(future.get(10, TimeUnit.SECONDS));
+			}
+		} finally {
+			pool.shutdownNow();
+		}
+
+		// 500(DataIntegrityViolation)이 섞이면 future.get 이 ExecutionException 으로 터진다
+		assertThat(outcomes).containsOnlyOnce("OK");
+		assertThat(outcomes).filteredOn(o -> !o.equals("OK")).containsOnly(ErrorCode.PAYMENT_IN_PROGRESS.name());
+		assertThat(paymentStatus()).containsExactly("CREATED");
 		assertThat(paymentSessionId()).containsExactly(SESSION_ID);
 	}
 
