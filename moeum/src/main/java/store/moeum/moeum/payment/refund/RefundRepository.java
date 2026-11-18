@@ -3,6 +3,7 @@ package store.moeum.moeum.payment.refund;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import store.moeum.moeum.payment.domain.GroupAmount;
@@ -97,15 +98,35 @@ public interface RefundRepository extends JpaRepository<Refund, Long> {
 	 *
 	 * SKIP LOCKED 로 인스턴스 간 분산하고, 방금 만들어진 건은 제외한다 —
 	 * 실시간 처리가 아직 응답을 기다리는 중일 수 있다.
+	 *
+	 * <b>오래 안 본 순으로 집는다 (D-074).</b> {@code updated_at} 순이면 아직 처리 중인 건이
+	 * 그대로 앞에 남아, 미확정 건이 {@code limit} 을 넘을 때 뒤쪽 건은 차례가 오지 않는다.
+	 * MySQL 은 오름차순에서 NULL 을 먼저 놓으므로 한 번도 안 본 건이 맨 앞이다.
 	 */
 	@Query(value = """
 			SELECT * FROM refund
 			 WHERE status = 'PROCESSING'
 			   AND updated_at <= :threshold
-			 ORDER BY updated_at
+			 ORDER BY reconcile_checked_at, updated_at, id
 			 LIMIT :limit
 			 FOR UPDATE SKIP LOCKED
 			""", nativeQuery = true)
 	List<Refund> findPendingForUpdate(@Param("threshold") LocalDateTime threshold,
 	                                  @Param("limit") int limit);
+
+	/**
+	 * 대사 배치가 집어간 시각을 찍는다 (D-074).
+	 *
+	 * <b>{@code updated_at = updated_at} 을 빼면 안 된다.</b> 컬럼에 {@code ON UPDATE CURRENT_TIMESTAMP}
+	 * 가 걸려 있어 다른 컬럼만 바꿔도 갱신된다. 그러면 집을 때마다 "방금 바뀐 건" 이 되어
+	 * 유예 시간({@code SETTLE_DELAY}) 동안 대사 대상에서 빠진다.
+	 */
+	@Modifying(clearAutomatically = true, flushAutomatically = true)
+	@Query(value = """
+			UPDATE refund
+			   SET reconcile_checked_at = :now,
+			       updated_at = updated_at
+			 WHERE id IN (:ids)
+			""", nativeQuery = true)
+	int markReconcileChecked(@Param("ids") List<Long> ids, @Param("now") LocalDateTime now);
 }

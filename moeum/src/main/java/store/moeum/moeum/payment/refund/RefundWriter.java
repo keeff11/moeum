@@ -177,11 +177,20 @@ public class RefundWriter {
 		refundRepository.findById(refundId).ifPresent(r -> r.attachPoint3Id(point3RefundId));
 	}
 
-	/** 대사 배치가 처리할 미확정 건. 자기호출이면 프록시를 안 타므로 여기 둔다 */
+	/**
+	 * 대사 배치가 처리할 미확정 건. 자기호출이면 프록시를 안 타므로 여기 둔다.
+	 *
+	 * 집은 건에는 같은 트랜잭션에서 집은 시각을 찍는다 (D-074). 결과를 모르고 끝나도
+	 * 다음 회차에는 줄 뒤로 가서, 미확정 건이 {@code limit} 보다 많아도 돌아가며 본다.
+	 */
 	@Transactional(propagation = Propagation.REQUIRES_NEW)
 	public List<Long> claimPending(LocalDateTime threshold, int limit) {
-		return refundRepository.findPendingForUpdate(threshold, limit)
+		List<Long> ids = refundRepository.findPendingForUpdate(threshold, limit)
 				.stream().map(Refund::getId).toList();
+		if (!ids.isEmpty()) {
+			refundRepository.markReconcileChecked(ids, LocalDateTime.now(clock));
+		}
+		return ids;
 	}
 
 	@Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true)

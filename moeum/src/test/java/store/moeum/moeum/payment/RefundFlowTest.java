@@ -407,6 +407,39 @@ class RefundFlowTest extends IntegrationTest {
 		assertThat(refundStatus()).containsExactly("PROCESSING");
 	}
 
+	@Test
+	@DisplayName("대사_배치는_집어간_건을_줄_뒤로_보내_미확정_취소를_돌아가며_본다")
+	void 미확정_취소_순환() {
+		makePending();
+		Long older = jdbcTemplate.queryForObject("SELECT id FROM refund", Long.class);
+		// 같은 결제에 처리 중인 취소를 하나 더 둔다. 집는 순서만 보므로 행만 있으면 된다
+		jdbcTemplate.update("""
+				INSERT INTO refund (payment_id, amount, requested_by, status)
+				VALUES (?, 10000, 'BUYER', 'PROCESSING')
+				""", paymentId);
+		Long newer = jdbcTemplate.queryForObject("SELECT MAX(id) FROM refund", Long.class);
+
+		// older 가 더 오래 멈춰 있다. updated_at 순이면 한 건씩 집을 때 매번 older 만 나온다
+		jdbcTemplate.update("UPDATE refund SET updated_at = ? WHERE id = ?",
+				java.sql.Timestamp.valueOf(java.time.LocalDateTime.of(2026, 9, 8, 11, 50)), older);
+		jdbcTemplate.update("UPDATE refund SET updated_at = ? WHERE id = ?",
+				java.sql.Timestamp.valueOf(java.time.LocalDateTime.of(2026, 9, 8, 11, 55)), newer);
+		List<java.time.LocalDateTime> updatedBefore = refundUpdatedAts();
+
+		java.time.LocalDateTime threshold = java.time.LocalDateTime.of(2026, 9, 8, 11, 59);
+		assertThat(writer.claimPending(threshold, 1)).containsExactly(older);
+		assertThat(writer.claimPending(threshold, 1)).containsExactly(newer);
+		assertThat(writer.claimPending(threshold, 1)).containsExactly(older);
+
+		// 집을 때 updated_at 이 밀리면 유예 시간 동안 대사 대상에서 빠진다
+		assertThat(refundUpdatedAts()).isEqualTo(updatedBefore);
+	}
+
+	private List<java.time.LocalDateTime> refundUpdatedAts() {
+		return jdbcTemplate.queryForList(
+				"SELECT updated_at FROM refund ORDER BY id", java.time.LocalDateTime.class);
+	}
+
 	// ---------------------------------------------------------------- 도우미
 
 	/** PROCESSING 인 취소를 하나 만든다 */

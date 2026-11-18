@@ -5,6 +5,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -135,17 +136,37 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
 	 *
 	 * SKIP LOCKED 로 인스턴스 간 분산하고, 방금 만들어진 건은 제외한다 —
 	 * 실시간 처리가 아직 진행 중일 수 있어 곧바로 끼어들면 승인을 두 번 부른다.
+	 *
+	 * <b>오래 안 본 순으로 집는다 (D-074).</b> {@code updated_at} 순이면 아직 모르는 건이
+	 * 그대로 앞에 남아, 미확정 건이 {@code limit} 을 넘을 때 뒤쪽 건은 차례가 오지 않는다.
+	 * MySQL 은 오름차순에서 NULL 을 먼저 놓으므로 한 번도 안 본 건이 맨 앞이다.
 	 */
 	@Query(value = """
 			SELECT * FROM payment
 			 WHERE status = 'CAPTURE_PENDING'
 			   AND updated_at <= :threshold
-			 ORDER BY updated_at
+			 ORDER BY reconcile_checked_at, updated_at, id
 			 LIMIT :limit
 			 FOR UPDATE SKIP LOCKED
 			""", nativeQuery = true)
 	List<Payment> findPendingForUpdate(@Param("threshold") LocalDateTime threshold,
 	                                   @Param("limit") int limit);
+
+	/**
+	 * 대사 배치가 집어간 시각을 찍는다 (D-074).
+	 *
+	 * <b>{@code updated_at = updated_at} 을 빼면 안 된다.</b> 컬럼에 {@code ON UPDATE CURRENT_TIMESTAMP}
+	 * 가 걸려 있어 다른 컬럼만 바꿔도 갱신된다. 그러면 멈춤 알림이 이 건을 방금 바뀐 건으로 보고
+	 * 울리지 않는다 — {@code updated_at} 은 상태가 바뀐 시각으로만 남아야 한다.
+	 */
+	@Modifying(clearAutomatically = true, flushAutomatically = true)
+	@Query(value = """
+			UPDATE payment
+			   SET reconcile_checked_at = :now,
+			       updated_at = updated_at
+			 WHERE id IN (:ids)
+			""", nativeQuery = true)
+	int markReconcileChecked(@Param("ids") List<Long> ids, @Param("now") LocalDateTime now);
 
 	/**
 	 * 홀드가 만료됐는데 결제창까지 간 1차금 (D-063).

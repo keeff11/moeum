@@ -485,11 +485,18 @@ public class PaymentWriter {
 	 * {@code FOR UPDATE SKIP LOCKED} 가 트랜잭션 없이 실행돼 잠금이 즉시 풀린다.
 	 *
 	 * id 만 꺼내고 트랜잭션을 닫는다 — point3 조회 동안 락을 쥐고 있으면 안 된다.
+	 *
+	 * 집은 건에는 같은 트랜잭션에서 집은 시각을 찍는다 (D-074). 결과를 모르고 끝나도
+	 * 다음 회차에는 줄 뒤로 가서, 미확정 건이 {@code limit} 보다 많아도 돌아가며 본다.
 	 */
 	@Transactional(propagation = Propagation.REQUIRES_NEW)
 	public List<Long> claimPending(LocalDateTime threshold, int limit) {
-		return paymentRepository.findPendingForUpdate(threshold, limit)
+		List<Long> ids = paymentRepository.findPendingForUpdate(threshold, limit)
 				.stream().map(Payment::getId).toList();
+		if (!ids.isEmpty()) {
+			paymentRepository.markReconcileChecked(ids, LocalDateTime.now(JpaAuditingConfig.KST));
+		}
+		return ids;
 	}
 
 	/**
