@@ -13,8 +13,26 @@ public class OutOfStockException extends BusinessException {
 
 	private final Long saleFormId;
 
+	/** 확실히 남은 게 없다고 말할 수 있는 범위. 없으면 null (D-078) */
+	private final SoldOut soldOut;
+
+	/**
+	 * 품절 표시를 세워도 되는 범위. 옵션이 null 이면 폼 전체다.
+	 *
+	 * 수량 1개로 실패했을 때만 만든다 — 2개를 요청해 실패했으면 1개는 남아 있을 수 있다.
+	 * 일시중지로 실패했을 때도 만들지 않는다 — 셀러가 곧 다시 연다.
+	 */
+	public record SoldOut(Long saleFormId, Long optionId) {
+	}
+
 	public OutOfStockException(Long saleFormId, String message) {
 		this(ErrorCode.OUT_OF_STOCK, saleFormId, message);
+	}
+
+	public OutOfStockException(Long saleFormId, String message, SoldOut soldOut) {
+		super(ErrorCode.OUT_OF_STOCK, message);
+		this.saleFormId = saleFormId;
+		this.soldOut = soldOut;
 	}
 
 	/**
@@ -27,9 +45,14 @@ public class OutOfStockException extends BusinessException {
 	public OutOfStockException(ErrorCode errorCode, Long saleFormId, String message) {
 		super(errorCode, message);
 		this.saleFormId = saleFormId;
+		this.soldOut = null;
 	}
 
 	public Long saleFormId() {
 		return saleFormId;
+	}
+
+	public SoldOut soldOut() {
+		return soldOut;
 	}
 }

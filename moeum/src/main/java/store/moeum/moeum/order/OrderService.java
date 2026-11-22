@@ -23,6 +23,7 @@ import store.moeum.moeum.order.domain.StockHold;
 import store.moeum.moeum.order.domain.StockHoldRepository;
 import store.moeum.moeum.order.dto.OrderCreateRequest;
 import store.moeum.moeum.order.dto.OrderGroupResponse;
+import store.moeum.moeum.order.exception.OutOfStockException;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -38,6 +39,7 @@ public class OrderService {
 	private final StockHoldRepository stockHoldRepository;
 	private final StockLedger stockLedger;
 	private final BuyerService buyerService;
+	private final SoldOutCache soldOutCache;
 
 	/**
 	 * 주문 생성 + 재고 홀드.
@@ -60,12 +62,24 @@ public class OrderService {
 			maxAttempts = 3,
 			backoff = @Backoff(delay = 50, multiplier = 2, random = true))
 	public OrderGroupResponse place(SessionUser user, OrderCreateRequest request) {
+		// ★ 품절로 확인된 요청은 DB 커넥션을 받기 전에 돌려보낸다 (D-078). 아래 두 줄이 커넥션을 받는다
+		SoldOutCache.Ticket ticket = soldOutCache.check(user.kakaoId(), request);
+
 		Buyer buyer = buyerService.findOrCreate(user);
 
 		// 로그인 왕복에서 돌아온 뒤 자동 호출이 중복되면 홀드가 두 벌 잡힌다 (D-015 · D-037).
 		// 같은 것을 또 담으라는 요청이면 새로 잡지 않고 이미 잡아 둔 것을 돌려준다
-		return checkoutResumer.resume(buyer, request)
-				.orElseGet(() -> orderCreator.create(buyer, request));
+		OrderGroupResponse response;
+		try {
+			response = checkoutResumer.resume(buyer, request)
+					.orElseGet(() -> orderCreator.create(buyer, request));
+		} catch (OutOfStockException e) {
+			// 트랜잭션이 롤백된 뒤다. DB 가 0행을 돌려준 사실만 남긴다
+			soldOutCache.markSoldOut(ticket, e);
+			throw e;
+		}
+		soldOutCache.rememberHeld(user.kakaoId(), request);
+		return response;
 	}
 
 

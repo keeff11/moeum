@@ -48,7 +48,7 @@ import static store.moeum.moeum.global.jpa.JpaAuditingConfig.KST;
 public class OrderCreator {
 
 	/** 홀드 만료 30분 고정. 실패 지점별로 다르게 두지 않는다 (D-002) */
-	private static final int HOLD_MINUTES = 30;
+	static final int HOLD_MINUTES = 30;
 	private static final String SESSION_TOKEN_PREFIX = "cs_";
 	private static final SecureRandom RANDOM = new SecureRandom();
 
@@ -57,6 +57,7 @@ public class OrderCreator {
 	private final StockHoldRepository stockHoldRepository;
 	/** 재고 확보는 인터페이스로만 부른다. 확보 방식을 바꿀 때 여기는 그대로다 (D-008) */
 	private final StockGuard stockGuard;
+	private final SoldOutCache soldOutCache;
 	private final CheckoutReplacer checkoutReplacer;
 	private final CheckoutResumer checkoutResumer;
 	private final BuyerRepository buyerRepository;
@@ -83,6 +84,8 @@ public class OrderCreator {
 
 		// 판매 폼별로 묶는다. 재고 단위가 폼이라 같은 폼의 여러 옵션은 한 번에 확보해야 한다
 		Map<SaleForm, List<ProductOption>> byForm = groupByForm(options);
+		// 입구의 품절 확인이 옵션의 폼을 DB 없이 알 수 있게 남긴다 (D-078)
+		soldOutCache.rememberForms(byForm);
 
 		// ★ 판매 폼 id 오름차순. 두 구매자가 서로 반대 순서로 잠그면 데드락이 난다
 		List<SaleForm> forms = byForm.keySet().stream()
