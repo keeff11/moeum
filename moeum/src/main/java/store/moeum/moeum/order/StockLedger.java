@@ -43,6 +43,7 @@ public class StockLedger implements StockGuard {
 
 	private final SaleFormRepository saleFormRepository;
 	private final ProductOptionRepository optionRepository;
+	private final SoldOutCache soldOutCache;
 
 	/**
 	 * ★ 재고 확보. 폼 조건부 UPDATE 한 방, 그다음 옵션 조건부 UPDATE 한 방씩.
@@ -67,8 +68,10 @@ public class StockLedger implements StockGuard {
 				throw new OutOfStockException(ErrorCode.SALE_PAUSED, form.getId(),
 						"'" + form.getTitle() + "' 은 판매자가 잠시 판매를 멈췄습니다.");
 			}
+			// 1개로 실패했으면 폼에 남은 게 없다. 품절 표시를 세워도 된다 (D-078)
 			throw new OutOfStockException(form.getId(),
-					"'" + form.getTitle() + "' 의 재고가 부족하거나 판매가 마감되었습니다.");
+					"'" + form.getTitle() + "' 의 재고가 부족하거나 판매가 마감되었습니다.",
+					totalQty == 1 ? new OutOfStockException.SoldOut(form.getId(), null) : null);
 		}
 
 		List<ProductOption> sorted = options.stream()
@@ -80,7 +83,8 @@ public class StockLedger implements StockGuard {
 				log.info("옵션 재고 확보 실패: saleFormId={}, optionId={}, qty={}",
 						form.getId(), option.getId(), qty);
 				throw new OutOfStockException(form.getId(),
-						"'" + form.getTitle() + "' 의 '" + option.getName() + "' 옵션 재고가 부족합니다.");
+						"'" + form.getTitle() + "' 의 '" + option.getName() + "' 옵션 재고가 부족합니다.",
+						qty == 1 ? new OutOfStockException.SoldOut(form.getId(), option.getId()) : null);
 			}
 		}
 	}
@@ -98,6 +102,8 @@ public class StockLedger implements StockGuard {
 						hold.getId(), item.getOption().getId(), item.getQty());
 			}
 		}
+		// 재고 UPDATE 뒤에 건다 — 커밋 직전, 잠금을 쥔 채로 gen 이 오른다 (D-078)
+		soldOutCache.bumpBeforeCommit(hold.getSaleForm().getId());
 		return affected;
 	}
 
@@ -130,6 +136,7 @@ public class StockLedger implements StockGuard {
 						order.getId(), item.getOption().getId(), item.getQty());
 			}
 		}
+		soldOutCache.bumpBeforeCommit(order.getSaleForm().getId());
 		return affected;
 	}
 

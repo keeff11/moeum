@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import store.moeum.moeum.order.SoldOutCache;
 import store.moeum.moeum.global.error.BusinessException;
 import store.moeum.moeum.global.error.ErrorCode;
 import store.moeum.moeum.global.storage.ImageStorage;
@@ -45,6 +46,7 @@ import static store.moeum.moeum.global.jpa.JpaAuditingConfig.KST;
 @RequiredArgsConstructor
 public class SaleFormService {
 
+	private final SoldOutCache soldOutCache;
 	private final SaleFormRepository saleFormRepository;
 	private final OrderRepository orderRepository;
 	private final OutboxRecorder outboxRecorder;
@@ -128,6 +130,8 @@ public class SaleFormService {
 	public SaleFormDetailResponse startSelling(String kakaoId, Long saleFormId) {
 		Seller seller = sellerService.getByKakaoId(kakaoId);
 		SaleForm form = findOwned(seller, saleFormId);
+		// 다시 열기 · 재고 · 마감 변경은 품절 표시를 무효로 만든다. 커밋 직전에 gen 이 오른다 (D-078)
+		soldOutCache.bumpBeforeCommit(form.getId());
 
 		if (!form.isStartable()) {
 			throw new BusinessException(ErrorCode.INVALID_SALE_FORM,
@@ -368,6 +372,8 @@ public class SaleFormService {
 	public SaleFormDetailResponse update(String kakaoId, Long saleFormId, SaleFormUpdate command) {
 		Seller seller = sellerService.getByKakaoId(kakaoId);
 		SaleForm form = findOwned(seller, saleFormId);
+		// 다시 열기 · 재고 · 마감 변경은 품절 표시를 무효로 만든다. 커밋 직전에 gen 이 오른다 (D-078)
+		soldOutCache.bumpBeforeCommit(form.getId());
 
 		// 옵션 재고 모드면 폼 재고는 옵션 합계다. 보낸 값을 쓰지 않는다 (D-054)
 		int stockMax;
@@ -413,6 +419,8 @@ public class SaleFormService {
 	public SaleFormDetailResponse updateOptionStock(String kakaoId, Long saleFormId, Long optionId, int stock) {
 		Seller seller = sellerService.getByKakaoId(kakaoId);
 		SaleForm form = findOwned(seller, saleFormId);
+		// 다시 열기 · 재고 · 마감 변경은 품절 표시를 무효로 만든다. 커밋 직전에 gen 이 오른다 (D-078)
+		soldOutCache.bumpBeforeCommit(form.getId());
 
 		if (!form.hasOptionStock()) {
 			throw new BusinessException(ErrorCode.INVALID_SALE_FORM,
