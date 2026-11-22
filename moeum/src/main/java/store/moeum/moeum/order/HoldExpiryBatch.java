@@ -8,6 +8,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionTemplate;
 import store.moeum.moeum.order.domain.StockHold;
 import store.moeum.moeum.order.domain.StockHoldRepository;
+import store.moeum.moeum.payment.PaymentPendingAlerter;
 import store.moeum.moeum.payment.PaymentWriter;
 import store.moeum.moeum.payment.domain.PaymentPhase;
 import store.moeum.moeum.payment.domain.PaymentRepository;
@@ -42,6 +43,9 @@ import java.util.Set;
  *   타임아웃 · 5xx · 401/403 · unknown  → 모른다. 이번 회차엔 풀지 않는다
  * </pre>
  *
+ * <b>오래 안 물어본 순으로 돌아가며 묻는다 (D-079).</b> 결론이 안 나는 건이 앞자리를 계속 차지하지 않게
+ * 물어본 시각을 찍어 줄 뒤로 보낸다. 결론이 안 난 횟수가 기준을 넘으면 Slack 으로 알린다.
+ *
  * point3 조회는 트랜잭션 밖에서 한다 (CLAUDE.md 규칙 1). 그래서 이 클래스에는 {@code @Transactional}
  * 이 없고, 회수만 {@link TransactionTemplate} 으로 짧게 묶는다.
  */
@@ -61,6 +65,7 @@ public class HoldExpiryBatch {
 	private final PaymentRepository paymentRepository;
 	private final PaymentWriter paymentWriter;
 	private final Point3Client point3Client;
+	private final PaymentPendingAlerter alerter;
 	private final TransactionTemplate transactionTemplate;
 
 	/**
@@ -69,6 +74,13 @@ public class HoldExpiryBatch {
 	 */
 	@Value("${moeum.batch.hold-expiry-point3-check:true}")
 	private boolean point3Check;
+
+	/**
+	 * 결론이 안 난 조회가 이만큼 쌓이면 Slack 으로 알린다 (D-079). 세션마다 한 번이다.
+	 * 1분마다 돌지만 오래 안 본 순으로 돌아가며 묻기 때문에, 밀린 건이 많으면 횟수가 더 천천히 쌓인다.
+	 */
+	@Value("${moeum.alert.hold-check.miss-threshold:5}")
+	private int missAlertThreshold;
 
 	@Scheduled(fixedDelayString = "${moeum.batch.hold-expiry-delay:60000}")
 	public void run() {
@@ -98,25 +110,35 @@ public class HoldExpiryBatch {
 	private Set<Long> checkPayers() {
 		Set<Long> cleared = new HashSet<>();
 		for (PaymentRepository.ExpiredSession row : paymentRepository.findExpiredWithSession(CHECK_SIZE)) {
+			Check check;
+			boolean stop = false;
 			try {
-				if (canRelease(row)) {
-					cleared.add(row.getOrderGroupId());
-				}
+				check = check(row);
 			} catch (Point3UncertainException e) {
 				// point3 가 응답하지 않는다. 남은 건도 타임아웃만 기다릴 것이라 이번 회차는 그만 묻는다 —
 				// 묻지 못한 건은 풀리지 않고, 결제창과 무관한 홀드의 회수는 늦어지지 않는다
 				log.warn("만료 전 point3 조회 실패: paymentId={} — 이번 회차 조회를 멈춘다", row.getPaymentId());
-				break;
+				check = Check.miss("응답 없음 (타임아웃 · 5xx)");
+				stop = true;
 			} catch (RuntimeException e) {
 				// 한 건이 터져도 나머지는 계속 본다. 이 묶음은 이번 회차에 풀지 않는다
 				log.error("만료 전 구매자 확정 확인 실패: paymentId={} — 이번 회차엔 풀지 않는다",
 						row.getPaymentId(), e);
+				check = Check.miss("처리 중 예외 (" + e.getClass().getSimpleName() + ")");
+			}
+
+			if (check.verdict() == Verdict.RELEASE) {
+				cleared.add(row.getOrderGroupId());
+			}
+			record(row, check);
+			if (stop) {
+				break;
 			}
 		}
 		return cleared;
 	}
 
-	private boolean canRelease(PaymentRepository.ExpiredSession row) {
+	private Check check(PaymentRepository.ExpiredSession row) {
 		Point3SessionStatus status;
 		try {
 			status = point3Client.getSession(row.getSessionId()).status();
@@ -124,11 +146,11 @@ public class HoldExpiryBatch {
 			// 404 는 세션이 없다는 뜻, 0 은 토큰이 없다는 뜻이다. 어느 쪽도 결제가 일어났을 수 없다.
 			// 401·403 은 우리 설정 문제라 결제 여부를 모른다
 			if (e.status() == 404 || e.status() == 0) {
-				return true;
+				return Check.RELEASE;
 			}
 			log.error("만료 전 point3 조회 거부: paymentId={}, status={} — 풀지 않는다",
 					row.getPaymentId(), e.status());
-			return false;
+			return Check.miss("조회 거부 (" + e.status() + ")");
 		}
 
 		if (status.isPayerCommitted()) {
@@ -136,10 +158,53 @@ public class HoldExpiryBatch {
 				log.warn("구매자 확정 확인 — 재고를 풀지 않고 승인 대사로 넘긴다: paymentId={}, status={}",
 						row.getPaymentId(), status);
 			}
-			return false;
+			return Check.HANDED_OVER;
+		}
+		if (status == Point3SessionStatus.UNKNOWN) {
+			log.warn("만료 전 point3 조회 결과가 명세에 없는 상태다: paymentId={} — 풀지 않는다", row.getPaymentId());
+			return Check.miss("명세에 없는 상태 (unknown)");
 		}
 		// created · identified · initiated → 구매자가 제때 마치지 않았다. failed · expired → 확정 실패
-		return status != Point3SessionStatus.UNKNOWN;
+		return Check.RELEASE;
+	}
+
+	/**
+	 * 물어본 시각을 찍어 줄 뒤로 보내고, 결론이 안 난 횟수가 기준에 닿으면 알린다 (D-079).
+	 *
+	 * 기록이 실패해도 이번 회차 판단은 그대로 간다 — 줄 순서와 알림이 한 회차 늦어질 뿐이다.
+	 */
+	private void record(PaymentRepository.ExpiredSession row, Check check) {
+		try {
+			int misses = paymentWriter.recordHoldCheck(row.getPaymentId(), check.missed());
+			if (check.missed() && misses >= missAlertThreshold) {
+				alerter.holdCheckStuck(row.getPaymentId(), row.getSessionId(), misses, check.reason());
+			}
+		} catch (RuntimeException e) {
+			log.error("만료 전 조회 기록 실패: paymentId={}", row.getPaymentId(), e);
+		}
+	}
+
+	private enum Verdict {
+		/** 결제가 일어나지 않았다. 푼다 */
+		RELEASE,
+		/** 구매자가 확정했다. 승인 대사로 넘겼다 */
+		HANDED_OVER,
+		/** 모른다. 이번 회차엔 풀지 않는다 */
+		MISS
+	}
+
+	private record Check(Verdict verdict, String reason) {
+
+		static final Check RELEASE = new Check(Verdict.RELEASE, null);
+		static final Check HANDED_OVER = new Check(Verdict.HANDED_OVER, null);
+
+		static Check miss(String reason) {
+			return new Check(Verdict.MISS, reason);
+		}
+
+		boolean missed() {
+			return verdict == Verdict.MISS;
+		}
 	}
 
 	private int release(Set<Long> cleared) {

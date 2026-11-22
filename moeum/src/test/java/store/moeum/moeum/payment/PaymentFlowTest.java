@@ -595,6 +595,114 @@ class PaymentFlowTest extends IntegrationTest {
 		assertThat(held()).isZero();
 	}
 
+	// ---------------------------------------------------------------- 만료 조회 순환 · 알림 (D-079)
+
+	@Test
+	@DisplayName("만료_배치는_물어본_건을_줄_뒤로_보내_결론이_안_나는_건도_돌아가며_묻는다")
+	void 만료_조회_순환() {
+		startPayment();
+		fixture.buyerWithAddress("kakao-payer2", "이도윤");
+		SessionUser secondBuyer = new SessionUser("kakao-payer2", "결제자2");
+		String secondToken = orderService.place(secondBuyer, order(2)).sessionToken();
+		stubCreateSession(SESSION_ID_2);
+		paymentService.pay(secondBuyer, secondToken);
+		expireHolds();
+		List<LocalDateTime> updatedBefore = updatedAts();
+
+		// 5xx 면 한 건만 묻고 회차를 멈춘다. id 순이면 매 회차 첫 번째 세션만 물었다
+		POINT3.stubFor(get(urlPathMatching("/payment/v3/session/.*")).willReturn(json(503, "{}")));
+
+		holdExpiryBatch.expireOnce();
+		holdExpiryBatch.expireOnce();
+		holdExpiryBatch.expireOnce();
+
+		POINT3.verify(2, getRequestedFor(urlPathEqualTo("/payment/v3/session/" + SESSION_ID)));
+		POINT3.verify(1, getRequestedFor(urlPathEqualTo("/payment/v3/session/" + SESSION_ID_2)));
+		assertThat(holdCheckMisses()).containsExactly(2, 1);
+		assertThat(held()).isEqualTo(5);
+		// 나중에 CAPTURE_PENDING 이 되면 멈춤 알림이 updated_at 으로 멈춘 시간을 잰다
+		assertThat(updatedAts()).isEqualTo(updatedBefore);
+	}
+
+	@Test
+	@DisplayName("만료_조회가_기준_횟수만큼_결론이_안_나면_한_번만_알린다")
+	void 만료_조회_알림() {
+		startPayment();
+		expireHolds();
+		POINT3.stubFor(get(urlPathEqualTo("/payment/v3/session/" + SESSION_ID))
+				.willReturn(json(200, """
+						{"id":"%s","status":"something_new"}""".formatted(SESSION_ID))));
+
+		RecordingAlertSender sender = new RecordingAlertSender();
+		Object original = ReflectionTestUtils.getField(alerter, "alertSender");
+		ReflectionTestUtils.setField(alerter, "alertSender", sender);
+		ReflectionTestUtils.setField(holdExpiryBatch, "missAlertThreshold", 2);
+		try {
+			holdExpiryBatch.expireOnce();
+			assertThat(sender.sent).isEmpty();
+
+			holdExpiryBatch.expireOnce();
+			assertThat(sender.sent).hasSize(1);
+			assertThat(sender.sent.get(0).level()).isEqualTo(AlertLevel.WARN);
+			assertThat(sender.sent.get(0).text()).contains("2번", SESSION_ID, "unknown");
+
+			// 세션마다 한 번이다. 매분 울리면 채널이 묻힌다
+			holdExpiryBatch.expireOnce();
+			assertThat(sender.sent).hasSize(1);
+		} finally {
+			ReflectionTestUtils.setField(alerter, "alertSender", original);
+			ReflectionTestUtils.setField(holdExpiryBatch, "missAlertThreshold", 5);
+		}
+		// 모르는 동안은 풀지 않는다
+		assertThat(held()).isEqualTo(3);
+		assertThat(paymentStatus()).containsExactly("CREATED");
+	}
+
+	@Test
+	@DisplayName("만료_조회_알림이_실패하면_다음_회차에_다시_보낸다")
+	void 만료_조회_알림_재시도() {
+		startPayment();
+		expireHolds();
+		POINT3.stubFor(get(urlPathEqualTo("/payment/v3/session/" + SESSION_ID))
+				.willReturn(json(403, "{}")));
+
+		RecordingAlertSender sender = new RecordingAlertSender();
+		sender.succeed = false;
+		Object original = ReflectionTestUtils.getField(alerter, "alertSender");
+		ReflectionTestUtils.setField(alerter, "alertSender", sender);
+		ReflectionTestUtils.setField(holdExpiryBatch, "missAlertThreshold", 1);
+		try {
+			holdExpiryBatch.expireOnce();
+			assertThat(sender.sent).isEmpty();
+
+			sender.succeed = true;
+			holdExpiryBatch.expireOnce();
+			assertThat(sender.sent).hasSize(1);
+			assertThat(sender.sent.get(0).text()).contains("조회 거부 (403)");
+		} finally {
+			ReflectionTestUtils.setField(alerter, "alertSender", original);
+			ReflectionTestUtils.setField(holdExpiryBatch, "missAlertThreshold", 5);
+		}
+	}
+
+	@Test
+	@DisplayName("결론이_난_조회는_횟수를_올리지_않는다")
+	void 만료_조회_결론() {
+		startPayment();
+		expireHolds();
+		stubGetSession("""
+				{"id":"%s","status":"committed"}""".formatted(SESSION_ID));
+
+		holdExpiryBatch.expireOnce();
+
+		assertThat(holdCheckMisses()).containsExactly(0);
+		assertThat(paymentStatus()).containsExactly("CAPTURE_PENDING");
+	}
+
+	private List<Integer> holdCheckMisses() {
+		return jdbcTemplate.queryForList("SELECT hold_check_misses FROM payment ORDER BY id", Integer.class);
+	}
+
 	// ---------------------------------------------------------------- 승인은 한 곳에서만 부른다 (D-075)
 
 	@Test

@@ -185,9 +185,14 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
 	 *
 	 * 만료 배치가 재고를 풀기 전에 point3 에 "구매자가 확정했는가" 를 물어볼 대상이다.
 	 * 잠그지 않는다 — 이 목록을 들고 트랜잭션 밖에서 point3 를 부른다.
+	 *
+	 * <b>오래 안 물어본 순으로 집는다 (D-079).</b> id 순이면 결론이 안 나는 건이 계속 앞자리를 차지해
+	 * {@code limit} 을 넘게 쌓였을 때 뒤쪽 건은 차례가 오지 않는다. NULL(한 번도 안 본 건)이 맨 앞이다.
+	 * DISTINCT 라 정렬 컬럼을 SELECT 에도 둔다.
 	 */
 	@Query(value = """
-			SELECT DISTINCT p.id AS paymentId, p.order_group_id AS orderGroupId, p.session_id AS sessionId
+			SELECT DISTINCT p.id AS paymentId, p.order_group_id AS orderGroupId, p.session_id AS sessionId,
+			       p.hold_checked_at AS holdCheckedAt
 			  FROM stock_hold h
 			  JOIN orders o  ON o.id = h.order_id
 			  JOIN payment p ON p.order_group_id = o.order_group_id
@@ -196,10 +201,29 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
 			   AND p.phase = 'FIRST'
 			   AND p.status = 'CREATED'
 			   AND p.session_id IS NOT NULL
-			 ORDER BY p.id
+			 ORDER BY p.hold_checked_at, p.id
 			 LIMIT :limit
 			""", nativeQuery = true)
 	List<ExpiredSession> findExpiredWithSession(@Param("limit") int limit);
+
+	/**
+	 * 만료 배치가 물어본 시각을 찍고, 결론이 안 났으면 횟수를 올린다 (D-079).
+	 *
+	 * {@code updated_at = updated_at} 은 D-074 와 같은 이유다 — 이 행이 나중에 CAPTURE_PENDING 이 되면
+	 * 멈춤 알림이 {@code updated_at} 으로 멈춘 시간을 잰다.
+	 */
+	@Modifying(clearAutomatically = true, flushAutomatically = true)
+	@Query(value = """
+			UPDATE payment
+			   SET hold_checked_at = :now,
+			       hold_check_misses = hold_check_misses + :miss,
+			       updated_at = updated_at
+			 WHERE id = :id
+			""", nativeQuery = true)
+	int markHoldChecked(@Param("id") Long id, @Param("now") LocalDateTime now, @Param("miss") int miss);
+
+	@Query(value = "SELECT hold_check_misses FROM payment WHERE id = :id", nativeQuery = true)
+	int findHoldCheckMisses(@Param("id") Long id);
 
 	interface ExpiredSession {
 		Long getPaymentId();
