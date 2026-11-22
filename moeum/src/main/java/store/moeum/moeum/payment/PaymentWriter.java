@@ -553,6 +553,21 @@ public class PaymentWriter {
 		return true;
 	}
 
+	/**
+	 * 만료 배치가 point3 에 물어본 결과를 남긴다 (D-079).
+	 *
+	 * 올리기와 읽기를 한 트랜잭션에 둔다. UPDATE 가 행을 잠그므로 인스턴스가 여럿이어도
+	 * 각자 자기가 올린 뒤의 값을 읽는다.
+	 *
+	 * @param missed 풀지도 대사로 넘기지도 못했으면 true
+	 * @return 지금까지 결론이 안 난 횟수
+	 */
+	@Transactional(propagation = Propagation.REQUIRES_NEW)
+	public int recordHoldCheck(Long paymentId, boolean missed) {
+		paymentRepository.markHoldChecked(paymentId, LocalDateTime.now(JpaAuditingConfig.KST), missed ? 1 : 0);
+		return paymentRepository.findHoldCheckMisses(paymentId);
+	}
+
 	/** 대사 배치가 point3 에 물어보기 위해 꺼내는 값 */
 	@Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true)
 	public String sessionIdOf(Long paymentId) {

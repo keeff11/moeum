@@ -26,6 +26,7 @@ import java.util.List;
  *   CAPTURE_PENDING 이 warnAfter(15분) 넘게 남음        → WARN
  *   승인 마감까지 criticalBefore(2시간) 안쪽 · 마감 지남  → CRITICAL (@channel)
  *   point3 가 401 · 403 (우리 쪽 자격증명 문제)          → CRITICAL, 30분에 한 번
+ *   홀드 만료 배치가 N번 물어도 결론이 안 남 (D-079)     → WARN, 세션마다 한 번
  * </pre>
  *
  * <b>같은 건으로 두 번 울리지 않는다.</b> {@code payment_alert (session_id, level)} 유니크에
@@ -42,7 +43,10 @@ public class PaymentPendingAlerter {
 	/** 401 · 403 은 결제마다가 아니라 시스템 단위 장애다. 매분 울리면 채널이 묻힌다 */
 	private static final Duration AUTH_ALERT_COOLDOWN = Duration.ofMinutes(30);
 
-	private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("MM-dd HH:mm");
+	/** 홀드 만료 조회 알림의 선점 키 (D-079). 미확정 알림(WARN · CRITICAL)과 겹치지 않는다 */
+	private static final String HOLD_CHECK = "HOLD_CHECK";
+
+	private static final DateTimeFormatter TIME =DateTimeFormatter.ofPattern("MM-dd HH:mm");
 
 	private final JdbcTemplate jdbcTemplate;
 	private final AlertSender alertSender;
@@ -146,15 +150,37 @@ public class PaymentPendingAlerter {
 				paymentId=%d, sessionId=%s, 발견=%s""".formatted(paymentId, sessionId, actor));
 	}
 
+	/**
+	 * 홀드 만료 배치가 point3 에 여러 번 물었는데도 결론이 안 난 1차금 (D-079).
+	 *
+	 * 그동안 홀드는 풀리지 않는다 — 결과를 모르면 되돌리지 않는다(규칙 3). 돈을 잃는 일은 아니라 WARN 이다.
+	 * 세션마다 한 번만 보낸다. {@code payment_alert} 에 {@code HOLD_CHECK} 로 선점하고, 보내기에 실패하면
+	 * 선점을 지워 다음 회차에 다시 보낸다.
+	 *
+	 * @return 이번 호출로 보냈으면 true
+	 */
+	public boolean holdCheckStuck(Long paymentId, String sessionId, int misses, String lastReason) {
+		return notify(paymentId, sessionId, HOLD_CHECK, AlertLevel.WARN, """
+				*[홀드 만료] point3 에 %d번 물었는데 구매자 확정 여부를 모른다*
+				그동안 이 묶음의 재고는 풀리지 않는다. point3 관리자 화면에서 세션 상태를 확인한다.
+				paymentId=%d, 세션 %s
+				마지막 결과: %s""".formatted(misses, paymentId, sessionId, lastReason));
+	}
+
 	private AlertLevel levelOf(Stuck s, LocalDateTime now) {
 		return now.isBefore(s.deadline().minus(criticalBefore)) ? AlertLevel.WARN : AlertLevel.CRITICAL;
 	}
 
 	/** @return 이번 호출로 보냈으면 true. 이미 보낸 단계거나 전송에 실패했으면 false */
 	private boolean notify(Long paymentId, String sessionId, AlertLevel level, String text) {
+		return notify(paymentId, sessionId, level.name(), level, text);
+	}
+
+	/** @param kind {@code payment_alert.level} 에 들어가는 선점 키. 미확정 알림은 단계 이름이다 */
+	private boolean notify(Long paymentId, String sessionId, String kind, AlertLevel level, String text) {
 		int claimed = jdbcTemplate.update(
 				"INSERT IGNORE INTO payment_alert (payment_id, session_id, level) VALUES (?, ?, ?)",
-				paymentId, sessionId, level.name());
+				paymentId, sessionId, kind);
 		if (claimed == 0) {
 			return false;
 		}
@@ -163,7 +189,7 @@ public class PaymentPendingAlerter {
 			return true;
 		}
 		jdbcTemplate.update("DELETE FROM payment_alert WHERE session_id = ? AND level = ?",
-				sessionId, level.name());
+				sessionId, kind);
 		return false;
 	}
 
