@@ -110,8 +110,9 @@ public class PaymentPendingAlerter {
 	}
 
 	/**
-	 * point3 가 대사 조회를 401 · 403 으로 거부했다. 우리 쪽 토큰 · 설정 문제라
+	 * point3 가 승인 또는 대사 조회를 401 · 403 으로 거부했다. 우리 쪽 토큰 · 설정 문제라
 	 * <b>이대로면 모든 미확정 건이 마감을 넘긴다.</b> 15분을 기다리지 않고 바로 알린다.
+	 * 승인 경로도 이 건들을 CAPTURE_PENDING 으로 남기므로(D-082) 고치면 대사 배치가 이어받는다.
 	 *
 	 * 쿨다운은 인스턴스 메모리에 둔다. 인스턴스마다 한 번씩 울리는 것은 받아들인다.
 	 */
@@ -122,8 +123,9 @@ public class PaymentPendingAlerter {
 		}
 
 		boolean delivered = alertSender.send(AlertLevel.CRITICAL, """
-				*[결제 대사] point3 가 조회를 %d 로 거부한다*
+				*[결제] point3 가 요청을 %d 로 거부한다*
 				자격증명(POINT3_API_TOKEN) · 설정 문제다. 고치기 전까지 모든 미확정 결제가 확정되지 않는다.
+				승인 마감(커밋 다음 날 00:00) 전에 고쳐서 재배포하면 대사 배치가 승인을 다시 부른다.
 				처음 걸린 건: paymentId=%d""".formatted(status, paymentId));
 		if (!delivered) {
 			authCooldown.release(key);
