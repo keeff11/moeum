@@ -29,6 +29,11 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /**
@@ -58,7 +63,8 @@ import java.util.stream.Collectors;
  *       새 gen 을 읽은 요청은 그 잠금을 기다렸다가 복구가 반영된 재고를 본다. 먼저 올리면 복구 전 재고를 보고
  *       새 gen 으로 표시를 세울 수 있다. 커밋 뒤에 올리면 "재고는 있는데 표시는 유효한" 틈이 생긴다.</li>
  * </ol>
- * 그래도 남는 경우(gen 올리기 실패 · 빠뜨린 복구 경로)는 TTL 이 상한이다.
+ * gen 올리기가 실패하면 커밋 직전에 한 번, 커밋 뒤 백그라운드에서 TTL + 1초까지 다시 올린다 (D-080).
+ * 그래도 남는 경우(재시도까지 실패 · 빠뜨린 복구 경로 · 앱을 거치지 않은 DB 수정)는 TTL 이 상한이다.
  *
  * <h3>Redis 장애</h3>
  * 확인이 실패하면 통과시킨다(fail-open). 이 캐시용 연결은 세션과 따로 두고 명령 타임아웃을 짧게 잡는다 —
@@ -75,11 +81,22 @@ public class SoldOutCache implements DisposableBean {
 
 	private static final String SOLD_OUT_MESSAGE = "재고가 부족하거나 판매가 마감되었습니다.";
 
+	/** 커밋 뒤 gen 다시 올리기 간격 (D-080) */
+	static final Duration RETRY_INTERVAL = Duration.ofMillis(200);
+
 	private final boolean enabled;
 	private final Duration ttl;
 	private final Duration heldTtl;
 	private final LettuceConnectionFactory connectionFactory;
 	private final StringRedisTemplate redis;
+	private volatile Function<String, Long> incrementer;
+
+	/** 커밋 뒤 gen 다시 올리기. 요청 스레드를 붙잡지 않으려고 따로 돈다. 한 번에 몇 건뿐이라 스레드 하나로 충분하다 */
+	private final ScheduledExecutorService retrier = Executors.newSingleThreadScheduledExecutor(runnable -> {
+		Thread thread = new Thread(runnable, "sold-out-gen-retry");
+		thread.setDaemon(true);
+		return thread;
+	});
 
 	/** 옵션 → 폼. 옵션이 다른 폼으로 옮겨 가는 일은 없어서 지우지 않는다. 주문 생성에서 채운다 */
 	private final Map<Long, Long> formOfOption = new ConcurrentHashMap<>();
@@ -107,6 +124,7 @@ public class SoldOutCache implements DisposableBean {
 		this.connectionFactory.afterPropertiesSet();
 		this.connectionFactory.start();
 		this.redis = new StringRedisTemplate(connectionFactory);
+		this.incrementer = defaultIncrementer();
 	}
 
 	/** 표시를 세울 때 쓸 gen. 확인을 건너뛰었거나 Redis 를 못 읽었으면 비어 있다 — 그때는 표시를 세우지 않는다 */
@@ -230,21 +248,32 @@ public class SoldOutCache implements DisposableBean {
 	/**
 	 * 재고를 늘리는 UPDATE 를 보낸 <b>뒤에</b> 부른다. 커밋 직전, 행 잠금을 쥔 채로 gen 을 올린다.
 	 *
-	 * 실패하면 넘긴다 — 트랜잭션을 실패시키지 않는다. 남은 틈은 TTL 이 상한이다.
+	 * 실패해도 트랜잭션을 실패시키지 않는다 (D-080). 롤백하면 재고 복구 · 교체 · 환불 완료가 Redis 에 묶인다.
+	 * 대신 두 번에 나눠 다시 올린다.
+	 * <ol>
+	 *   <li>커밋 직전에 곧바로 한 번 더. 잠금을 쥔 채라 틈이 생기지 않는다. 잠금은 실패할 때만 최대 한 번의 타임아웃만큼 더 쥔다</li>
+	 *   <li>그래도 실패면 커밋 뒤 백그라운드에서 {@link #RETRY_INTERVAL} 간격으로, 커밋 뒤 TTL + 1초까지.
+	 *       요청 스레드는 기다리지 않는다</li>
+	 * </ol>
+	 * 모두 실패하면 남은 틈은 TTL 이 상한이다.
 	 * 롤백되면 올리지 않는다. 커밋 직전에 올렸는데 커밋이 실패하면 gen 만 하나 더 올라간다 — DB 에 한 번 더 갈 뿐이다.
+	 * 타임아웃으로 실패한 INCR 이 실제로는 적용됐을 수 있다. 그래서 두 번 오를 수 있는데, 앞서가는 쪽이라 해가 없다.
 	 */
 	public void bumpBeforeCommit(Long saleFormId) {
 		if (!enabled) {
 			return;
 		}
 		if (!TransactionSynchronizationManager.isSynchronizationActive()) {
-			incr(saleFormId);
+			if (!incrTwice(saleFormId)) {
+				retryLater(saleFormId);
+			}
 			return;
 		}
 		@SuppressWarnings("unchecked")
 		Set<Long> pending = (Set<Long>) TransactionSynchronizationManager.getResource(this);
 		if (pending == null) {
 			Set<Long> forms = new LinkedHashSet<>();
+			Set<Long> failed = new LinkedHashSet<>();
 			TransactionSynchronizationManager.bindResource(this, forms);
 			TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
 				@Override
@@ -254,7 +283,17 @@ public class SoldOutCache implements DisposableBean {
 					if (!readOnly && entityManager.isJoinedToTransaction()) {
 						entityManager.flush();
 					}
-					forms.forEach(SoldOutCache.this::incr);
+					for (Long formId : forms) {
+						if (!incrTwice(formId)) {
+							failed.add(formId);
+						}
+					}
+				}
+
+				@Override
+				public void afterCommit() {
+					// 재고 복구가 확정된 뒤에만 다시 올린다. 커밋이 실패했으면 복구도 없었으니 올릴 이유가 없다
+					failed.forEach(SoldOutCache.this::retryLater);
 				}
 
 				@Override
@@ -267,12 +306,57 @@ public class SoldOutCache implements DisposableBean {
 		pending.add(saleFormId);
 	}
 
-	private void incr(Long saleFormId) {
+	/** 커밋 직전 단계. 실패하면 곧바로 한 번 더 */
+	private boolean incrTwice(Long saleFormId) {
+		if (incr(saleFormId)) {
+			return true;
+		}
+		if (incr(saleFormId)) {
+			log.info("품절 gen 올리기 두 번째에 성공: saleFormId={}", saleFormId);
+			return true;
+		}
+		log.warn("품절 gen 올리기 두 번 실패 — 커밋 뒤 다시 시도한다: saleFormId={}", saleFormId);
+		return false;
+	}
+
+	/**
+	 * 커밋 뒤 단계. TTL + 1초까지만 시도한다 — gen 을 못 올려 생기는 틀린 409 는 "복구 전에 확인한 품절 표시" 가
+	 * 살아 있는 동안뿐이고, 그런 표시는 늦어도 커밋 직후에 세워져 TTL 안에 사라진다. 1초는 표시가 늦게 도착할 여유다.
+	 * 그 뒤로는 못 올려도 해가 없다.
+	 */
+	private void retryLater(Long saleFormId) {
+		long deadline = System.nanoTime() + ttl.plusSeconds(1).toNanos();
+		scheduleRetry(saleFormId, deadline, 1, Duration.ZERO);
+	}
+
+	private void scheduleRetry(Long saleFormId, long deadline, int attempt, Duration delay) {
 		try {
-			redis.opsForValue().increment(GEN_FORM + saleFormId);
+			retrier.schedule(() -> {
+				if (incr(saleFormId)) {
+					log.info("품절 gen 올리기 커밋 뒤 {}번째 시도에 성공: saleFormId={}", attempt, saleFormId);
+					return;
+				}
+				if (System.nanoTime() + RETRY_INTERVAL.toNanos() > deadline) {
+					log.warn("품절 gen 올리기 포기({}번 시도) — 남은 품절 표시는 TTL 안에 사라진다: saleFormId={}",
+							attempt, saleFormId);
+					return;
+				}
+				scheduleRetry(saleFormId, deadline, attempt + 1, RETRY_INTERVAL);
+			}, delay.toMillis(), TimeUnit.MILLISECONDS);
+		} catch (RejectedExecutionException e) {
+			// 종료 중이다. 남은 틈은 TTL 이 상한이다
+			log.warn("품절 gen 다시 올리기 예약 실패(종료 중): saleFormId={}", saleFormId);
+		}
+	}
+
+	private boolean incr(Long saleFormId) {
+		try {
+			incrementer.apply(GEN_FORM + saleFormId);
+			return true;
 		} catch (RuntimeException e) {
-			log.warn("품절 gen 올리기 실패(TTL 안에 풀린다): saleFormId={}, {}: {}",
+			log.warn("품절 gen 올리기 실패: saleFormId={}, {}: {}",
 					saleFormId, e.getClass().getSimpleName(), e.getMessage());
+			return false;
 		}
 	}
 
@@ -287,11 +371,21 @@ public class SoldOutCache implements DisposableBean {
 
 	@Override
 	public void destroy() {
+		retrier.shutdownNow();
 		connectionFactory.destroy();
 	}
 
 	/** 테스트용 */
 	Collection<Long> knownOptions() {
 		return formOfOption.keySet();
+	}
+
+	/** 테스트용 — Redis 실패를 흉내 낸다. null 이면 원래대로 */
+	void incrementer(Function<String, Long> incrementer) {
+		this.incrementer = incrementer != null ? incrementer : defaultIncrementer();
+	}
+
+	private Function<String, Long> defaultIncrementer() {
+		return key -> redis.opsForValue().increment(key);
 	}
 }
