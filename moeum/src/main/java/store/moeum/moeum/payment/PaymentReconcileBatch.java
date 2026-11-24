@@ -115,7 +115,7 @@ public class PaymentReconcileBatch {
 				return true;
 			}
 			log.error("대사 조회 거부: paymentId={}, status={} — 확정하지 않는다", paymentId, e.status());
-			if (e.status() == 401 || e.status() == 403) {
+			if (e.isCredentialRejected()) {
 				alerter.point3Rejected(paymentId, e.status());
 			}
 			return false;
@@ -157,6 +157,13 @@ public class PaymentReconcileBatch {
 			}
 			return false;
 		} catch (Point3FailedException e) {
+			if (e.isCredentialRejected()) {
+				// 조회는 통과했는데 승인만 거부됐다 — 권한 범위 문제일 수 있다. 고칠 때까지 기다린다 (D-082)
+				log.error("승인 재시도 자격증명 거부: paymentId={}, status={} — 확정하지 않는다",
+						paymentId, e.status());
+				alerter.point3Rejected(paymentId, e.status());
+				return false;
+			}
 			writer.failConfirmed(paymentId, "승인 재시도 거부(" + e.status() + ")", PaymentActor.BATCH);
 			return true;
 		} catch (Point3UncertainException e) {

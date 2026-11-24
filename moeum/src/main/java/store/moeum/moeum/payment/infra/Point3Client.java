@@ -33,6 +33,7 @@ import java.util.function.Supplier;
  *
  * <pre>
  *   4xx            → Point3FailedException     확정 실패. 되돌려도 안전
+ *                    (401 · 403 은 우리 설정 문제라 호출하는 쪽이 되돌리지 않는다, D-082)
  *   5xx · 타임아웃  → Point3UncertainException  결과 불명. 아무것도 되돌리지 않는다
  * </pre>
  *

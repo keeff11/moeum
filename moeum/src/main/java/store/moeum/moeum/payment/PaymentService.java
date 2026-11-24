@@ -156,6 +156,15 @@ public class PaymentService {
 			return PaymentResultResponse.pending(orderToken);
 
 		} catch (Point3FailedException e) {
+			if (e.isCredentialRejected()) {
+				// 401 · 403. 우리 토큰 · 설정 문제다 (D-082). 승인은 일어나지 않았지만 여기서 실패로
+				// 확정하면 구매자가 확정까지 마친 결제를 우리 설정 때문에 죽이고 재고도 넘긴다.
+				// CAPTURE_PENDING 을 두면 고친 뒤 대사 배치가 committed 를 보고 승인을 다시 부른다
+				log.error("승인 자격증명 거부: paymentId={}, status={} — CAPTURE_PENDING 유지",
+						pending.paymentId(), e.status());
+				alerter.point3Rejected(pending.paymentId(), e.status());
+				return PaymentResultResponse.pending(orderToken);
+			}
 			// 4xx. point3 가 요청을 받아들이지 않았으므로 승인이 일어났을 가능성이 없다
 			log.warn("승인 거부(4xx): paymentId={}, status={}", pending.paymentId(), e.status());
 			writer.failConfirmed(pending.paymentId(), "승인 거부(" + e.status() + ")", PaymentActor.USER);

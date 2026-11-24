@@ -5,12 +5,15 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import store.moeum.moeum.global.auth.SessionUser;
 import store.moeum.moeum.global.error.BusinessException;
+import store.moeum.moeum.global.alert.AlertCooldown;
 import store.moeum.moeum.global.alert.AlertLevel;
 import store.moeum.moeum.global.error.ErrorCode;
 import store.moeum.moeum.global.jpa.JpaAuditingConfig;
@@ -28,6 +31,8 @@ import store.moeum.moeum.support.IntegrationTest;
 import store.moeum.moeum.support.OrderFixture;
 import store.moeum.moeum.support.RecordingAlertSender;
 
+import java.time.Clock;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.concurrent.Callable;
@@ -238,6 +243,81 @@ class PaymentFlowTest extends IntegrationTest {
 		assertThat(held()).isZero();
 		assertThat(sold()).isZero();
 		assertThat(holdStatus()).containsExactly("RELEASED");
+	}
+
+	@ParameterizedTest
+	@ValueSource(ints = {401, 403})
+	@DisplayName("승인이_401_403_이면_실패로_확정하지_않고_CAPTURE_PENDING_을_유지하며_바로_알린다")
+	void 승인_자격증명_거부(int status) {
+		String orderToken = startPayment();
+		stubCapture(status, "{}");
+
+		RecordingAlertSender sender = swapAlertSender();
+		try {
+			PaymentResultResponse result = paymentService.confirm(buyer(), orderToken, SESSION_ID, null);
+
+			// 우리 토큰 · 설정 문제다 (D-082). 고치면 살릴 수 있으니 재고를 넘기지 않는다
+			assertThat(result.status()).isEqualTo(PaymentResultResponse.Status.PENDING);
+			assertThat(paymentStatus()).containsExactly("CAPTURE_PENDING");
+			assertThat(held()).isEqualTo(3);
+			assertThat(holdStatus()).containsExactly("HELD");
+			assertThat(sender.sent).hasSize(1);
+			assertThat(sender.sent.get(0).level()).isEqualTo(AlertLevel.CRITICAL);
+			assertThat(sender.sent.get(0).text()).contains(String.valueOf(status));
+		} finally {
+			restoreAlertSender();
+		}
+	}
+
+	@Test
+	@DisplayName("승인_401_뒤_토큰을_고치면_대사_배치가_승인을_다시_불러_확정한다")
+	void 승인_401_뒤_복구() {
+		String orderToken = startPayment();
+		stubCapture(401, "{}");
+		swapAlertSender();
+		try {
+			paymentService.confirm(buyer(), orderToken, SESSION_ID, null);
+		} finally {
+			restoreAlertSender();
+		}
+
+		// 토큰을 고쳤다. point3 쪽 세션은 구매자 확정 상태로 남아 있다
+		stubGetSession("""
+				{"id":"%s","status":"committed"}""".formatted(SESSION_ID));
+		stubCapture(200, """
+				{"id":"%s","status":"captured"}""".formatted(SESSION_ID));
+		agePending();
+
+		assertThat(reconcileBatch.reconcileOnce()).isEqualTo(1);
+		assertThat(paymentStatus()).containsExactly("CAPTURED");
+		assertThat(groupStatus()).containsExactly("PAID");
+		assertThat(sold()).isEqualTo(3);
+		assertThat(holdStatus()).containsExactly("COMMITTED");
+	}
+
+	@ParameterizedTest
+	@ValueSource(ints = {401, 403})
+	@DisplayName("배치의_승인_재호출이_401_403_이면_실패로_확정하지_않는다")
+	void 배치_승인_재호출_자격증명_거부(int status) {
+		String orderToken = startPayment();
+		stubCapture(500, "{}");
+		paymentService.confirm(buyer(), orderToken, SESSION_ID, null);
+
+		stubGetSession("""
+				{"id":"%s","status":"committed"}""".formatted(SESSION_ID));
+		stubCapture(status, "{}");
+		agePending();
+
+		RecordingAlertSender sender = swapAlertSender();
+		try {
+			assertThat(reconcileBatch.reconcileOnce()).isZero();
+			assertThat(sender.sent).hasSize(1);
+		} finally {
+			restoreAlertSender();
+		}
+		assertThat(paymentStatus()).containsExactly("CAPTURE_PENDING");
+		assertThat(held()).isEqualTo(3);
+		assertThat(holdStatus()).containsExactly("HELD");
 	}
 
 	@Test
@@ -1082,6 +1162,25 @@ class PaymentFlowTest extends IntegrationTest {
 		return aResponse().withStatus(status)
 				.withHeader("Content-Type", "application/json")
 				.withBody(body);
+	}
+
+	private Object originalAlertSender;
+
+	/**
+	 * 알림을 가로챈다. 401 · 403 알림은 인스턴스 메모리 쿨다운(30분)이 있어서
+	 * 앞선 테스트가 울렸으면 막힌다 — 쿨다운도 새로 만든다.
+	 */
+	private RecordingAlertSender swapAlertSender() {
+		RecordingAlertSender sender = new RecordingAlertSender();
+		originalAlertSender = ReflectionTestUtils.getField(alerter, "alertSender");
+		ReflectionTestUtils.setField(alerter, "alertSender", sender);
+		ReflectionTestUtils.setField(alerter, "authCooldown",
+				new AlertCooldown(Duration.ofMinutes(30), Clock.systemUTC()));
+		return sender;
+	}
+
+	private void restoreAlertSender() {
+		ReflectionTestUtils.setField(alerter, "alertSender", originalAlertSender);
 	}
 
 	/** 배치의 유예 시간(1분)을 지나게 만든다 */
