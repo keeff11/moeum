@@ -19,4 +19,12 @@ public interface BuyerRepository extends JpaRepository<Buyer, Long> {
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	@Query("select b from Buyer b where b.id = :id")
 	Optional<Buyer> findByIdForUpdate(@Param("id") Long id);
+
+	/**
+	 * 결제자 식별값을 저장하기 전에 잡는 잠금 (D-084). <b>기다리지 않는다.</b>
+	 * 같은 구매자의 다른 탭 주문이 회원 행을 쥐고 있으면 바로 실패한다 —
+	 * 결제는 이미 확정됐으니 결제 응답을 붙잡으면서까지 저장할 값이 아니다.
+	 */
+	@Query(value = "SELECT id FROM buyer WHERE id = :id FOR UPDATE NOWAIT", nativeQuery = true)
+	Optional<Long> lockNowait(@Param("id") Long id);
 }

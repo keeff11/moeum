@@ -7,7 +7,9 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import store.moeum.moeum.global.error.BusinessException;
 import store.moeum.moeum.global.error.ErrorCode;
+import store.moeum.moeum.buyer.domain.Buyer;
 import store.moeum.moeum.buyer.domain.BuyerAddress;
+import store.moeum.moeum.buyer.domain.BuyerRepository;
 import store.moeum.moeum.cart.CartCleaner;
 import store.moeum.moeum.buyer.domain.BuyerAddressRepository;
 import store.moeum.moeum.buyer.domain.BuyerRefundAccountRepository;
@@ -69,6 +71,7 @@ public class PaymentWriter {
 	private final RefundRepository refundRepository;
 	private final ShippingRepository shippingRepository;
 	private final BuyerAddressRepository buyerAddressRepository;
+	private final BuyerRepository buyerRepository;
 	private final BuyerRefundAccountRepository refundAccountRepository;
 
 	/**
@@ -335,15 +338,6 @@ public class PaymentWriter {
 	 */
 	@Transactional(propagation = Propagation.REQUIRES_NEW)
 	public boolean finalizeCapture(Long paymentId, PaymentActor actor) {
-		return finalizeCapture(paymentId, actor, null);
-	}
-
-	/**
-	 * @param payerId point3 가 준 결제자 식별값. 2차금 때 인증 단계를 줄이는 데 쓴다.
-	 *                받은 문자열 그대로 저장하고, 이미 값이 있으면 덮어쓰지 않는다 (point3-api 5절)
-	 */
-	@Transactional(propagation = Propagation.REQUIRES_NEW)
-	public boolean finalizeCapture(Long paymentId, PaymentActor actor, String payerId) {
 		Payment payment = paymentRepository.findByIdForUpdate(paymentId)
 				.orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_NOT_FOUND));
 
@@ -361,8 +355,9 @@ public class PaymentWriter {
 				commitHolds(group);
 				clearOrderedCartItems(group);
 			}
-			// 1차금에서만 받아 둔다. 2차금은 이 값을 쓰는 쪽이다
-			group.getBuyer().rememberPayerId(payerId);
+			// 회원 행은 여기서 건드리지 않는다 — payerId 는 커밋 뒤 rememberPayerId 가 따로 저장한다 (D-084).
+			// 이 트랜잭션이 주문서를 쥔 채 회원 행을 기다리면, 회원 행을 먼저 잡는 같은 구매자의
+			// 새 주문(OrderCreator, D-077)과 교착된다
 			notify(group, OutboxEventType.ORDER_PAID, payment.getAmount());
 		} else {
 			// 2차금은 홀드 확정이 없다 — 재고는 1차금에서 이미 확정됐다
@@ -370,6 +365,30 @@ public class PaymentWriter {
 			notify(group, OutboxEventType.SECOND_PAID, payment.getAmount());
 		}
 		return true;
+	}
+
+	/**
+	 * 1차금 확정이 커밋된 뒤 결제자 식별값을 따로 저장한다 (D-084). 2차금 때 인증 단계를 줄이는 데 쓴다.
+	 * 받은 문자열 그대로 저장하고, 이미 값이 있으면 덮어쓰지 않는다 (point3-api 5절).
+	 *
+	 * 확정 트랜잭션과 나눈 이유는 잠금 순서다. 이 트랜잭션은 회원 행 하나만 잡으므로 교착 고리를 만들 수 없다.
+	 * 회원 행을 다른 트랜잭션이 쥐고 있으면 기다리지 않고 바로 실패한다 — 호출자는 로그만 남긴다.
+	 * 저장되지 않으면 2차금에서 본인인증을 한 번 더 할 뿐이다.
+	 *
+	 * @return 이번 호출로 저장됐으면 true
+	 */
+	@Transactional(propagation = Propagation.REQUIRES_NEW)
+	public boolean rememberPayerId(Long paymentId, String payerId) {
+		if (payerId == null || payerId.isBlank()) {
+			return false;
+		}
+		Long buyerId = paymentRepository.findBuyerIdById(paymentId)
+				.orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_NOT_FOUND));
+		buyerRepository.lockNowait(buyerId);
+		// 잠근 뒤에 읽는다. 비어 있을 때만 채우는 판단이 잠금 안에서 일어난다
+		Buyer buyer = buyerRepository.findById(buyerId)
+				.orElseThrow(() -> new IllegalStateException("결제의 구매자가 없다: buyerId=" + buyerId));
+		return buyer.rememberPayerId(payerId);
 	}
 
 	/**
