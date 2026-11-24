@@ -4,7 +4,10 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import store.moeum.moeum.global.auth.SessionUser;
 import store.moeum.moeum.global.error.BusinessException;
 import store.moeum.moeum.global.error.ErrorCode;
@@ -43,6 +46,9 @@ class CheckoutReplaceTest extends IntegrationTest {
 
 	@Autowired
 	private OrderFixture fixture;
+
+	@Autowired
+	private PlatformTransactionManager transactionManager;
 
 	@BeforeEach
 	void setUp() {
@@ -192,6 +198,62 @@ class CheckoutReplaceTest extends IntegrationTest {
 	}
 
 	/**
+	 * 탭 1 의 결제 확정이 커밋되기 직전에 탭 2 가 같은 폼을 다시 담은 경우 (D-085).
+	 * 탭 2 는 커밋 전 상태(홀드 HELD)를 보고 이 묶음을 교체 대상으로 골라 잠금을 기다린다.
+	 * 잠금을 얻었을 때는 이미 판매 확정이라 이 폼을 잡고 있지 않다 — 막을 이유가 없다.
+	 */
+	@Test
+	@DisplayName("잠금을_기다리는_사이_결제가_확정된_묶음은_막지_않고_건너뛴다")
+	void 확정과_겹친_교체는_건너뛴다() throws Exception {
+		OrderFixture.Setup setup = fixture.saleForm(10, null);
+		SessionUser user = buyer("kakao-settled");
+		OrderGroupResponse paid = orderService.place(user, order(setup.optionId(), 2));
+		openPayment(paid.sessionToken());
+
+		// 탭 1: finalizeCapture 와 같은 순서로 묶음을 잠그고 홀드를 판매 확정한 채 커밋 직전에 멈춘다
+		CountDownLatch finalizing = new CountDownLatch(1);
+		CountDownLatch commit = new CountDownLatch(1);
+		ExecutorService tab1 = Executors.newSingleThreadExecutor();
+		Future<?> finalize = tab1.submit(() -> new TransactionTemplate(transactionManager)
+				.executeWithoutResult(status -> {
+					jdbcTemplate.queryForList("SELECT id FROM order_group WHERE session_token = ? FOR UPDATE",
+							paid.sessionToken());
+					settle(paid.sessionToken(), setup, 2);
+					finalizing.countDown();
+					try {
+						commit.await(20, TimeUnit.SECONDS);
+					} catch (InterruptedException e) {
+						Thread.currentThread().interrupt();
+					}
+				}));
+		ExecutorService tab2 = Executors.newSingleThreadExecutor();
+		try {
+			assertThat(finalizing.await(5, TimeUnit.SECONDS)).isTrue();
+
+			// 탭 2: 수량을 바꿔 다시 담는다. 커밋 전이라 이전 묶음이 HELD 로 보여 그 잠금을 기다린다
+			Future<OrderGroupResponse> second = tab2.submit(() -> orderService.place(user, order(setup.optionId(), 3)));
+			awaitOrderHoldingBuyer("kakao-settled");
+			assertThat(second.isDone()).as("탭 2 는 이전 묶음의 잠금을 기다리는 중이어야 한다").isFalse();
+			commit.countDown();
+			finalize.get(10, TimeUnit.SECONDS);
+
+			OrderGroupResponse replaced = second.get(10, TimeUnit.SECONDS);
+			assertThat(replaced.sessionToken()).isNotEqualTo(paid.sessionToken());
+		} finally {
+			commit.countDown();
+			tab1.shutdownNow();
+			tab2.shutdownNow();
+		}
+
+		// 결제된 묶음은 그대로고, 새 홀드만 더해졌다
+		assertThat(groupStatus(paid.sessionToken())).isEqualTo("PAID");
+		assertThat(holdStatus(paid.sessionToken())).containsExactly("COMMITTED");
+		assertThat(formHeld(setup)).isEqualTo(3);
+		assertThat(jdbcTemplate.queryForObject(
+				"SELECT sold FROM sale_form WHERE id = ?", Integer.class, setup.saleFormId())).isEqualTo(2);
+	}
+
+	/**
 	 * 담기 버튼을 여러 번 누른 경우 (D-077). 이어받기와 교체는 커밋된 묶음만 보므로, 구매자 단위로
 	 * 줄을 세우기 전에는 동시에 온 요청이 서로를 못 보고 각자 홀드를 잡았다.
 	 */
@@ -265,6 +327,39 @@ class CheckoutReplaceTest extends IntegrationTest {
 						SELECT id, 'FIRST', ?, deposit1_total, 0, 'CREATED' FROM order_group WHERE session_token = ?
 						""",
 				"pymt_" + System.nanoTime(), sessionToken);
+	}
+
+	/** 결제 확정이 하는 쓰기를 SQL 로 한다: 홀드 판매 확정, 재고 held → sold, 묶음 PAID */
+	private void settle(String sessionToken, OrderFixture.Setup setup, int qty) {
+		jdbcTemplate.update("""
+				UPDATE stock_hold h
+				  JOIN orders o ON o.id = h.order_id
+				  JOIN order_group g ON g.id = o.order_group_id
+				   SET h.status = 'COMMITTED'
+				 WHERE g.session_token = ?
+				""", sessionToken);
+		jdbcTemplate.update("UPDATE sale_form SET held = held - ?, sold = sold + ? WHERE id = ?",
+				qty, qty, setup.saleFormId());
+		jdbcTemplate.update("UPDATE product_option SET held = held - ?, sold = sold + ? WHERE id = ?",
+				qty, qty, setup.optionId());
+		jdbcTemplate.update("UPDATE order_group SET status = 'PAID' WHERE session_token = ?", sessionToken);
+	}
+
+	/**
+	 * 주문 생성이 회원 행을 잡을 때까지 기다린다 (D-077 의 첫 쿼리). 테스트 계정은 innodb_trx 를 못 봐서
+	 * 회원 행을 NOWAIT 로 찔러 본다. 잡힌 뒤 묶음 잠금 대기에 들어갈 시간을 조금 더 준다
+	 */
+	private void awaitOrderHoldingBuyer(String kakaoId) throws InterruptedException {
+		for (int i = 0; i < 100; i++) {
+			try {
+				jdbcTemplate.queryForList("SELECT id FROM buyer WHERE kakao_id = ? FOR UPDATE NOWAIT", kakaoId);
+			} catch (DataAccessException held) {
+				Thread.sleep(500);
+				return;
+			}
+			Thread.sleep(50);
+		}
+		throw new AssertionError("주문 생성이 회원 행을 잡지 않았다");
 	}
 
 	private int formHeld(OrderFixture.Setup setup) {
