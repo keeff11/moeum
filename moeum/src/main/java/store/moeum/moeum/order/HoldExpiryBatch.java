@@ -18,6 +18,7 @@ import store.moeum.moeum.payment.exception.Point3UncertainException;
 import store.moeum.moeum.payment.infra.Point3Client;
 import store.moeum.moeum.payment.infra.Point3SessionStatus;
 
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -208,7 +209,12 @@ public class HoldExpiryBatch {
 	}
 
 	private int release(Set<Long> cleared) {
-		List<StockHold> expired = stockHoldRepository.findExpiredForUpdate(BATCH_SIZE);
+		// 고르기는 오래된 홀드부터(홀드 id 순), 재고 고치기는 판매 폼 id 순이다 (D-086).
+		// 한 회차에 여러 폼의 재고를 고치므로, 주문 생성(판매 폼 id 오름차순)과 순서가 엇갈리면 교착이 난다
+		List<StockHold> expired = stockHoldRepository.findExpiredForUpdate(BATCH_SIZE).stream()
+				.sorted(Comparator.comparing((StockHold hold) -> hold.getSaleForm().getId())
+						.thenComparing(StockHold::getId))
+				.toList();
 
 		int released = 0;
 		for (StockHold hold : expired) {

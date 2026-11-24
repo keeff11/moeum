@@ -11,14 +11,20 @@ import java.util.List;
 
 public interface StockHoldRepository extends JpaRepository<StockHold, Long> {
 
-	List<StockHold> findByOrderIdIn(List<Long> orderIds);
+	/**
+	 * <b>판매 폼 id 순이다</b> (D-086). 호출자가 이 순서대로 재고 행(판매 폼 → 옵션)을 고친다.
+	 * 주문 생성이 판매 폼을 id 오름차순으로 잠그므로, 홀드 id 순으로 고치면 두 홀드의 순서가 엇갈릴 때 교착이 난다.
+	 */
+	@Query("select h from StockHold h where h.order.id in :orderIds order by h.saleForm.id, h.id")
+	List<StockHold> findByOrderIdIn(@Param("orderIds") List<Long> orderIds);
 
 	/**
 	 * 만료 배치와 겨루는 자리에서 쓴다 (D-063). 배치는 SKIP LOCKED 라 이쪽이 먼저 잡으면 건너뛰고,
 	 * 배치가 먼저 잡았으면 기다렸다가 RELEASED 를 본다.
+	 * 순서는 {@link #findByOrderIdIn} 과 같은 판매 폼 id 순이다 (D-086).
 	 */
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
-	@Query("select h from StockHold h where h.order.id in :orderIds order by h.id")
+	@Query("select h from StockHold h where h.order.id in :orderIds order by h.saleForm.id, h.id")
 	List<StockHold> findByOrderIdInForUpdate(@Param("orderIds") List<Long> orderIds);
 
 	/**

@@ -25,6 +25,7 @@ import java.security.SecureRandom;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.Base64;
+import java.util.Comparator;
 import java.util.List;
 
 /**
@@ -138,7 +139,11 @@ public class RefundWriter {
 			return;
 		}
 
-		List<Order> targets = targetsOf(refund, payment);
+		// 판매 폼 id 순으로 되돌린다 — 재고 행을 주문 생성과 같은 순서로 잠근다 (D-086)
+		List<Order> targets = targetsOf(refund, payment).stream()
+				.sorted(Comparator.comparing((Order order) -> order.getSaleForm().getId())
+						.thenComparing(Order::getId))
+				.toList();
 		LocalDateTime now = LocalDateTime.now(clock);
 		targets.forEach(this::restoreOne);
 		targets.forEach(order -> order.cancel(now));
