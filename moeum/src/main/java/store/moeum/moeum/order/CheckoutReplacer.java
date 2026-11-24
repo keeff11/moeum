@@ -68,13 +68,28 @@ public class CheckoutReplacer {
 			if (group == null) {
 				continue;
 			}
+			// 홀드도 잠그고 다시 본다 (D-085). 위의 id 조회는 잠금 없이 읽어 다른 트랜잭션의 커밋 전 상태를 봤다.
+			// 잠금을 기다리는 사이 결제 확정 · 만료 · 이탈 해제가 커밋됐으면 이 묶음은 이 폼을 더 잡고 있지 않다.
+			// 그런 묶음을 "결제 진행 중" 으로 막으면, 결제를 막 마친 구매자의 새 주문이 이유 없이 튕긴다
+			List<StockHold> holds = holdsOf(group);
+			if (holds.stream().noneMatch(hold -> hold.isHeld() && formIds.contains(hold.getSaleForm().getId()))) {
+				log.info("잠금을 기다리는 사이 이 폼을 놓은 묶음이라 건너뛴다: buyerId={}, orderGroupId={}, status={}",
+						buyer.getId(), group.getId(), group.getStatus());
+				continue;
+			}
 			if (!isReplaceable(group)) {
 				log.info("결제 진행 중인 묶음이 있어 새로 담지 않는다: buyerId={}, orderGroupId={}, status={}",
 						buyer.getId(), group.getId(), group.getStatus());
 				throw new BusinessException(ErrorCode.CHECKOUT_PAYMENT_IN_PROGRESS);
 			}
-			release(group);
+			release(group, holds);
 		}
+	}
+
+	/** 묶음의 홀드를 id 순으로 잠근다. 결제 확정과 같은 순서(묶음 → 홀드)다 */
+	private List<StockHold> holdsOf(OrderGroup group) {
+		List<Long> orderIds = group.getOrders().stream().map(Order::getId).toList();
+		return orderIds.isEmpty() ? List.of() : stockHoldRepository.findByOrderIdInForUpdate(orderIds);
 	}
 
 	/** 아직 결제창을 연 적이 없는 묶음만 갈아 끼울 수 있다 */
@@ -84,16 +99,12 @@ public class CheckoutReplacer {
 	}
 
 	/**
-	 * 홀드를 잠그고 푼다. 만료 배치는 SKIP LOCKED 라 겹치면 한쪽만 처리하고,
+	 * 잠가 둔 홀드({@link #holdsOf})를 푼다. 만료 배치는 SKIP LOCKED 라 겹치면 한쪽만 처리하고,
 	 * 이미 RELEASED 면 {@link StockHold#release()} 가 false 라 재고가 두 번 돌아가지 않는다.
 	 */
-	private void release(OrderGroup group) {
-		List<Long> orderIds = group.getOrders().stream().map(Order::getId).toList();
-		if (orderIds.isEmpty()) {
-			return;
-		}
+	private void release(OrderGroup group, List<StockHold> holds) {
 		int released = 0;
-		for (StockHold hold : stockHoldRepository.findByOrderIdInForUpdate(orderIds)) {
+		for (StockHold hold : holds) {
 			if (!hold.release()) {
 				continue;
 			}
