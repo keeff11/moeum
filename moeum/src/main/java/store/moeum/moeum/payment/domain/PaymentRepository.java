@@ -140,6 +140,10 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
 	@Query("select p from Payment p where p.id = :id")
 	Optional<Payment> findByIdForUpdate(@Param("id") Long id);
 
+	/** 결제의 구매자 id 만 읽는다. 엔티티를 올리지 않아 뒤따르는 잠금 조회가 옛 값을 보지 않는다 */
+	@Query("select p.orderGroup.buyer.id from Payment p where p.id = :id")
+	Optional<Long> findBuyerIdById(@Param("id") Long id);
+
 	/**
 	 * 대사 배치가 집어갈 미확정 건 (D-005).
 	 *

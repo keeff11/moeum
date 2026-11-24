@@ -11,6 +11,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import store.moeum.moeum.global.auth.SessionUser;
 import store.moeum.moeum.global.error.BusinessException;
 import store.moeum.moeum.global.alert.AlertCooldown;
@@ -101,6 +103,9 @@ class PaymentFlowTest extends IntegrationTest {
 
 	@Autowired
 	private JdbcTemplate jdbcTemplate;
+
+	@Autowired
+	private PlatformTransactionManager transactionManager;
 
 	@Autowired
 	private OrderFixture fixture;
@@ -285,6 +290,77 @@ class PaymentFlowTest extends IntegrationTest {
 		stubGetSession("""
 				{"id":"%s","status":"committed"}""".formatted(SESSION_ID));
 		stubCapture(200, """
+				{"id":"%s","status":"captured"}""".formatted(SESSION_ID));
+		agePending();
+
+		assertThat(reconcileBatch.reconcileOnce()).isEqualTo(1);
+		assertThat(paymentStatus()).containsExactly("CAPTURED");
+		assertThat(groupStatus()).containsExactly("PAID");
+		assertThat(sold()).isEqualTo(3);
+		assertThat(holdStatus()).containsExactly("COMMITTED");
+	}
+
+	@Test
+	@DisplayName("확정은_회원_행을_건드리지_않아_다른_탭이_회원_행을_쥐고_있어도_바로_끝난다")
+	void 확정_회원_잠금_무관() throws Exception {
+		String orderToken = startPayment();
+		stubCapture(200, """
+				{"id":"%s","status":"captured"}""".formatted(SESSION_ID));
+
+		// 다른 탭의 새 주문이 회원 행을 쥐고 있다 — OrderCreator 의 첫 쿼리와 같은 잠금이다 (D-077).
+		// 예전엔 확정이 주문서를 쥔 채 이 행을 기다렸고, 그 탭이 주문서를 기다리면 교착이었다 (D-084)
+		PaymentResultResponse result = whileLocked(
+				"SELECT id FROM buyer WHERE kakao_id = ? FOR UPDATE", "kakao-payer", () -> {
+					long started = System.nanoTime();
+					PaymentResultResponse r = paymentService.confirm(buyer(), orderToken, SESSION_ID, "payer-first");
+					// 테스트 MySQL 의 락 대기 한도는 5초다. 기다렸다면 그만큼 걸린다
+					assertThat(Duration.ofNanos(System.nanoTime() - started)).isLessThan(Duration.ofSeconds(3));
+					return r;
+				});
+
+		assertThat(result.status()).isEqualTo(PaymentResultResponse.Status.PAID);
+		assertThat(paymentStatus()).containsExactly("CAPTURED");
+		assertThat(groupStatus()).containsExactly("PAID");
+		assertThat(sold()).isEqualTo(3);
+		assertThat(holdStatus()).containsExactly("COMMITTED");
+		// 회원 행을 못 잡은 payerId 저장만 건너뛴다. 2차금에서 본인인증을 한 번 더 할 뿐이다
+		assertThat(payerId()).isNull();
+	}
+
+	@Test
+	@DisplayName("확정이_커밋되면_payerId_를_따로_저장한다")
+	void 확정_뒤_payerId_저장() {
+		String orderToken = startPayment();
+		stubCapture(200, """
+				{"id":"%s","status":"captured"}""".formatted(SESSION_ID));
+
+		paymentService.confirm(buyer(), orderToken, SESSION_ID, "payer-first");
+
+		assertThat(payerId()).isEqualTo("payer-first");
+	}
+
+	@Test
+	@DisplayName("확정이_재고_행_잠금에_막혀_롤백되면_실패라고_답하지_않고_대사_배치가_확정한다")
+	void 확정_잠금_충돌() throws Exception {
+		String orderToken = startPayment();
+		stubCapture(200, """
+				{"id":"%s","status":"captured"}""".formatted(SESSION_ID));
+
+		// 다른 주문이 같은 상품의 재고 행을 쥐고 있다. 확정의 홀드 확정(sold 올리기)이
+		// 락 대기 초과(테스트 MySQL 5초)로 롤백된다. 교착이면 DeadlockLoserDataAccessException 이고
+		// 같은 부모(PessimisticLockingFailureException)다
+		PaymentResultResponse result = whileLocked(
+				"SELECT id FROM sale_form WHERE id = ? FOR UPDATE", setup.saleFormId(),
+				() -> paymentService.confirm(buyer(), orderToken, SESSION_ID, "payer-first"));
+
+		// 돈은 나갔다. 500 으로 실패처럼 보이면 안 된다 (D-083)
+		assertThat(result.status()).isEqualTo(PaymentResultResponse.Status.PENDING);
+		assertThat(paymentStatus()).containsExactly("CAPTURE_PENDING");
+		assertThat(groupStatus()).containsExactly("PAY_PENDING");
+		assertThat(holdStatus()).containsExactly("HELD");
+		assertThat(held()).isEqualTo(3);
+
+		stubGetSession("""
 				{"id":"%s","status":"captured"}""".formatted(SESSION_ID));
 		agePending();
 
@@ -1205,6 +1281,36 @@ class PaymentFlowTest extends IntegrationTest {
 	}
 
 	/** 다른 스레드의 confirm 이 CAPTURE_PENDING 을 커밋할 때까지 기다린다 */
+	/** 다른 트랜잭션이 행 하나를 FOR UPDATE 로 쥔 동안 action 을 돌린다 */
+	private <T> T whileLocked(String lockSql, Object arg, Callable<T> action) throws Exception {
+		CountDownLatch locked = new CountDownLatch(1);
+		CountDownLatch release = new CountDownLatch(1);
+		ExecutorService other = Executors.newSingleThreadExecutor();
+		Future<?> holding = other.submit(() -> new TransactionTemplate(transactionManager)
+				.executeWithoutResult(status -> {
+					assertThat(jdbcTemplate.queryForList(lockSql, arg)).isNotEmpty();
+					locked.countDown();
+					try {
+						release.await(20, TimeUnit.SECONDS);
+					} catch (InterruptedException e) {
+						Thread.currentThread().interrupt();
+					}
+				}));
+		try {
+			assertThat(locked.await(5, TimeUnit.SECONDS)).isTrue();
+			return action.call();
+		} finally {
+			release.countDown();
+			holding.get(10, TimeUnit.SECONDS);
+			other.shutdown();
+		}
+	}
+
+	private String payerId() {
+		return jdbcTemplate.queryForObject(
+				"SELECT payer_id FROM buyer WHERE kakao_id = ?", String.class, "kakao-payer");
+	}
+
 	private void awaitPaymentStatus(String status) throws InterruptedException {
 		long until = System.currentTimeMillis() + 3000;
 		while (!paymentStatus().contains(status)) {

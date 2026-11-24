@@ -69,10 +69,14 @@ public void finalizeCapture(Long paymentId) {
     p.markCaptured();
     group.markPaid();
     stockService.commit(groupId);                // held -= qty, sold += qty
-    buyer.savePayerId(payerId);                  // 다음 결제 인증 생략용
     outboxRepo.save(Outbox.of(groupId, "ORDER_PAID", payload));
 }
+// 커밋 뒤, 1차금 실시간 확정만: 새 트랜잭션에서 회원 행을 NOWAIT 로 잡고 비어 있을 때만 payerId 저장 (D-084).
+// 실패해도 응답은 PAID — 2차금에서 본인인증을 한 번 더 할 뿐이다
 ```
+
+**확정 트랜잭션은 회원 행을 잡지 않는다.** 같은 구매자의 새 주문은 회원 행 → 주문서 순으로 잡는다(D-077 · D-073).
+확정이 주문서를 쥔 채 회원 행을 기다리면 교착이다 (D-084).
 
 **실시간 21번과 대사 배치가 같은 메서드를 호출한다.** 배치는 누락된 21번을 대신 실행하는 것.
 
@@ -174,6 +178,8 @@ try {
 - 상태: 롤백되어 `CAPTURE_PENDING` 유지
 - 돈: 나감
 - 처리: 배치가 재시도. **멱등 가드가 결정적**
+- 응답: `202 pending`. 실시간 확정이 잠금 충돌(교착 · 락 대기 초과)로 롤백되면 500 이 아니라 확인 중으로 답한다 (D-083).
+  다른 주문이 같은 상품의 재고 행을 오래 쥐고 있을 때 생긴다. 배치가 확정한 첫 결제는 `payerId` 가 저장되지 않는다
 
 ### G. 확정 커밋 후 응답 전에 다운
 

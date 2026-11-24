@@ -135,11 +135,21 @@ public class PaymentService {
 
 			if (capture.isCaptured()) {
 				try {
-					writer.finalizeCapture(pending.paymentId(), PaymentActor.USER, payerId);
+					writer.finalizeCapture(pending.paymentId(), PaymentActor.USER);
 				} catch (CapturedAfterFailureException e) {
 					// 승인 호출 사이에 실패로 내려간 결제다. 돈은 나갔으니 실패라고 답하지 않는다
 					alerter.capturedAfterFailure(e.paymentId(), e.sessionId(), PaymentActor.USER);
 					return PaymentResultResponse.pending(orderToken);
+				} catch (PessimisticLockingFailureException e) {
+					// 확정 트랜잭션만 롤백됐다 — 돈은 나갔고 CAPTURE_PENDING 은 커밋돼 있다 (D-083).
+					// 확정이 재고 행 · 주문서를 고쳐 쓰다 다른 주문과 부딪히면 교착 · 락 대기 초과로 여기 온다.
+					// 실패라고 답하면 안 된다. 결과 모름과 같이 다루고 대사 배치가 PG 에 물어 확정한다
+					log.warn("결제 확정 중 잠금 충돌 — 대사 배치에 맡긴다: paymentId={}, cause={}",
+							pending.paymentId(), e.getMostSpecificCause().getMessage());
+					return PaymentResultResponse.pending(orderToken);
+				}
+				if (phase == PaymentPhase.FIRST) {
+					rememberPayerIdQuietly(pending.paymentId(), payerId);
 				}
 				return PaymentResultResponse.paid(orderToken);
 			}
@@ -200,6 +210,21 @@ public class PaymentService {
 		log.warn("홀드 만료 후 도착한 확정 — point3 확정 확인, 회수 전이면 승인한다: orderToken={}, status={}",
 				orderToken, status);
 		return writer.markCapturePending(user.kakaoId(), orderToken, sessionId, PaymentPhase.FIRST, true);
+	}
+
+	/**
+	 * 확정이 커밋된 뒤 payerId 를 저장한다 (D-084). <b>실패해도 결제 응답은 그대로 PAID 다.</b>
+	 *
+	 * 같은 구매자의 다른 탭 주문이 회원 행을 쥐고 있으면 기다리지 않고 실패한다.
+	 * 값이 비면 2차금에서 본인인증을 한 번 더 할 뿐이라, 결제 응답을 늦추거나 막을 이유가 없다.
+	 * payerId 는 로그에 남기지 않는다.
+	 */
+	private void rememberPayerIdQuietly(Long paymentId, String payerId) {
+		try {
+			writer.rememberPayerId(paymentId, payerId);
+		} catch (RuntimeException e) {
+			log.warn("payerId 저장 실패(결제는 확정됐다): paymentId={}, cause={}", paymentId, e.getClass().getSimpleName());
+		}
 	}
 
 	/** 복귀 페이지가 반복 조회한다. <b>부작용이 없다</b> (D-014) */
