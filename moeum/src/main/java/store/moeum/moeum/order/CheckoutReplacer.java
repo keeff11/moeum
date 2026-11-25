@@ -16,9 +16,13 @@ import store.moeum.moeum.order.domain.StockHold;
 import store.moeum.moeum.order.domain.StockHoldRepository;
 import store.moeum.moeum.payment.domain.PaymentPhase;
 import store.moeum.moeum.payment.domain.PaymentRepository;
+import store.moeum.moeum.saleform.domain.SaleFormRepository;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.SortedSet;
+import java.util.TreeSet;
 
 /**
  * 같은 구매자가 같은 판매 폼에 홀드를 두 벌 갖지 않게 한다 (D-073).
@@ -45,12 +49,17 @@ public class CheckoutReplacer {
 	private final StockHoldRepository stockHoldRepository;
 	private final PaymentRepository paymentRepository;
 	private final StockLedger stockLedger;
+	private final SaleFormRepository saleFormRepository;
 
 	/**
 	 * 이 구매자가 {@code formIds} 중 하나라도 잡고 있는 묶음을 통째로 푼다.
 	 *
 	 * 겹치는 폼만이 아니라 묶음 전체를 푸는 이유는 배송비다. 묶음당 1회라 일부만 남기면
 	 * 남은 묶음의 배송비를 다시 계산할 방법이 없다 (D-009 와 같은 이유).
+	 *
+	 * <b>잠금 순서는 묶음 → 홀드 → 판매 폼(풀 것과 새로 잡을 것을 합쳐 id 순)이다 (D-087).</b>
+	 * 결제 확정 · 이탈 해제와 같은 묶음 → 홀드 → 폼 순서이고, 폼끼리는 주문 생성과 같은 id 순이다.
+	 * 풀 묶음이 없으면 아무것도 잠그지 않는다 — 그때는 주문 생성의 확보가 id 순으로 잡는다.
 	 *
 	 * @throws BusinessException 결제창까지 간 묶음이 있으면 {@link ErrorCode#CHECKOUT_PAYMENT_IN_PROGRESS}
 	 */
@@ -62,6 +71,7 @@ public class CheckoutReplacer {
 		// id 만 먼저 읽는다. 묶음을 이 쿼리로 올려 두면 아래 잠금 조회가 캐시된 상태를 돌려준다
 		List<Long> groupIds = orderGroupRepository.findIdsHoldingForms(buyer.getId(), formIds);
 
+		List<Replaced> targets = new ArrayList<>();
 		for (Long groupId : groupIds) {
 			// 잠그고 다시 본다. 다른 탭이 같은 묶음을 동시에 교체하거나 결제를 확정하는 중일 수 있다
 			OrderGroup group = orderGroupRepository.findByIdForUpdate(groupId).orElse(null);
@@ -82,8 +92,30 @@ public class CheckoutReplacer {
 						buyer.getId(), group.getId(), group.getStatus());
 				throw new BusinessException(ErrorCode.CHECKOUT_PAYMENT_IN_PROGRESS);
 			}
-			release(group, holds);
+			targets.add(new Replaced(group, holds));
 		}
+		if (targets.isEmpty()) {
+			return;
+		}
+
+		// ★ 풀 폼과 새로 잡을 폼을 합쳐 id 순으로 먼저 잠근다 (D-087). 풀기를 먼저 하면 B 를 쥔 채
+		// [A, B] 를 다시 담을 때 B → A → B 가 되어, A → B 로 잡는 다른 주문과 서로 반대로 쥔다.
+		// 여기서 다 잡아 두면 아래 풀기와 이어지는 확보는 이미 쥔 행만 고친다
+		SortedSet<Long> forms = new TreeSet<>(formIds);
+		for (Replaced target : targets) {
+			target.holds().stream()
+					.filter(StockHold::isHeld)
+					.forEach(hold -> forms.add(hold.getSaleForm().getId()));
+		}
+		saleFormRepository.lockInIdOrder(forms);
+
+		for (Replaced target : targets) {
+			release(target.group(), target.holds());
+		}
+	}
+
+	/** 잠그고 다시 본 뒤 풀기로 정한 묶음과 그 홀드 */
+	private record Replaced(OrderGroup group, List<StockHold> holds) {
 	}
 
 	/** 묶음의 홀드를 id 순으로 잠근다. 결제 확정과 같은 순서(묶음 → 홀드)다 */

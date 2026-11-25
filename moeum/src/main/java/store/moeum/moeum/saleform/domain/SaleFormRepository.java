@@ -7,10 +7,21 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
 public interface SaleFormRepository extends JpaRepository<SaleForm, Long> {
+
+	/**
+	 * 판매 폼 행을 id 오름차순으로 잠근다. 재고 숫자는 건드리지 않는다.
+	 *
+	 * 교체(다시 담기)가 이전 폼을 풀고 새 폼을 잡기 전에 둘을 합쳐 한 번에 잠글 때 쓴다 (D-087).
+	 * PK 동등 조건이라 레코드 락만 걸리고 갭 락은 걸리지 않는다.
+	 * 엔티티가 아니라 id 를 돌려준다 — 영속성 컨텍스트의 폼 상태를 이 조회로 바꾸지 않는다.
+	 */
+	@Query(value = "SELECT id FROM sale_form WHERE id IN (:ids) ORDER BY id FOR UPDATE", nativeQuery = true)
+	List<Long> lockInIdOrder(@Param("ids") Collection<Long> ids);
 
 	List<SaleForm> findBySellerIdOrderByIdDesc(Long sellerId);
 
