@@ -254,6 +254,59 @@ class CheckoutReplaceTest extends IntegrationTest {
 	}
 
 	/**
+	 * 교체가 이전 폼을 먼저 풀고 새 폼을 잡으면 전체 순서가 판매 폼 id 순에서 어긋난다 (D-087).
+	 * B 를 잡아 둔 채 [A, B] 를 다시 담으면 B → A → B 가 되어, 같은 순간 A → B 로 잡는 다른 주문과 교착이 났다.
+	 * 이제 풀 폼과 새로 잡을 폼을 합쳐 id 순으로 먼저 잠근다.
+	 */
+	@Test
+	@DisplayName("교체는_풀_폼과_잡을_폼을_합쳐_id_순으로_잠가_다른_주문과_교착이_나지_않는다")
+	void 교체_잠금_순서() throws Exception {
+		OrderFixture.Setup formA = fixture.saleForm(10, null);
+		OrderFixture.Setup formB = fixture.saleFormOfSameSeller(formA, 10);
+		assertThat(formA.saleFormId()).isLessThan(formB.saleFormId());
+		SessionUser user = buyer("kakao-reorder");
+		OrderGroupResponse previous = orderService.place(user, order(formB.optionId(), 1));
+
+		// 다른 구매자의 주문 생성처럼 A → B 순으로 잡는 트랜잭션. A 를 먼저 쥔다
+		CountDownLatch holdingA = new CountDownLatch(1);
+		CountDownLatch takeB = new CountDownLatch(1);
+		ExecutorService other = Executors.newSingleThreadExecutor();
+		Future<?> otherOrder = other.submit(() -> new TransactionTemplate(transactionManager)
+				.executeWithoutResult(status -> {
+					lockForm(formA);
+					holdingA.countDown();
+					try {
+						takeB.await(20, TimeUnit.SECONDS);
+					} catch (InterruptedException e) {
+						Thread.currentThread().interrupt();
+					}
+					// 교체가 B 를 먼저 풀었다면 B 를 쥔 채 A 를 기다리고 있어 여기서 교착이다
+					lockForm(formB);
+				}));
+		ExecutorService replacer = Executors.newSingleThreadExecutor();
+		try {
+			assertThat(holdingA.await(5, TimeUnit.SECONDS)).isTrue();
+			Future<OrderGroupResponse> replacing = replacer.submit(() -> orderService.place(user,
+					new OrderCreateRequest(List.of(
+							new OrderCreateRequest.Item(formA.optionId(), 1),
+							new OrderCreateRequest.Item(formB.optionId(), 1)))));
+			awaitOrderHoldingBuyer("kakao-reorder");
+			takeB.countDown();
+
+			otherOrder.get(10, TimeUnit.SECONDS);
+			assertThat(replacing.get(10, TimeUnit.SECONDS).sessionToken()).isNotEqualTo(previous.sessionToken());
+		} finally {
+			takeB.countDown();
+			other.shutdownNow();
+			replacer.shutdownNow();
+		}
+
+		assertThat(groupStatus(previous.sessionToken())).isEqualTo("EXPIRED");
+		assertThat(formHeld(formA)).isEqualTo(1);
+		assertThat(formHeld(formB)).isEqualTo(1);
+	}
+
+	/**
 	 * 담기 버튼을 여러 번 누른 경우 (D-077). 이어받기와 교체는 커밋된 묶음만 보므로, 구매자 단위로
 	 * 줄을 세우기 전에는 동시에 온 요청이 서로를 못 보고 각자 홀드를 잡았다.
 	 */
@@ -360,6 +413,10 @@ class CheckoutReplaceTest extends IntegrationTest {
 			Thread.sleep(50);
 		}
 		throw new AssertionError("주문 생성이 회원 행을 잡지 않았다");
+	}
+
+	private void lockForm(OrderFixture.Setup form) {
+		jdbcTemplate.queryForList("SELECT id FROM sale_form WHERE id = ? FOR UPDATE", form.saleFormId());
 	}
 
 	private int formHeld(OrderFixture.Setup setup) {

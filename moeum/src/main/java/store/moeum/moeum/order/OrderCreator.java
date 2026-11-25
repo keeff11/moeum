@@ -93,7 +93,8 @@ public class OrderCreator {
 				.toList();
 
 		// 같은 폼을 이미 잡고 있으면 그 묶음을 먼저 푼다 (D-073). 같은 트랜잭션이라
-		// 아래 확보가 품절로 실패하면 이것도 롤백되어 원래 자리가 남는다
+		// 아래 확보가 품절로 실패하면 이것도 롤백되어 원래 자리가 남는다.
+		// 풀기 전에 풀 폼과 아래에서 잡을 폼을 합쳐 id 순으로 잠가 둔다 — 순서가 어긋나지 않는다 (D-087)
 		checkoutReplacer.releasePrevious(buyer, forms.stream().map(SaleForm::getId).toList());
 
 		// 배송비는 일단 기본값으로 두고 항목을 다 담은 뒤 무료배송 기준을 적용한다.
