@@ -99,9 +99,10 @@ public class OrderService {
 		if (e instanceof BusinessException businessException) {
 			throw businessException;
 		}
-		// 3회를 다 쓰고도 락을 못 잡았다. 재시도하면 될 수 있는 오류로 알린다
-		log.error("재고 확보 실패(재시도 소진): kakaoId={}", user.kakaoId(), e);
-		throw new BusinessException(ErrorCode.TEMPORARY_ERROR);
+		// 3회를 다 쓰고도 락을 못 잡았거나, 재시도 대상이 아닌 시스템 오류(커넥션 풀 대기 초과 등)다.
+		// 다시 시도하면 될 수 있는 오류로 알리되, 원래 예외는 cause 로 남긴다 — 그래야 무엇 때문이었는지 가려낼 수 있다
+		log.error("재고 확보 실패: kakaoId={}", user.kakaoId(), e);
+		throw new BusinessException(ErrorCode.TEMPORARY_ERROR, e);
 	}
 
 	@Transactional(readOnly = true)
