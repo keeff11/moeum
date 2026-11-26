@@ -5,8 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Profile;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Propagation;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import store.moeum.moeum.global.auth.SessionUser;
 import store.moeum.moeum.order.OrderService;
 import store.moeum.moeum.order.dto.OrderCreateRequest;
@@ -37,6 +36,9 @@ import java.util.concurrent.atomic.AtomicInteger;
  *
  * NAIVE 모드는 <b>일부러 잘못 짠 코드</b>다. SELECT 로 재고를 읽고 판단한 뒤 UPDATE 하면
  * 왜 초과 판매가 나는지 눈으로 보기 위해서만 존재한다. 운영 경로에는 이런 코드가 없다.
+ *
+ * 트랜잭션은 {@link TransactionTemplate} 으로 직접 연다. 메서드에 {@code @Transactional} 을 붙여도
+ * {@link #run} 이 같은 객체 안에서 부르면 프록시를 거치지 않아 아무 일도 하지 않는다.
  */
 @Slf4j
 @Service
@@ -51,6 +53,7 @@ public class StockHoldDemoService {
 	private final SellerRepository sellerRepository;
 	private final SaleFormRepository saleFormRepository;
 	private final JdbcTemplate jdbcTemplate;
+	private final TransactionTemplate transactionTemplate;
 
 	public enum Mode {
 		/** 운영 코드 그대로 — 조건부 UPDATE 한 방 */
@@ -68,7 +71,9 @@ public class StockHoldDemoService {
 		AtomicInteger outOfStock = new AtomicInteger();
 		AtomicInteger otherError = new AtomicInteger();
 
-		CountDownLatch ready = new CountDownLatch(safeThreads);
+		// 출발선에 설 수 있는 것은 풀의 스레드 수만큼이다. 나머지 요청은 큐에서 기다리다 문이 열린 뒤 바로 지나간다.
+		// 요청 수로 세면 스레드 수만큼만 세고 멈춰, 매번 제한 시간(30초)을 다 채운 뒤에야 출발했다
+		CountDownLatch ready = new CountDownLatch(Math.min(safeThreads, POOL_SIZE));
 		CountDownLatch start = new CountDownLatch(1);
 		CountDownLatch done = new CountDownLatch(safeThreads);
 		ExecutorService pool = Executors.newFixedThreadPool(POOL_SIZE);
@@ -130,8 +135,11 @@ public class StockHoldDemoService {
 	 * 사이의 짧은 지연은 실제 서비스 로직이 차지하는 시간을 대신한다 —
 	 * 지연이 없어도 경합은 생기지만, 창이 좁아 눈에 덜 보인다.
 	 */
-	@Transactional(propagation = Propagation.REQUIRES_NEW)
-	public void naiveHold(Long saleFormId, int qty) {
+	private void naiveHold(Long saleFormId, int qty) {
+		transactionTemplate.executeWithoutResult(status -> naiveHoldInTransaction(saleFormId, qty));
+	}
+
+	private void naiveHoldInTransaction(Long saleFormId, int qty) {
 		Integer remaining = jdbcTemplate.queryForObject(
 				"SELECT stock_max - held - sold FROM sale_form WHERE id = ?", Integer.class, saleFormId);
 
@@ -161,8 +169,11 @@ public class StockHoldDemoService {
 		return notes;
 	}
 
-	@Transactional
-	public Fixture createFixture(int stockMax) {
+	private Fixture createFixture(int stockMax) {
+		return transactionTemplate.execute(status -> createFixtureInTransaction(stockMax));
+	}
+
+	private Fixture createFixtureInTransaction(int stockMax) {
 		long unique = System.nanoTime();
 
 		Seller seller = sellerRepository.save(Seller.builder()
@@ -196,8 +207,11 @@ public class StockHoldDemoService {
 	}
 
 	/** 실험 흔적을 남기지 않는다. FK 순서대로 지운다 */
-	@Transactional
-	public void cleanUp() {
+	private void cleanUp() {
+		transactionTemplate.executeWithoutResult(status -> cleanUpInTransaction());
+	}
+
+	private void cleanUpInTransaction() {
 		jdbcTemplate.update("DELETE FROM stock_hold");
 		jdbcTemplate.update("DELETE FROM order_item");
 		jdbcTemplate.update("DELETE FROM orders");
