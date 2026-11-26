@@ -29,6 +29,16 @@ public interface OrderGroupRepository extends JpaRepository<OrderGroup, Long> {
 	Optional<OrderGroup> findByIdForUpdate(@Param("id") Long id);
 
 	/**
+	 * 이탈 해제용 잠금 조회 (D-088). 결제 확정 · 교체와 같은 "묶음 먼저" 순서로 잡는다.
+	 *
+	 * 이 조회보다 앞에서 같은 묶음을 읽으면 안 된다 — 이미 올라온 엔티티는 잠금 조회가 다시 채우지 않아
+	 * 잠그기 전 상태(CREATED)를 그대로 보게 된다.
+	 */
+	@Lock(LockModeType.PESSIMISTIC_WRITE)
+	@Query("select g from OrderGroup g where g.sessionToken = :sessionToken")
+	Optional<OrderGroup> findBySessionTokenForUpdate(@Param("sessionToken") String sessionToken);
+
+	/**
 	 * 아직 결제창에 들어가지 않은 세션 (D-015 · D-037).
 	 *
 	 * <b>CREATED 만 본다.</b> PAY_PENDING 부터는 결제창까지 간 것이라 이어받을 대상이 아니다 —
