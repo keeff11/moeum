@@ -82,7 +82,9 @@ public class OrderService {
 			soldOutCache.markSoldOut(ticket, e);
 			throw e;
 		}
-		soldOutCache.rememberHeld(user.kakaoId(), request);
+		// 이어받은 묶음이어도 남긴다. 재시작 뒤처럼 아직 안 남긴 폼이 있을 수 있다 (D-089)
+		soldOutCache.rememberHeld(user.kakaoId(),
+				response.orders().stream().map(OrderGroupResponse.OrderLine::saleFormId).toList());
 		return response;
 	}
 
