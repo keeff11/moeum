@@ -9,6 +9,8 @@ import org.springframework.boot.autoconfigure.data.redis.RedisProperties;
 import org.springframework.data.redis.connection.RedisStandaloneConfiguration;
 import org.springframework.data.redis.connection.lettuce.LettuceClientConfiguration;
 import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
+import org.springframework.data.redis.core.RedisOperations;
+import org.springframework.data.redis.core.SessionCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -22,19 +24,18 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.TreeMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
-import java.util.stream.Collectors;
 
 /**
  * 품절 단락 — 품절이 확인된 폼 · 옵션의 주문을 DB 커넥션을 받기 전에 409 로 돌려보낸다 (D-078).
@@ -48,8 +49,12 @@ import java.util.stream.Collectors;
  *   gen:form:{폼}           정수. 폼의 재고가 다시 늘어난 횟수. 늘 때만 +1, 주문 성공 때는 그대로
  *   soldout:form:{폼}       값 = 품절을 확인할 때의 gen. TTL 2초
  *   soldout:option:{옵션}   값 = 품절을 확인할 때의 (그 옵션이 속한 폼의) gen. TTL 2초
- *   held:{kakaoId}          방금 잡은 선택. 같은 선택의 중복 요청은 이어받기(D-037)로 보내야 해서 확인을 건너뛴다
+ *   held:{kakaoId}:{폼}     이 구매자가 이 폼에 홀드를 잡았다. TTL 30분(홀드와 같다). 이 폼은 확인을 건너뛴다 (D-089)
  * </pre>
+ * 홀드를 쥔 구매자가 다시 담으면 DB 에서는 이어받기(D-037)로 기존 홀드를 돌려받거나, 교체(D-073)로 자기 홀드를
+ * 먼저 풀고 다시 잡는다. 남이 세운 품절 표시는 그 사람 몫까지는 모르므로, 쥔 폼에 대해서는 표시를 믿지 않고 DB 로 보낸다.
+ * 폼마다 따로 두는 이유 — 선택 하나만 적으면 선택을 바꾸거나 다른 폼을 따로 담는 순간 덮어써져, 쥐고 있는 자리를
+ * 품절 표시가 막는다.
  * gen 을 폼 단위로 두는 이유 — 폼 재고는 옵션들이 나눠 쓴다. A 옵션 홀드가 풀려도 B 옵션을 살 수 있게 되므로,
  * 폼 안의 어떤 복구든 폼의 모든 품절 표시를 무효로 만들어야 한다.
  *
@@ -161,11 +166,17 @@ public class SoldOutCache implements DisposableBean {
 		List<Long> formIds = known.values().stream().distinct().toList();
 		List<Long> knownOptions = new ArrayList<>(known.keySet());
 
+		// 폼마다 [gen, 폼 품절 표시, 이 구매자의 홀드] 셋씩, 그 뒤에 옵션 품절 표시
 		List<String> keys = new ArrayList<>();
-		keys.add(HELD + kakaoId);
-		formIds.forEach(formId -> keys.add(GEN_FORM + formId));
-		formIds.forEach(formId -> keys.add(SOLDOUT_FORM + formId));
+		for (Long formId : formIds) {
+			keys.add(GEN_FORM + formId);
+			keys.add(SOLDOUT_FORM + formId);
+			keys.add(heldKey(kakaoId, formId));
+		}
 		knownOptions.forEach(optionId -> keys.add(SOLDOUT_OPTION + optionId));
+		if (keys.isEmpty()) {
+			return Ticket.NONE;
+		}
 
 		List<String> values;
 		try {
@@ -178,25 +189,30 @@ public class SoldOutCache implements DisposableBean {
 			return Ticket.NONE;
 		}
 
-		// 같은 선택을 이미 잡아 둔 구매자는 이어받기로 기존 홀드를 돌려받아야 한다. 품절로 막으면
-		// 홀드를 쥔 사람이 409 를 본다. 표시가 남아 있어도(홀드 만료 뒤) DB 로 갈 뿐이라 안전하다
-		if (selectionOf(request).equals(values.get(0))) {
-			return Ticket.NONE;
-		}
-
 		Map<Long, String> genByForm = new HashMap<>();
-		int at = 1;
+		Map<Long, String> soldOutByForm = new HashMap<>();
+		Set<Long> heldForms = new HashSet<>();
+		int at = 0;
 		for (Long formId : formIds) {
 			genByForm.put(formId, Objects.requireNonNullElse(values.get(at++), "0"));
+			soldOutByForm.put(formId, values.get(at++));
+			if (values.get(at++) != null) {
+				heldForms.add(formId);
+			}
 		}
+
+		// 이 구매자가 홀드를 쥔 폼은 건너뛴다 (D-089). 이어받기나 교체로 자기 자리를 다시 쓸 수 있는데,
+		// 남이 세운 표시는 그 자리까지 품절로 센다. 홀드가 이미 끝났어도 DB 로 갈 뿐이라 안전하다.
+		// gen 은 그대로 ticket 에 담는다 — 자기 홀드를 풀고도 0행이면 남에게도 없는 것이라 표시를 세워도 맞다
 		for (Long formId : formIds) {
-			if (genByForm.get(formId).equals(values.get(at++))) {
+			if (!heldForms.contains(formId) && genByForm.get(formId).equals(soldOutByForm.get(formId))) {
 				throw new OutOfStockException(formId, SOLD_OUT_MESSAGE);
 			}
 		}
 		for (Long optionId : knownOptions) {
 			Long formId = known.get(optionId);
-			if (genByForm.get(formId).equals(values.get(at++))) {
+			String soldOut = values.get(at++);
+			if (!heldForms.contains(formId) && genByForm.get(formId).equals(soldOut)) {
 				throw new OutOfStockException(formId, SOLD_OUT_MESSAGE);
 			}
 		}
@@ -226,16 +242,35 @@ public class SoldOutCache implements DisposableBean {
 		}
 	}
 
-	/** 주문이 만들어진 뒤 부른다. 같은 선택의 중복 요청이 품절 표시에 막히지 않게 한다 */
-	public void rememberHeld(String kakaoId, OrderCreateRequest request) {
-		if (!enabled) {
+	/**
+	 * 주문이 만들어진(또는 이어받은) 뒤 부른다. 홀드를 쥔 폼마다 남겨, 그 구매자가 다시 담을 때
+	 * 품절 표시에 막히지 않고 이어받기 · 교체로 가게 한다 (D-089).
+	 *
+	 * 홀드가 이탈 · 만료로 먼저 끝나도 지우지 않는다. 그 구매자의 요청이 DB 로 한 번 더 갈 뿐이다.
+	 */
+	public void rememberHeld(String kakaoId, Collection<Long> saleFormIds) {
+		if (!enabled || saleFormIds.isEmpty()) {
 			return;
 		}
 		try {
-			redis.opsForValue().set(HELD + kakaoId, selectionOf(request), heldTtl);
+			redis.executePipelined(new SessionCallback<Object>() {
+				@Override
+				@SuppressWarnings("unchecked")
+				public <K, V> Object execute(RedisOperations<K, V> operations) {
+					RedisOperations<String, String> ops = (RedisOperations<String, String>) operations;
+					for (Long formId : new LinkedHashSet<>(saleFormIds)) {
+						ops.opsForValue().set(heldKey(kakaoId, formId), "1", heldTtl);
+					}
+					return null;
+				}
+			});
 		} catch (RuntimeException e) {
-			log.warn("진행 중 선택 저장 실패: {}: {}", e.getClass().getSimpleName(), e.getMessage());
+			log.warn("홀드 쥔 폼 저장 실패: {}: {}", e.getClass().getSimpleName(), e.getMessage());
 		}
+	}
+
+	static String heldKey(String kakaoId, Long saleFormId) {
+		return HELD + kakaoId + ":" + saleFormId;
 	}
 
 	/** 주문 생성에서 옵션을 읽을 때 부른다. 입구 확인이 옵션의 폼을 DB 없이 알아야 한다 */
@@ -359,15 +394,6 @@ public class SoldOutCache implements DisposableBean {
 					saleFormId, e.getClass().getSimpleName(), e.getMessage());
 			return false;
 		}
-	}
-
-	/** 옵션 id 오름차순 "id:수량" — 이어받기(CheckoutResumer)가 비교하는 모양과 같다 */
-	static String selectionOf(OrderCreateRequest request) {
-		Map<Long, Integer> merged = new TreeMap<>();
-		request.items().forEach(item -> merged.merge(item.optionId(), item.qty(), Integer::sum));
-		return merged.entrySet().stream()
-				.map(entry -> entry.getKey() + ":" + entry.getValue())
-				.collect(Collectors.joining(","));
 	}
 
 	@Override

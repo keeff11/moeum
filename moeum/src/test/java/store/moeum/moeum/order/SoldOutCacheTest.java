@@ -110,6 +110,71 @@ class SoldOutCacheTest extends IntegrationTest {
 	}
 
 	@Test
+	@DisplayName("마지막_재고를_잡은_구매자가_다른_폼을_더해_다시_담으면_품절_표시에_막히지_않고_교체로_산다")
+	void 선택을_바꿔도_교체() {
+		OrderFixture.Setup last = fixture.saleForm(1, null);
+		OrderFixture.Setup other = fixture.saleFormOfSameSeller(last, 5);
+		SessionUser first = buyer("kakao-first");
+		OrderGroupResponse held = soldOutAfterFirstHold(last, first);
+
+		// 뒤로 가서 다른 상품을 더 담는다. 교체(D-073)가 자기 홀드를 먼저 풀어 다시 잡으므로 DB 에서는 성공한다
+		OrderGroupResponse replaced = orderService.place(first, new OrderCreateRequest(List.of(
+				new OrderCreateRequest.Item(last.optionId(), 1),
+				new OrderCreateRequest.Item(other.optionId(), 1))));
+
+		assertThat(replaced.sessionToken()).isNotEqualTo(held.sessionToken());
+		assertThat(replaced.orders()).hasSize(2);
+	}
+
+	@Test
+	@DisplayName("옵션_품절이어도_그_옵션을_쥔_구매자는_같은_폼의_다른_옵션을_더해_다시_담을_수_있다")
+	void 옵션_품절_교체() {
+		OrderFixture.Setup setup = fixture.soloSaleFormWithOptionStock(1, 5);
+		SessionUser first = buyer("kakao-first");
+		OrderGroupResponse held = orderService.place(first, order(setup.optionId(), 1));
+		// 폼은 통과하고 옵션 A 가 0행 → 옵션 품절 표시
+		assertThatThrownBy(() -> orderService.place(buyer("kakao-second"), order(setup.optionId(), 1)))
+				.isInstanceOf(OutOfStockException.class)
+				.satisfies(e -> assertThat(e.getMessage()).isNotEqualTo(CACHE_MESSAGE));
+		assertThat(redis.hasKey(SoldOutCache.SOLDOUT_OPTION + setup.optionId())).isTrue();
+
+		OrderGroupResponse replaced = orderService.place(first, new OrderCreateRequest(List.of(
+				new OrderCreateRequest.Item(setup.optionId(), 1),
+				new OrderCreateRequest.Item(setup.secondOptionId(), 1))));
+
+		assertThat(replaced.sessionToken()).isNotEqualTo(held.sessionToken());
+	}
+
+	@Test
+	@DisplayName("다른_폼을_따로_담은_뒤에도_먼저_잡은_폼의_같은_선택은_이어받는다")
+	void 묶음이_둘이어도_이어받기() {
+		OrderFixture.Setup last = fixture.saleForm(1, null);
+		OrderFixture.Setup other = fixture.saleFormOfSameSeller(last, 5);
+		SessionUser first = buyer("kakao-first");
+		OrderGroupResponse held = soldOutAfterFirstHold(last, first);
+		// 다른 탭에서 다른 상품을 따로 담았다. 겹치는 폼이 없어 앞 묶음은 그대로다
+		orderService.place(first, order(other.optionId(), 1));
+
+		OrderGroupResponse resumed = orderService.place(first, order(last.optionId(), 1));
+
+		assertThat(resumed.sessionToken()).isEqualTo(held.sessionToken());
+	}
+
+	@Test
+	@DisplayName("다른_폼을_쥔_구매자라도_쥐지_않은_폼의_품절_표시에는_DB_앞에서_막힌다")
+	void 쥐지_않은_폼은_그대로_거절() {
+		OrderFixture.Setup soldOut = fixture.saleForm(1, null);
+		OrderFixture.Setup other = fixture.saleFormOfSameSeller(soldOut, 5);
+		soldOutAfterFirstHold(soldOut, buyer("kakao-first"));
+		SessionUser third = buyer("kakao-third");
+		orderService.place(third, order(other.optionId(), 1));
+
+		assertThatThrownBy(() -> orderService.place(third, order(soldOut.optionId(), 1)))
+				.isInstanceOf(OutOfStockException.class)
+				.hasMessage(CACHE_MESSAGE);
+	}
+
+	@Test
 	@DisplayName("수량_2개로_실패하면_1개는_남았을_수_있어_품절_표시를_세우지_않는다")
 	void 수량_2개_실패() {
 		OrderFixture.Setup setup = fixture.saleForm(1, null);
