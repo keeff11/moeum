@@ -17,6 +17,15 @@ public class BusinessException extends RuntimeException {
 		this.errorCode = errorCode;
 	}
 
+	/**
+	 * 시스템 오류를 업무 오류로 바꿔 알릴 때 쓴다. 응답은 ErrorCode 대로 나가고,
+	 * 원래 예외는 cause 로 남아 무엇 때문이었는지 따라갈 수 있다.
+	 */
+	public BusinessException(ErrorCode errorCode, Throwable cause) {
+		super(errorCode.message(), cause, false, false);
+		this.errorCode = errorCode;
+	}
+
 	public ErrorCode errorCode() {
 		return errorCode;
 	}

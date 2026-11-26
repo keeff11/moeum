@@ -15,6 +15,8 @@ import store.moeum.moeum.order.exception.OutOfStockException;
 import store.moeum.moeum.support.IntegrationTest;
 import store.moeum.moeum.support.OrderFixture;
 
+import java.sql.SQLException;
+import java.sql.SQLTransientConnectionException;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -112,9 +114,13 @@ class StockHoldConcurrencyTest extends IntegrationTest {
 	/**
 	 * 위 테스트는 요청 200 개를 스레드 32 개로 나눠 던진다. 여기서는 1000 개가 정말로 같은 순간에 출발한다.
 	 *
-	 * 커넥션 풀(10)보다 훨씬 많은 스레드가 몰리므로 풀 대기 시간(connection-timeout)을 넘겨
+	 * 커넥션 풀(10)보다 훨씬 많은 스레드가 몰리므로 풀 대기 시간(connection-timeout 3초)을 넘겨
 	 * 실패하는 요청이 나올 수 있다. 그건 허용한다 — 여기서 보는 것은 <b>과부하에서도 장부가 맞는가</b>다.
 	 * 실패한 요청이 재고나 홀드 행을 남기면 안 되고, 성공한 수와 잡힌 재고가 정확히 같아야 한다.
+	 *
+	 * <b>허용하는 실패는 커넥션 풀 대기 초과뿐이다</b> ({@link #isPoolTimeout}). 그 밖의 예외는 한 건이라도 나면 실패다.
+	 * 예전에는 품절이 아닌 예외를 종류 · 건수 상관없이 다 받아서, 버그로 요청 대부분이 죽어도
+	 * 살아남은 요청의 장부만 맞으면 통과했다.
 	 */
 	@Test
 	@DisplayName("1000명이_동시에_주문해도_재고를_넘겨_팔지_않고_장부가_맞는다")
@@ -125,7 +131,7 @@ class StockHoldConcurrencyTest extends IntegrationTest {
 
 		AtomicInteger success = new AtomicInteger();
 		AtomicInteger outOfStock = new AtomicInteger();
-		AtomicInteger other = new AtomicInteger();
+		AtomicInteger overload = new AtomicInteger();
 		Map<String, AtomicInteger> otherTypes = new ConcurrentHashMap<>();
 
 		CountDownLatch ready = new CountDownLatch(threads);
@@ -145,9 +151,11 @@ class StockHoldConcurrencyTest extends IntegrationTest {
 				} catch (OutOfStockException e) {
 					outOfStock.incrementAndGet();
 				} catch (Exception e) {
-					other.incrementAndGet();
-					otherTypes.computeIfAbsent(e.getClass().getSimpleName(), k -> new AtomicInteger())
-							.incrementAndGet();
+					if (isPoolTimeout(e)) {
+						overload.incrementAndGet();
+					} else {
+						otherTypes.computeIfAbsent(describe(e), k -> new AtomicInteger()).incrementAndGet();
+					}
 				} finally {
 					done.countDown();
 				}
@@ -165,10 +173,12 @@ class StockHoldConcurrencyTest extends IntegrationTest {
 		int sold = intOf("SELECT sold FROM sale_form WHERE id = ?", setup.saleFormId());
 		long heldRows = stockHoldRepository.countByStatus(HoldStatus.HELD);
 
-		System.out.printf("[1000명 동시 주문] %dms · 성공 %d · 품절 %d · 기타 %d %s · held %d · 홀드 행 %d%n",
-				elapsedMs, success.get(), outOfStock.get(), other.get(), otherTypes, held, heldRows);
+		int other = otherTypes.values().stream().mapToInt(AtomicInteger::get).sum();
+		System.out.printf("[1000명 동시 주문] %dms · 성공 %d · 품절 %d · 풀 대기 초과 %d · 기타 %d %s · held %d · 홀드 행 %d%n",
+				elapsedMs, success.get(), outOfStock.get(), overload.get(), other, otherTypes, held, heldRows);
 
-		assertThat(success.get() + outOfStock.get() + other.get()).isEqualTo(threads);
+		assertThat(otherTypes).as("품절 · 커넥션 풀 대기 초과 말고는 예외가 나면 안 된다").isEmpty();
+		assertThat(success.get() + outOfStock.get() + overload.get()).isEqualTo(threads);
 
 		// ★ 확인 조건 — 과부하로 일부가 실패해도 이 셋은 어긋나면 안 된다
 		assertThat(held + sold).as("sold + held <= stock_max").isLessThanOrEqualTo(stock);
@@ -178,7 +188,34 @@ class StockHoldConcurrencyTest extends IntegrationTest {
 
 		// 수요(1000)가 재고(100)의 열 배라 과부하 실패를 빼고도 재고는 다 나가야 한다
 		assertThat(success.get()).as("재고가 남았는데 품절 처리되지 않는다")
-				.isEqualTo(Math.min(stock, threads - other.get()));
+				.isEqualTo(Math.min(stock, threads - overload.get()));
+	}
+
+	/**
+	 * 커넥션 풀 대기 초과인가. Hikari 가 connection-timeout 안에 커넥션을 못 주면
+	 * {@link SQLTransientConnectionException} 을 던지고, 스프링이 이를 감싸 올린다
+	 * (트랜잭션 시작에서는 {@code CannotCreateTransactionException}). {@code place()} 의 복구 메서드가 다시
+	 * {@code BusinessException(TEMPORARY_ERROR)} 로 감싸므로 바깥 타입이 아니라 cause 사슬을 본다.
+	 * TEMPORARY_ERROR 는 NPE 같은 버그에도 붙으니 에러 코드로는 가릴 수 없다.
+	 *
+	 * 락 대기 초과(1205)는 넣지 않았다. 동시 트랜잭션이 풀 크기(10)로 묶여 락 대기가 짧고,
+	 * 1205 는 세 번 재시도까지 하므로 여기서 나오면 과부하가 아니라 살펴볼 일이다 (11-27 세 번 돌려 0건).
+	 */
+	private static boolean isPoolTimeout(Throwable e) {
+		for (Throwable t = e; t != null; t = t.getCause()) {
+			if (t instanceof SQLTransientConnectionException) return true;
+			if (t.getCause() == t) break;
+		}
+		return false;
+	}
+
+	/** 실패 메시지용: 바깥 타입 ← 맨 안쪽 원인(SQL 오류 코드). */
+	private static String describe(Throwable e) {
+		Throwable root = e;
+		while (root.getCause() != null && root.getCause() != root) root = root.getCause();
+		String code = root instanceof SQLException sql ? "(" + sql.getErrorCode() + ")" : "";
+		return root == e ? e.getClass().getSimpleName()
+				: e.getClass().getSimpleName() + " ← " + root.getClass().getSimpleName() + code;
 	}
 
 	/**
