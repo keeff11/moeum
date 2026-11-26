@@ -28,6 +28,22 @@ public interface StockHoldRepository extends JpaRepository<StockHold, Long> {
 	List<StockHold> findByOrderIdInForUpdate(@Param("orderIds") List<Long> orderIds);
 
 	/**
+	 * 이탈 해제용 (D-088). 묶음을 잠근 뒤에 부른다.
+	 *
+	 * <b>남이 쥔 홀드는 기다리지 않고 건너뛴다.</b> 묶음 잠금을 쥔 채로 홀드를 기다리는 상대는 만료 배치뿐이다
+	 * (결제 확정 · 교체는 묶음부터 잡아 여기까지 오지 못한다). 배치는 그 홀드를 이미 풀고 있고,
+	 * 커밋하면서 묶음 행을 고치러 오므로 여기서 기다리면 서로 상대를 기다린다.
+	 * 순서는 {@link #findByOrderIdIn} 과 같은 판매 폼 id 순이다 (D-086).
+	 */
+	@Query(value = """
+			SELECT * FROM stock_hold
+			 WHERE order_id IN (:orderIds)
+			 ORDER BY sale_form_id, id
+			 FOR UPDATE SKIP LOCKED
+			""", nativeQuery = true)
+	List<StockHold> findByOrderIdInForUpdateSkipLocked(@Param("orderIds") List<Long> orderIds);
+
+	/**
 	 * 만료 홀드 회수 대상.
 	 *
 	 * <b>CAPTURE_PENDING 인 묶음은 건너뛴다.</b> 승인 결과를 모르는 상태에서 재고를 남에게 넘기면,

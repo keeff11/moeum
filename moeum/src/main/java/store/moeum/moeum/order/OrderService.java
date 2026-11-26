@@ -19,11 +19,14 @@ import store.moeum.moeum.order.domain.HoldStatus;
 import store.moeum.moeum.order.domain.Order;
 import store.moeum.moeum.order.domain.OrderGroup;
 import store.moeum.moeum.order.domain.OrderGroupRepository;
+import store.moeum.moeum.order.domain.OrderGroupStatus;
 import store.moeum.moeum.order.domain.StockHold;
 import store.moeum.moeum.order.domain.StockHoldRepository;
 import store.moeum.moeum.order.dto.OrderCreateRequest;
 import store.moeum.moeum.order.dto.OrderGroupResponse;
 import store.moeum.moeum.order.exception.OutOfStockException;
+import store.moeum.moeum.payment.domain.PaymentPhase;
+import store.moeum.moeum.payment.domain.PaymentRepository;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -40,6 +43,7 @@ public class OrderService {
 	private final StockLedger stockLedger;
 	private final BuyerService buyerService;
 	private final SoldOutCache soldOutCache;
+	private final PaymentRepository paymentRepository;
 
 	/**
 	 * 주문 생성 + 재고 홀드.
@@ -123,36 +127,53 @@ public class OrderService {
 	public void release(SessionUser user, String sessionToken) {
 		Buyer buyer = buyerService.getByKakaoId(user.kakaoId());
 
-		OrderGroup group = orderGroupRepository.findBySessionToken(sessionToken)
+		// ★ 묶음부터 잠그고 그 뒤에 상태를 본다 (D-088). 잠그지 않고 읽으면 다른 트랜잭션이 커밋하기 전 상태를 보고
+		// 이미 풀린 · 판매 확정된 홀드를 또 푼다. 결제 확정 · 교체와 같은 묶음 → 홀드 → 판매 폼 순서다
+		OrderGroup group = orderGroupRepository.findBySessionTokenForUpdate(sessionToken)
 				.orElseThrow(() -> new BusinessException(ErrorCode.ORDER_GROUP_NOT_FOUND));
 
 		if (!group.getBuyer().getId().equals(buyer.getId())) {
 			throw new BusinessException(ErrorCode.ORDER_GROUP_NOT_FOUND);
 		}
+		// 결제창을 연 묶음은 풀지 않는다. 구매자가 결제창에서 이미 확정했을 수 있다 —
+		// 풀어도 되는지는 만료 배치가 point3 에 물어보고 정한다 (D-063)
+		if (!isReleasable(group)) {
+			log.info("결제가 시작된 묶음이라 이탈 해제를 건너뛴다: orderGroupId={}, status={}",
+					group.getId(), group.getStatus());
+			return;
+		}
 		releaseHolds(group);
 	}
 
-	/** 만료 배치와 공유한다. 상태 전이가 성공한 홀드만 재고를 되돌린다 */
-	@Transactional
-	public int releaseHolds(OrderGroup group) {
+	/** 아직 결제창을 연 적이 없는 묶음만 이탈 해제로 푼다. 교체({@link CheckoutReplacer})와 같은 기준이다 */
+	private boolean isReleasable(OrderGroup group) {
+		return group.getStatus() == OrderGroupStatus.CREATED
+				&& paymentRepository.findByOrderGroupIdAndPhase(group.getId(), PaymentPhase.FIRST).isEmpty();
+	}
+
+	/** 잠근 묶음의 홀드를 푼다. 상태 전이가 성공한 홀드만 재고를 되돌린다 */
+	private void releaseHolds(OrderGroup group) {
 		List<Long> orderIds = group.getOrders().stream().map(Order::getId).toList();
 		if (orderIds.isEmpty()) {
-			return 0;
+			return;
 		}
 
 		int released = 0;
-		for (StockHold hold : stockHoldRepository.findByOrderIdIn(orderIds)) {
+		// 만료 배치가 쥔 홀드는 건너뛴다. 배치가 이미 풀고 있다
+		for (StockHold hold : stockHoldRepository.findByOrderIdInForUpdateSkipLocked(orderIds)) {
 			// ★ 멱등 가드. 이미 RELEASED/COMMITTED 면 재고를 건드리지 않는다
 			if (!hold.release()) {
 				continue;
 			}
-			stockLedger.release(hold);
+			if (stockLedger.release(hold) == 0) {
+				log.warn("이탈 해제 시 재고 반환 실패: holdId={}, saleFormId={}, qty={}",
+						hold.getId(), hold.getSaleForm().getId(), hold.getQty());
+			}
 			released++;
 		}
 		if (released > 0) {
 			group.expire();
 		}
-		return released;
 	}
 
 	private OrderGroupResponse toResponse(OrderGroup group) {

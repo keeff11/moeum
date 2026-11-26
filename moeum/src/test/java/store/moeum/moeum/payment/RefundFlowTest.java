@@ -435,6 +435,118 @@ class RefundFlowTest extends IntegrationTest {
 		assertThat(refundUpdatedAts()).isEqualTo(updatedBefore);
 	}
 
+	// ---------------------------------------------------------------- 동시성
+
+	/**
+	 * 셀러가 취소 버튼을 연달아 누르거나, 셀러와 구매자가 같은 순간 취소한 경우.
+	 * 취소는 멱등하지 않아 point3 에 두 번 가면 두 번 환불된다. 결제 행 잠금 + 진행 중 검사가
+	 * 첫 번째만 통과시켜야 한다. 응답을 늦춰 첫 번째가 PROCESSING 으로 머무는 동안 나머지가 들어오게 한다.
+	 */
+	@Test
+	@DisplayName("동시에_취소를_눌러도_point3_에는_한_번만_보낸다")
+	void 동시_취소_요청() throws Exception {
+		int amount = paidAmount();
+		stubInspect("refundable", amount, true);
+		POINT3.stubFor(post(urlPathEqualTo("/refunds/v1/" + SESSION))
+				.willReturn(json(200, """
+						{"id":"ref-1","status":"completed","amount":%d}""".formatted(amount)).withFixedDelay(800)));
+
+		int threads = 8;
+		java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(threads);
+		java.util.concurrent.CountDownLatch ready = new java.util.concurrent.CountDownLatch(threads);
+		java.util.concurrent.CountDownLatch start = new java.util.concurrent.CountDownLatch(1);
+		List<java.util.concurrent.Future<Object>> futures = new java.util.ArrayList<>();
+		try {
+			for (int i = 0; i < threads; i++) {
+				RefundRequester requester = i % 2 == 0 ? RefundRequester.SELLER : RefundRequester.BUYER;
+				futures.add(pool.submit(() -> {
+					ready.countDown();
+					start.await();
+					try {
+						return refundService.refund(paymentId, null, amount, "동시 취소", requester).status();
+					} catch (BusinessException e) {
+						return e.errorCode();
+					}
+				}));
+			}
+			assertThat(ready.await(5, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+			start.countDown();
+
+			java.util.Map<Object, Integer> results = new java.util.HashMap<>();
+			for (java.util.concurrent.Future<Object> future : futures) {
+				results.merge(future.get(10, java.util.concurrent.TimeUnit.SECONDS), 1, Integer::sum);
+			}
+			assertThat(results).containsOnly(
+					java.util.Map.entry(RefundService.RefundResult.Status.COMPLETED, 1),
+					java.util.Map.entry(ErrorCode.REFUND_IN_PROGRESS, threads - 1));
+		} finally {
+			pool.shutdownNow();
+		}
+
+		POINT3.verify(1, postRequestedFor(urlPathEqualTo("/refunds/v1/" + SESSION)));
+		assertThat(refundStatus()).containsExactly("COMPLETED");
+		assertThat(formSold()).isZero();
+	}
+
+	/**
+	 * 실시간 처리가 응답을 받아 확정하는 순간 대사 배치도 같은 건을 확정하는 경우.
+	 * 둘 다 {@code RefundWriter#complete} 를 부른다. 환불 행 잠금 + 상태 가드로 한 번만 뒷정리해야 한다 —
+	 * 두 번 돌면 재고가 두 번 돌아가고 취소 알림이 두 번 간다.
+	 */
+	@Test
+	@DisplayName("같은_취소를_여러_곳에서_동시에_확정해도_뒷정리는_한_번만_한다")
+	void 동시_확정() throws Exception {
+		int amount = paidAmount();
+		stubInspect("refundable", amount, true);
+		stubRefund(409, """
+				{"status":409,"result":{"code":"REFUND_TEMPORARY_UNAVAILABLE"}}""");
+		refundService.refund(paymentId, null, amount, "고객 요청", RefundRequester.BUYER);
+		Long refundId = jdbcTemplate.queryForObject("SELECT id FROM refund", Long.class);
+		assertThat(formSold()).isEqualTo(3);
+
+		int threads = 8;
+		java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(threads);
+		java.util.concurrent.CountDownLatch ready = new java.util.concurrent.CountDownLatch(threads);
+		java.util.concurrent.CountDownLatch start = new java.util.concurrent.CountDownLatch(1);
+		List<java.util.concurrent.Future<Boolean>> futures = new java.util.ArrayList<>();
+		try {
+			for (int i = 0; i < threads; i++) {
+				futures.add(pool.submit(() -> {
+					ready.countDown();
+					start.await();
+					return writer.complete(refundId, "ref-1");
+				}));
+			}
+			assertThat(ready.await(5, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+			start.countDown();
+
+			int completed = 0;
+			for (java.util.concurrent.Future<Boolean> future : futures) {
+				if (future.get(10, java.util.concurrent.TimeUnit.SECONDS)) {
+					completed++;
+				}
+			}
+			assertThat(completed).isEqualTo(1);
+		} finally {
+			pool.shutdownNow();
+		}
+
+		assertThat(refundStatus()).containsExactly("COMPLETED");
+		assertThat(formSold()).isZero();
+		assertThat(jdbcTemplate.queryForObject(
+				"SELECT COUNT(*) FROM outbox WHERE event_type = 'REFUND_COMPLETED'", Integer.class)).isEqualTo(1);
+	}
+
+	/** 전액 취소에 쓸 금액. 1차금 실제 청구액이다 */
+	private int paidAmount() {
+		return jdbcTemplate.queryForObject("SELECT amount FROM payment WHERE id = ?", Integer.class, paymentId);
+	}
+
+	private int formSold() {
+		return jdbcTemplate.queryForObject("SELECT sold FROM sale_form WHERE id = ?", Integer.class,
+				setup.saleFormId());
+	}
+
 	private List<java.time.LocalDateTime> refundUpdatedAts() {
 		return jdbcTemplate.queryForList(
 				"SELECT updated_at FROM refund ORDER BY id", java.time.LocalDateTime.class);

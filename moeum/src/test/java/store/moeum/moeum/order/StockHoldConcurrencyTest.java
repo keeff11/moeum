@@ -62,10 +62,14 @@ class StockHoldConcurrencyTest extends IntegrationTest {
 		AtomicInteger outOfStock = new AtomicInteger();
 		AtomicInteger other = new AtomicInteger();
 
-		CountDownLatch ready = new CountDownLatch(threads);
+		// 요청 200 개를 스레드 32 개로 나눠 던진다. 출발선에 설 수 있는 것은 먼저 잡힌 32 개뿐이고
+		// 나머지는 큐에서 기다리다 문이 열린 뒤 바로 지나간다. 그래서 ready 는 요청 수가 아니라 스레드 수만큼 센다 —
+		// 200 으로 두면 32 개만 세고 멈춰 ready.await 가 제한 시간(30초)을 꼬박 채운 뒤에야 출발했다
+		int poolSize = 32;
+		CountDownLatch ready = new CountDownLatch(poolSize);
 		CountDownLatch start = new CountDownLatch(1);
 		CountDownLatch done = new CountDownLatch(threads);
-		ExecutorService pool = Executors.newFixedThreadPool(32);
+		ExecutorService pool = Executors.newFixedThreadPool(poolSize);
 
 		for (int i = 0; i < threads; i++) {
 			int index = i;
@@ -86,8 +90,8 @@ class StockHoldConcurrencyTest extends IntegrationTest {
 			});
 		}
 
-		ready.await(30, TimeUnit.SECONDS);
-		start.countDown();                       // 200개를 한꺼번에 푼다
+		assertThat(ready.await(30, TimeUnit.SECONDS)).isTrue();
+		start.countDown();                       // 스레드 32 개를 한꺼번에 풀고, 나머지 요청이 뒤따른다
 		assertThat(done.await(120, TimeUnit.SECONDS)).isTrue();
 		pool.shutdown();
 
@@ -175,6 +179,73 @@ class StockHoldConcurrencyTest extends IntegrationTest {
 		// 수요(1000)가 재고(100)의 열 배라 과부하 실패를 빼고도 재고는 다 나가야 한다
 		assertThat(success.get()).as("재고가 남았는데 품절 처리되지 않는다")
 				.isEqualTo(Math.min(stock, threads - other.get()));
+	}
+
+	/**
+	 * 옵션 재고가 폼 재고보다 먼저 바닥나는 경우 (D-054). 폼 UPDATE 는 통과하고 옵션 UPDATE 에서 0 행이 나오므로,
+	 * 진 요청이 먼저 올린 폼 held 까지 같이 롤백돼야 한다. 남으면 옵션 B 를 살 수 있는 폼 재고가 사라진다.
+	 *
+	 * 옵션 A 5개 · 옵션 B 50개(폼 55개)에 A 60명 · B 40명이 한꺼번에 몰린다.
+	 */
+	@Test
+	@DisplayName("옵션_재고가_먼저_바닥나도_옵션과_폼_재고를_넘겨_팔지_않는다")
+	void 옵션_재고_동시_주문() throws Exception {
+		int stockA = 5;
+		int stockB = 50;
+		int wantA = 60;
+		int wantB = 40;
+		OrderFixture.Setup setup = fixture.soloSaleFormWithOptionStock(stockA, stockB);
+
+		AtomicInteger successA = new AtomicInteger();
+		AtomicInteger successB = new AtomicInteger();
+		AtomicInteger outOfStock = new AtomicInteger();
+		Map<String, AtomicInteger> others = new ConcurrentHashMap<>();
+
+		int threads = wantA + wantB;
+		CountDownLatch ready = new CountDownLatch(threads);
+		CountDownLatch start = new CountDownLatch(1);
+		CountDownLatch done = new CountDownLatch(threads);
+		ExecutorService pool = Executors.newFixedThreadPool(threads);
+
+		for (int i = 0; i < threads; i++) {
+			int index = i;
+			boolean optionA = i < wantA;
+			pool.submit(() -> {
+				SessionUser buyer = new SessionUser("kakao-opt-" + index, "구매자" + index);
+				ready.countDown();
+				try {
+					start.await();
+					orderService.place(buyer, order(optionA ? setup.optionId() : setup.secondOptionId(), 1));
+					(optionA ? successA : successB).incrementAndGet();
+				} catch (OutOfStockException e) {
+					outOfStock.incrementAndGet();
+				} catch (Exception e) {
+					others.computeIfAbsent(e.getClass().getSimpleName(), k -> new AtomicInteger()).incrementAndGet();
+				} finally {
+					done.countDown();
+				}
+			});
+		}
+
+		assertThat(ready.await(30, TimeUnit.SECONDS)).isTrue();
+		start.countDown();
+		assertThat(done.await(120, TimeUnit.SECONDS)).isTrue();
+		pool.shutdown();
+
+		assertThat(others).as("품절 외의 예외가 나면 안 된다").isEmpty();
+		assertThat(successA.get()).as("옵션 A 는 옵션 재고만큼만").isEqualTo(stockA);
+		assertThat(successB.get()).as("옵션 B 는 재고가 넉넉해 전원 성공").isEqualTo(wantB);
+		assertThat(outOfStock.get()).isEqualTo(wantA - stockA);
+
+		int optionHeldA = intOf("SELECT held FROM product_option WHERE id = ?", setup.optionId());
+		int optionHeldB = intOf("SELECT held FROM product_option WHERE id = ?", setup.secondOptionId());
+		int formHeld = intOf("SELECT held FROM sale_form WHERE id = ?", setup.saleFormId());
+
+		// ★ 확인 조건 — 옵션 층과 폼 층이 따로 맞고, 둘의 합도 맞는다
+		assertThat(optionHeldA).as("옵션 A held <= 옵션 A 재고").isEqualTo(stockA);
+		assertThat(optionHeldB).isEqualTo(wantB);
+		assertThat(formHeld).as("진 요청이 올린 폼 held 는 롤백됐다").isEqualTo(optionHeldA + optionHeldB);
+		assertThat(stockHoldRepository.countByStatus(HoldStatus.HELD)).isEqualTo(stockA + wantB);
 	}
 
 	@Test
