@@ -9,8 +9,6 @@ import org.springframework.boot.autoconfigure.data.redis.RedisProperties;
 import org.springframework.data.redis.connection.RedisStandaloneConfiguration;
 import org.springframework.data.redis.connection.lettuce.LettuceClientConfiguration;
 import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
-import org.springframework.data.redis.core.RedisOperations;
-import org.springframework.data.redis.core.SessionCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -247,23 +245,19 @@ public class SoldOutCache implements DisposableBean {
 	 * 품절 표시에 막히지 않고 이어받기 · 교체로 가게 한다 (D-089).
 	 *
 	 * 홀드가 이탈 · 만료로 먼저 끝나도 지우지 않는다. 그 구매자의 요청이 DB 로 한 번 더 갈 뿐이다.
+	 *
+	 * 파이프라인(executePipelined)을 쓰지 않는다 (D-090). 파이프라인은 전용 연결을 쓰는데 이 캐시는 연결 풀이 없어,
+	 * 주문마다 Redis 연결을 새로 열고 닫았다. 폼은 대개 하나라 공유 연결로 하나씩 보낸다.
+	 * 첫 실패에서 멈춘다 — Redis 가 느릴 때 폼 수만큼 타임아웃을 기다리지 않는다.
 	 */
 	public void rememberHeld(String kakaoId, Collection<Long> saleFormIds) {
 		if (!enabled || saleFormIds.isEmpty()) {
 			return;
 		}
 		try {
-			redis.executePipelined(new SessionCallback<Object>() {
-				@Override
-				@SuppressWarnings("unchecked")
-				public <K, V> Object execute(RedisOperations<K, V> operations) {
-					RedisOperations<String, String> ops = (RedisOperations<String, String>) operations;
-					for (Long formId : new LinkedHashSet<>(saleFormIds)) {
-						ops.opsForValue().set(heldKey(kakaoId, formId), "1", heldTtl);
-					}
-					return null;
-				}
-			});
+			for (Long formId : new LinkedHashSet<>(saleFormIds)) {
+				redis.opsForValue().set(heldKey(kakaoId, formId), "1", heldTtl);
+			}
 		} catch (RuntimeException e) {
 			log.warn("홀드 쥔 폼 저장 실패: {}: {}", e.getClass().getSimpleName(), e.getMessage());
 		}
