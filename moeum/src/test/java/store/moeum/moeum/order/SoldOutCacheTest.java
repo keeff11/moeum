@@ -5,6 +5,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import store.moeum.moeum.global.auth.SessionUser;
 import store.moeum.moeum.order.dto.OrderCreateRequest;
@@ -14,6 +15,7 @@ import store.moeum.moeum.support.IntegrationTest;
 import store.moeum.moeum.support.OrderFixture;
 
 import java.util.List;
+import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BooleanSupplier;
@@ -175,6 +177,23 @@ class SoldOutCacheTest extends IntegrationTest {
 	}
 
 	@Test
+	@DisplayName("홀드_쥔_폼을_남길_때_주문마다_Redis_연결을_새로_열지_않는다")
+	void 홀드_기록은_공유_연결() {
+		OrderFixture.Setup setup = fixture.saleForm(10, null);
+		orderService.place(buyer("kakao-warm"), order(setup.optionId(), 1));   // 쓰는 연결을 미리 연다
+		long before = connectionsReceived();
+
+		for (int i = 0; i < 3; i++) {
+			orderService.place(buyer("kakao-" + i), order(setup.optionId(), 1));
+		}
+
+		// 파이프라인은 전용 연결을 쓴다. 연결 풀이 없으면 주문마다 새로 열고 닫았다 (D-090)
+		assertThat(connectionsReceived() - before).isZero();
+		assertThat(redis.hasKey(SoldOutCache.heldKey("kakao-0", setup.saleFormId()))).isTrue();
+		assertThat(redis.getExpire(SoldOutCache.heldKey("kakao-0", setup.saleFormId()))).isPositive();
+	}
+
+	@Test
 	@DisplayName("수량_2개로_실패하면_1개는_남았을_수_있어_품절_표시를_세우지_않는다")
 	void 수량_2개_실패() {
 		OrderFixture.Setup setup = fixture.saleForm(1, null);
@@ -290,6 +309,11 @@ class SoldOutCacheTest extends IntegrationTest {
 			}
 		}
 		return condition.getAsBoolean();
+	}
+
+	private long connectionsReceived() {
+		Properties stats = redis.execute((RedisCallback<Properties>) connection -> connection.serverCommands().info("stats"));
+		return Long.parseLong(stats.getProperty("total_connections_received"));
 	}
 
 	private static SessionUser buyer(String kakaoId) {
