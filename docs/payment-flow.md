@@ -116,7 +116,7 @@ public void finalizeCapture(Long paymentId) {
 | 데드락 · 락 타임아웃 | 롤백 | 안 나감 | `@Retryable` 3회 자동 재시도 |
 | 세션 생성 실패 (10~11번) | 홀드 유지 | 안 나감 | 타이머 남은 시간 안에 재시도 |
 | 12번 롤백 | 홀드 유지 | 안 나감 | point3 세션은 방치 후 만료. 재시도는 **새 세션** |
-| 15번 확정 뒤 17번 미도착 | 만료 배치가 point3 조회 | 안 나감 | `committed` 면 풀지 않고 `CAPTURE_PENDING` → 대사 배치가 승인 (D-063) |
+| 15번 확정 뒤 17번 미도착 | 선제 조회가 30초 뒤부터 point3 조회 | 안 나감 | `committed` 면 `CAPTURE_PENDING` 으로 올리고 같은 회차에 승인 (D-091). 놓치면 만료 배치가 한 번 더 묻는다 (D-063) |
 
 세션 생성이 타임아웃이어도 홀드를 풀어도 안전하다. 사용자가 결제창을 못 봤으니 결제가 진행되지 않는다.
 
@@ -227,6 +227,7 @@ const timer = setInterval(async () => {
 | 배치 | 주기 | 대상 | 하는 일 |
 |---|---|---|---|
 | **승인 대사** | 30초 | `payment.status = CAPTURE_PENDING`, `updated_at` 30초 경과 | point3 조회 후 확정. 승인 마감 임박 건 우선 |
+| **선제 조회** (대사 배치 안) | 30초 | `payment.status = CREATED`, 세션 있음, `session_check_due_at` 도래, 묶음 `PAY_PENDING` · `SECOND_PENDING` | 구매자 확정이면 `CAPTURE_PENDING` 으로 올리고 같은 회차에 승인 (D-091) |
 | **홀드 만료** | 1분 | 만료된 `stock_hold`, **`CAPTURE_PENDING` 묶음 제외** | 재고 회수 |
 | **Outbox 릴레이** | 1초 | `outbox.status = PENDING` | 알림톡 발송, 실패 시 백오프 |
 | **공구 마감** | 1분 | `closes_at` 지난 `SELLING` 폼 | `CLOSED` 전이 + `shortfall_policy` 적용 |
@@ -251,6 +252,16 @@ for (Payment p : paymentRepo.findStalePending()) {
 ```
 
 **`committed` 분기를 빼먹으면** B 케이스가 영원히 미확정으로 남고 다음 날 00:00에 승인 기회를 잃는다.
+
+### 선제 조회 (D-091)
+
+결과값(17번)이 안 오면 결제는 `CAPTURE_PENDING` 이 되지 못해 위 대사 배치가 집지 못한다. point3 는 웹훅을 주지 않으므로
+우리가 세션을 물어야 한다. **승인 기한은 구매자가 확정한 당일 자정(KST)** 이라 홀드 만료까지 기다리지 않는다.
+
+- 첫 조회는 세션을 붙이고 30초 뒤, 이후 간격 1 → 2 → 4 → 8 → 10분. 회차당 50건, 150번이면 그만
+- `committed` · `processing` · `captured` → 잠그고 `CREATED` · 같은 세션인지 다시 본 뒤 `CAPTURE_PENDING`. 이어서 위 `switch` 를 같은 회차에 실행
+- `failed` · `expired` · 404 → 묻기만 멈춘다. 결제 · 홀드는 건드리지 않는다
+- 1차금 · 2차금 모두 대상이다. **2차금은 홀드가 없어 만료 배치가 묻지 않으므로 이것이 유일한 경로다**
 
 ### 홀드 만료 배치 쿼리
 

@@ -23,7 +23,9 @@ import store.moeum.moeum.support.OrderFixture;
 import java.util.List;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
+import static com.github.tomakehurst.wiremock.client.WireMock.get;
 import static com.github.tomakehurst.wiremock.client.WireMock.post;
+import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -66,6 +68,9 @@ class SecondPaymentTest extends IntegrationTest {
 
 	@Autowired
 	private SellerRepository sellerRepository;
+
+	@Autowired
+	private PaymentReconcileBatch reconcileBatch;
 
 	@Autowired
 	private JdbcTemplate jdbcTemplate;
@@ -232,6 +237,32 @@ class SecondPaymentTest extends IntegrationTest {
 		assertThat(result.status()).isEqualTo(PaymentResultResponse.Status.PENDING);
 		assertThat(secondPaymentStatus()).isEqualTo("CAPTURE_PENDING");
 		assertThat(groupStatus()).containsExactly("SECOND_PENDING");
+	}
+
+	@Test
+	@DisplayName("2차금_결과값이_안_와도_구매자가_확정했으면_선제_조회가_승인한다")
+	void 이차금_선제_조회() {
+		String orderToken = payFirstWithPayerId(3);
+		int soldAfterFirst = sold();
+		saleFormService.markArrived(sellerKakaoId, setup.saleFormId());
+		stubCreateSession();
+		paymentService.paySecond(buyer(), orderToken);
+		// 구매자는 결제창에서 확정했는데 confirmSecond 가 우리에게 닿지 않았다.
+		// 2차금은 홀드가 없어 만료 배치가 묻지 않는다 — 선제 조회가 아니면 아무도 승인하지 않는다
+		jdbcTemplate.update("UPDATE payment SET session_check_due_at = DATE_SUB(NOW(6), INTERVAL 1 SECOND)"
+				+ " WHERE phase = 'SECOND'");
+		POINT3.stubFor(get(urlPathEqualTo("/payment/v3/session/" + SESSION_ID))
+				.willReturn(json(200, """
+						{"id":"%s","status":"committed"}""".formatted(SESSION_ID))));
+		stubCapture(200, """
+				{"id":"%s","status":"captured"}""".formatted(SESSION_ID));
+
+		assertThat(reconcileBatch.sessionCheckOnce()).isEqualTo(1);
+
+		assertThat(secondPaymentStatus()).isEqualTo("CAPTURED");
+		assertThat(groupStatus()).containsExactly("SECOND_PAID");
+		assertThat(sold()).isEqualTo(soldAfterFirst);
+		POINT3.verify(1, postRequestedFor(urlPathEqualTo("/capture/v2/" + SESSION_ID)));
 	}
 
 	@Test

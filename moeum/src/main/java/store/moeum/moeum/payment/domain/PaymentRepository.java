@@ -234,4 +234,77 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
 		Long getOrderGroupId();
 		String getSessionId();
 	}
+
+	// ---------------------------------------------------------------- 선제 조회 (D-091)
+
+	/**
+	 * 세션을 붙였을 때 첫 선제 조회를 예약한다. 재결제로 세션이 바뀌면 횟수도 처음부터 센다.
+	 *
+	 * <b>{@code clearAutomatically} 를 켜지 않는다.</b> 세션을 붙이는 트랜잭션 한가운데서 부르므로,
+	 * 영속성 컨텍스트를 비우면 뒤이어 바꾸는 묶음 상태가 저장되지 않는다.
+	 */
+	@Modifying(flushAutomatically = true)
+	@Query(value = """
+			UPDATE payment
+			   SET session_check_due_at = :dueAt,
+			       session_checks = 0
+			 WHERE id = :id
+			""", nativeQuery = true)
+	int scheduleSessionCheck(@Param("id") Long id, @Param("dueAt") LocalDateTime dueAt);
+
+	/**
+	 * 물어볼 차례가 된 결제를 잠가 집는다 (D-091).
+	 *
+	 * <b>결제창을 연 상태로 멈춘 묶음만 본다.</b> 1차금은 {@code PAY_PENDING}, 2차금은 {@code SECOND_PENDING} 이다.
+	 * 만료 배치가 걷은 묶음(EXPIRED)이나 취소된 묶음은 구매자가 확정했어도 승인하지 않으므로 물을 이유가 없다.
+	 *
+	 * {@code SKIP LOCKED} 로 인스턴스끼리 나눠 가진다. 실시간 confirm 이 잡고 있는 행도 건너뛴다 —
+	 * 그쪽이 곧 {@code CAPTURE_PENDING} 으로 바꾼다. {@code OF p} 라 묶음 행은 잠그지 않는다.
+	 */
+	@Query(value = """
+			SELECT p.id AS paymentId, p.session_id AS sessionId, p.session_checks AS checks
+			  FROM payment p
+			  JOIN order_group g ON g.id = p.order_group_id
+			 WHERE p.status = 'CREATED'
+			   AND p.session_check_due_at <= :now
+			   AND p.session_id IS NOT NULL
+			   AND ((p.phase = 'FIRST' AND g.status = 'PAY_PENDING')
+			     OR (p.phase = 'SECOND' AND g.status = 'SECOND_PENDING'))
+			 ORDER BY p.session_check_due_at, p.id
+			 LIMIT :limit
+			 FOR UPDATE OF p SKIP LOCKED
+			""", nativeQuery = true)
+	List<SessionCheck> findSessionChecksDueForUpdate(@Param("now") LocalDateTime now, @Param("limit") int limit);
+
+	/**
+	 * 물어본 횟수를 올리고 다음 차례를 잡는다. {@code dueAt} 이 null 이면 더 묻지 않는다.
+	 *
+	 * {@code updated_at = updated_at} 은 D-074 와 같은 이유다 — 이 행이 나중에 CAPTURE_PENDING 이 되면
+	 * 멈춤 알림이 {@code updated_at} 으로 멈춘 시간을 잰다.
+	 */
+	@Modifying(clearAutomatically = true, flushAutomatically = true)
+	@Query(value = """
+			UPDATE payment
+			   SET session_checks = session_checks + 1,
+			       session_check_due_at = :dueAt,
+			       updated_at = updated_at
+			 WHERE id = :id
+			""", nativeQuery = true)
+	int markSessionChecked(@Param("id") Long id, @Param("dueAt") LocalDateTime dueAt);
+
+	/** 결론이 난 건은 더 묻지 않는다 */
+	@Modifying(clearAutomatically = true, flushAutomatically = true)
+	@Query(value = """
+			UPDATE payment
+			   SET session_check_due_at = NULL,
+			       updated_at = updated_at
+			 WHERE id = :id
+			""", nativeQuery = true)
+	int closeSessionCheck(@Param("id") Long id);
+
+	interface SessionCheck {
+		Long getPaymentId();
+		String getSessionId();
+		int getChecks();
+	}
 }

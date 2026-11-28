@@ -19,6 +19,7 @@ moeum:
     shortfall-delay: 3600000
     hold-expiry-delay: 3600000
     payment-reconcile-delay: 3600000
+    payment-session-check-delay: 3600000
     refund-reconcile-delay: 3600000
     orphan-sweep:
       # "-" 는 스케줄 비활성이다. 테스트에서 돌면 실제 S3 를 부른다 — 목록 조회와 삭제라 더 위험하다

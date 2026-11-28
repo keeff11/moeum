@@ -855,6 +855,259 @@ class PaymentFlowTest extends IntegrationTest {
 		assertThat(paymentStatus()).containsExactly("CAPTURE_PENDING");
 	}
 
+	// ---------------------------------------------------------------- 선제 조회 (D-091)
+
+	@Test
+	@DisplayName("결과값이_안_와도_구매자가_확정했으면_선제_조회가_같은_회차에_승인한다")
+	void 선제_조회_committed() {
+		startPayment();
+		dueNow();
+		stubGetSession("""
+				{"id":"%s","status":"committed"}""".formatted(SESSION_ID));
+		stubCapture(200, """
+				{"id":"%s","status":"captured"}""".formatted(SESSION_ID));
+
+		// 홀드는 아직 살아 있다. 만료까지 기다리지 않는다
+		assertThat(reconcileBatch.sessionCheckOnce()).isEqualTo(1);
+
+		assertThat(paymentStatus()).containsExactly("CAPTURED");
+		assertThat(groupStatus()).containsExactly("PAID");
+		assertThat(held()).isZero();
+		assertThat(sold()).isEqualTo(3);
+		POINT3.verify(1, postRequestedFor(urlPathEqualTo("/capture/v2/" + SESSION_ID)));
+	}
+
+	@Test
+	@DisplayName("이미_captured_면_선제_조회는_승인을_다시_부르지_않고_확정만_한다")
+	void 선제_조회_captured() {
+		startPayment();
+		dueNow();
+		stubGetSession("""
+				{"id":"%s","status":"captured"}""".formatted(SESSION_ID));
+
+		assertThat(reconcileBatch.sessionCheckOnce()).isEqualTo(1);
+
+		assertThat(paymentStatus()).containsExactly("CAPTURED");
+		assertThat(sold()).isEqualTo(3);
+		POINT3.verify(0, postRequestedFor(urlPathEqualTo("/capture/v2/" + SESSION_ID)));
+	}
+
+	@Test
+	@DisplayName("processing_이면_선제_조회는_CAPTURE_PENDING_으로_넘기고_대사에_맡긴다")
+	void 선제_조회_processing() {
+		startPayment();
+		dueNow();
+		stubGetSession("""
+				{"id":"%s","status":"processing"}""".formatted(SESSION_ID));
+
+		assertThat(reconcileBatch.sessionCheckOnce()).isEqualTo(1);
+
+		assertThat(paymentStatus()).containsExactly("CAPTURE_PENDING");
+		assertThat(holdStatus()).containsExactly("HELD");
+		POINT3.verify(0, postRequestedFor(urlPathEqualTo("/capture/v2/" + SESSION_ID)));
+	}
+
+	@Test
+	@DisplayName("세션을_붙인_지_30초가_안_됐으면_묻지_않는다")
+	void 선제_조회_30초_전() {
+		startPayment();
+
+		// 정상이면 이 사이에 confirm 이 온다
+		assertThat(sessionCheckDueAt()).isAfter(LocalDateTime.now(JpaAuditingConfig.KST).plusSeconds(20));
+		assertThat(reconcileBatch.sessionCheckOnce()).isZero();
+		POINT3.verify(0, getRequestedFor(urlPathEqualTo("/payment/v3/session/" + SESSION_ID)));
+	}
+
+	@Test
+	@DisplayName("confirm_이_먼저_처리한_결제는_선제_조회가_묻지_않는다")
+	void 선제_조회_confirm_뒤() {
+		String orderToken = startPayment();
+		stubCapture(200, """
+				{"id":"%s","status":"captured"}""".formatted(SESSION_ID));
+		paymentService.confirm(buyer(), orderToken, SESSION_ID, null);
+		dueNow();
+
+		assertThat(reconcileBatch.sessionCheckOnce()).isZero();
+		POINT3.verify(0, getRequestedFor(urlPathEqualTo("/payment/v3/session/" + SESSION_ID)));
+	}
+
+	@Test
+	@DisplayName("구매자가_아직_확정하지_않았으면_아무것도_바꾸지_않고_간격을_늘려_다시_묻는다")
+	void 선제_조회_간격() {
+		startPayment();
+		stubGetSession("""
+				{"id":"%s","status":"initiated"}""".formatted(SESSION_ID));
+
+		dueNow();
+		LocalDateTime before = LocalDateTime.now(JpaAuditingConfig.KST);
+		assertThat(reconcileBatch.sessionCheckOnce()).isZero();
+		assertThat(sessionChecks()).isEqualTo(1);
+		assertThat(Duration.between(before, sessionCheckDueAt())).isBetween(
+				Duration.ofSeconds(55), Duration.ofSeconds(65));
+
+		// 바로 다시 돌려도 차례가 아니다
+		assertThat(reconcileBatch.sessionCheckOnce()).isZero();
+		POINT3.verify(1, getRequestedFor(urlPathEqualTo("/payment/v3/session/" + SESSION_ID)));
+
+		dueNow();
+		before = LocalDateTime.now(JpaAuditingConfig.KST);
+		reconcileBatch.sessionCheckOnce();
+		assertThat(sessionChecks()).isEqualTo(2);
+		assertThat(Duration.between(before, sessionCheckDueAt())).isBetween(
+				Duration.ofSeconds(115), Duration.ofSeconds(125));
+
+		assertThat(paymentStatus()).containsExactly("CREATED");
+		assertThat(holdStatus()).containsExactly("HELD");
+		assertThat(held()).isEqualTo(3);
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = {"failed", "expired"})
+	@DisplayName("실패·만료로_결론이_나면_더_묻지_않고_홀드는_건드리지_않는다")
+	void 선제_조회_결론(String status) {
+		startPayment();
+		dueNow();
+		stubGetSession("""
+				{"id":"%s","status":"%s"}""".formatted(SESSION_ID, status));
+
+		assertThat(reconcileBatch.sessionCheckOnce()).isZero();
+
+		assertThat(sessionCheckDueAt()).isNull();
+		// 구매자가 창을 닫았다가 홀드 시간 안에 다시 결제할 수 있다. 회수는 만료 배치가 한다
+		assertThat(paymentStatus()).containsExactly("CREATED");
+		assertThat(holdStatus()).containsExactly("HELD");
+	}
+
+	@Test
+	@DisplayName("세션이_없으면_더_묻지_않는다")
+	void 선제_조회_404() {
+		startPayment();
+		dueNow();
+		POINT3.stubFor(get(urlPathEqualTo("/payment/v3/session/" + SESSION_ID))
+				.willReturn(json(404, "{}")));
+
+		assertThat(reconcileBatch.sessionCheckOnce()).isZero();
+		assertThat(sessionCheckDueAt()).isNull();
+		assertThat(paymentStatus()).containsExactly("CREATED");
+	}
+
+	@Test
+	@DisplayName("point3_가_5xx_면_아무것도_바꾸지_않고_다음_간격에_다시_묻는다")
+	void 선제_조회_5xx() {
+		startPayment();
+		dueNow();
+		POINT3.stubFor(get(urlPathEqualTo("/payment/v3/session/" + SESSION_ID))
+				.willReturn(json(500, "{}")));
+
+		assertThat(reconcileBatch.sessionCheckOnce()).isZero();
+
+		assertThat(paymentStatus()).containsExactly("CREATED");
+		assertThat(holdStatus()).containsExactly("HELD");
+		assertThat(sessionCheckDueAt()).isNotNull();
+	}
+
+	@Test
+	@DisplayName("상한_횟수에_닿으면_더_묻지_않는다")
+	void 선제_조회_상한() {
+		startPayment();
+		jdbcTemplate.update("UPDATE payment SET session_checks = ?",
+				store.moeum.moeum.payment.domain.SessionCheckSchedule.MAX_CHECKS - 1);
+		dueNow();
+		stubGetSession("""
+				{"id":"%s","status":"initiated"}""".formatted(SESSION_ID));
+
+		reconcileBatch.sessionCheckOnce();
+
+		assertThat(sessionCheckDueAt()).isNull();
+	}
+
+	@Test
+	@DisplayName("만료_배치가_홀드를_걷은_묶음은_선제_조회가_묻지_않는다")
+	void 선제_조회_회수된_묶음() {
+		startPayment();
+		expireHolds();
+		stubGetSession("""
+				{"id":"%s","status":"initiated"}""".formatted(SESSION_ID));
+		assertThat(holdExpiryBatch.expireOnce()).isEqualTo(1);
+		POINT3.resetRequests();
+		dueNow();
+
+		assertThat(reconcileBatch.sessionCheckOnce()).isZero();
+		POINT3.verify(0, getRequestedFor(urlPathEqualTo("/payment/v3/session/" + SESSION_ID)));
+	}
+
+	@Test
+	@DisplayName("홀드_만료_뒤_회수_전이면_선제_조회도_구매자_확정을_살린다")
+	void 선제_조회_만료_회수_전() {
+		startPayment();
+		expireHolds();
+		dueNow();
+		stubGetSession("""
+				{"id":"%s","status":"committed"}""".formatted(SESSION_ID));
+		stubCapture(200, """
+				{"id":"%s","status":"captured"}""".formatted(SESSION_ID));
+
+		// D-063 의 늦은 confirm 과 같은 기준이다. 재고가 아직 남에게 안 넘어갔다
+		assertThat(reconcileBatch.sessionCheckOnce()).isEqualTo(1);
+		assertThat(paymentStatus()).containsExactly("CAPTURED");
+		assertThat(sold()).isEqualTo(3);
+
+		// 뒤이어 도는 만료 배치는 확정된 홀드를 건드리지 않는다
+		assertThat(holdExpiryBatch.expireOnce()).isZero();
+		assertThat(sold()).isEqualTo(3);
+	}
+
+	@Test
+	@DisplayName("창을_닫고_다시_결제해_세션이_바뀌면_횟수를_처음부터_세고_옛_세션의_확정으로는_넘기지_않는다")
+	void 선제_조회_재결제() {
+		startPayment();
+		Long paymentId = jdbcTemplate.queryForObject("SELECT id FROM payment", Long.class);
+		jdbcTemplate.update("UPDATE payment SET session_checks = 7");
+		dueNow();
+
+		stubCreateSession(SESSION_ID_2);
+		paymentService.pay(buyer(), sessionToken);
+
+		assertThat(paymentSessionId()).containsExactly(SESSION_ID_2);
+		assertThat(sessionChecks()).isZero();
+		assertThat(sessionCheckDueAt()).isAfter(LocalDateTime.now(JpaAuditingConfig.KST).plusSeconds(20));
+
+		// 옛 세션을 물어본 사이에 바뀐 경우다. 옛 세션은 아무도 승인하지 않아 출금되지 않는다
+		assertThat(paymentWriter.rescueOnSessionCheck(paymentId, SESSION_ID)).isFalse();
+		assertThat(paymentStatus()).containsExactly("CREATED");
+	}
+
+	@Test
+	@DisplayName("스위치를_끄면_선제_조회를_하지_않는다")
+	void 선제_조회_스위치_끔() {
+		startPayment();
+		dueNow();
+		stubGetSession("""
+				{"id":"%s","status":"committed"}""".formatted(SESSION_ID));
+		ReflectionTestUtils.setField(reconcileBatch, "sessionCheck", false);
+		try {
+			assertThat(reconcileBatch.sessionCheckOnce()).isZero();
+		} finally {
+			ReflectionTestUtils.setField(reconcileBatch, "sessionCheck", true);
+		}
+		assertThat(paymentStatus()).containsExactly("CREATED");
+		POINT3.verify(0, getRequestedFor(urlPathEqualTo("/payment/v3/session/" + SESSION_ID)));
+	}
+
+	/** 선제 조회 차례가 되게 만든다 */
+	private void dueNow() {
+		jdbcTemplate.update("UPDATE payment SET session_check_due_at = DATE_SUB(NOW(6), INTERVAL 1 SECOND)"
+				+ " WHERE session_check_due_at IS NOT NULL");
+	}
+
+	private LocalDateTime sessionCheckDueAt() {
+		return jdbcTemplate.queryForObject("SELECT session_check_due_at FROM payment", LocalDateTime.class);
+	}
+
+	private int sessionChecks() {
+		return jdbcTemplate.queryForObject("SELECT session_checks FROM payment", Integer.class);
+	}
+
 	private List<Integer> holdCheckMisses() {
 		return jdbcTemplate.queryForList("SELECT hold_check_misses FROM payment ORDER BY id", Integer.class);
 	}
