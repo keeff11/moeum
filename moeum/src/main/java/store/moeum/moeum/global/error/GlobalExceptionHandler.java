@@ -7,6 +7,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.transaction.CannotCreateTransactionException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
@@ -91,6 +92,23 @@ public class GlobalExceptionHandler {
 	@ExceptionHandler(NoResourceFoundException.class)
 	public ResponseEntity<ErrorResponse> handleNoResource(NoResourceFoundException e, HttpServletRequest request) {
 		return build(ErrorCode.NOT_FOUND, ErrorCode.NOT_FOUND.message(), request, newTraceId(), null);
+	}
+
+	/**
+	 * DB 커넥션을 얻지 못해 트랜잭션을 시작하지 못했다 (D-092).
+	 *
+	 * 몰릴 때 커넥션 풀 대기(3초)가 넘으면 온다. 이 트랜잭션은 아무것도 바꾸지 못했으니 같은 요청을
+	 * 다시 보내도 된다 — 500 이 아니라 {@link ErrorCode#TEMPORARY_ERROR} 로 알려 프론트가 재시도할 수 있게 한다.
+	 * 앞서 커밋한 단계가 있는 요청(결제하기의 세션 저장 등)도 그 단계들이 다시 해도 되는 단계라 같다.
+	 * 돈이 나간 뒤의 확정처럼 재시도로 답하면 안 되는 곳은 호출한 쪽이 먼저 받아 처리한다.
+	 */
+	@ExceptionHandler(CannotCreateTransactionException.class)
+	public ResponseEntity<ErrorResponse> handleNoConnection(CannotCreateTransactionException e,
+	                                                        HttpServletRequest request) {
+		String traceId = newTraceId();
+		log.warn("[{}] DB 커넥션을 얻지 못했다 {} {} - {}", traceId, request.getMethod(), request.getRequestURI(),
+				e.getMostSpecificCause().getMessage());
+		return build(ErrorCode.TEMPORARY_ERROR, ErrorCode.TEMPORARY_ERROR.message(), request, traceId, null);
 	}
 
 	@ExceptionHandler(Exception.class)

@@ -11,6 +11,7 @@ import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.transaction.CannotCreateTransactionException;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -90,6 +91,16 @@ class GlobalExceptionHandlerTest {
 				.andExpect(jsonPath("$.message").value(ErrorCode.INTERNAL_ERROR.message()));
 	}
 
+	@Test
+	@DisplayName("DB_커넥션을_못_얻으면_다시_시도해도_되는_TEMPORARY_ERROR다")
+	void DB_커넥션을_못_얻으면_다시_시도해도_되는_TEMPORARY_ERROR다() throws Exception {
+		// 몰릴 때 커넥션 풀 대기가 넘으면 트랜잭션 시작이 이렇게 실패한다 (D-092)
+		mockMvc.perform(get("/test/no-connection"))
+				.andExpect(status().isServiceUnavailable())
+				.andExpect(jsonPath("$.code").value("TEMPORARY_ERROR"))
+				.andExpect(jsonPath("$.message").value(ErrorCode.TEMPORARY_ERROR.message()));
+	}
+
 	@TestConfiguration
 	@RestController
 	static class TestController {
@@ -111,6 +122,13 @@ class GlobalExceptionHandlerTest {
 		void boom() {
 			// point3 토큰이 예외 메시지에 섞여 나가는 상황을 흉내낸다
 			throw new IllegalStateException("token=secret-abcdef payer_id=1234567890");
+		}
+
+		@GetMapping("/test/no-connection")
+		void noConnection() {
+			throw new CannotCreateTransactionException("Could not open JPA EntityManager for transaction",
+					new java.sql.SQLTransientConnectionException(
+							"HikariPool-1 - Connection is not available, request timed out after 3000ms."));
 		}
 
 		record Request(@NotBlank String name, @Min(1) int qty) {
