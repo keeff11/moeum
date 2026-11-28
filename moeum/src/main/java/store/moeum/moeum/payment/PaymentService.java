@@ -3,9 +3,11 @@ package store.moeum.moeum.payment;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.CannotCreateTransactionException;
 import store.moeum.moeum.global.auth.SessionUser;
 import store.moeum.moeum.global.error.BusinessException;
 import store.moeum.moeum.global.error.ErrorCode;
@@ -147,6 +149,13 @@ public class PaymentService {
 					log.warn("결제 확정 중 잠금 충돌 — 대사 배치에 맡긴다: paymentId={}, cause={}",
 							pending.paymentId(), e.getMostSpecificCause().getMessage());
 					return PaymentResultResponse.pending(orderToken);
+				} catch (CannotCreateTransactionException | DataAccessResourceFailureException e) {
+					// 확정 트랜잭션이 DB 커넥션을 얻지 못했거나 도중에 잃었다 (D-092). 몰릴 때 풀 대기(3초)가
+					// 넘으면 온다. 잠금 충돌과 같다 — 돈은 나갔고 CAPTURE_PENDING 은 커밋돼 있으니 500 이 아니라
+					// 결과 모름으로 답하고 대사 배치가 확정한다
+					log.warn("결제 확정 중 DB 커넥션 실패 — 대사 배치에 맡긴다: paymentId={}, cause={}",
+							pending.paymentId(), e.getMostSpecificCause().getMessage());
+					return PaymentResultResponse.pending(orderToken);
 				}
 				if (phase == PaymentPhase.FIRST) {
 					rememberPayerIdQuietly(pending.paymentId(), payerId);
@@ -156,9 +165,7 @@ public class PaymentService {
 
 			if (capture.status().isTerminalFailure()) {
 				// point3 가 실패를 확정했다. 되돌려도 안전하다
-				writer.failConfirmed(pending.paymentId(),
-						"승인 실패: " + capture.status(), PaymentActor.USER);
-				return PaymentResultResponse.failed(orderToken, "결제가 완료되지 않았습니다.");
+				return failConfirmed(pending.paymentId(), "승인 실패: " + capture.status(), orderToken);
 			}
 
 			// processing. 결과를 모른다 — 되돌리지 않는다
@@ -177,14 +184,31 @@ public class PaymentService {
 			}
 			// 4xx. point3 가 요청을 받아들이지 않았으므로 승인이 일어났을 가능성이 없다
 			log.warn("승인 거부(4xx): paymentId={}, status={}", pending.paymentId(), e.status());
-			writer.failConfirmed(pending.paymentId(), "승인 거부(" + e.status() + ")", PaymentActor.USER);
-			return PaymentResultResponse.failed(orderToken, "결제가 완료되지 않았습니다.");
+			return failConfirmed(pending.paymentId(), "승인 거부(" + e.status() + ")", orderToken);
 
 		} catch (Point3UncertainException e) {
 			// 5xx · 타임아웃. 출금됐을 수 있다 — 홀드도 상태도 건드리지 않는다
 			log.error("승인 결과 불명: paymentId={} — 되돌리지 않는다", pending.paymentId());
 			return PaymentResultResponse.pending(orderToken);
 		}
+	}
+
+	/**
+	 * 승인이 일어나지 않은 것이 확인된 결제를 실패로 내린다.
+	 *
+	 * 실패 기록이 DB 커넥션을 얻지 못하면 (D-092) 결제는 CAPTURE_PENDING 으로 남는다. 실패라고 답하면
+	 * 기록과 응답이 어긋나고, 500 이면 프론트가 무엇을 보여줄지 모른다. 결과 모름으로 답하면 대사 배치가
+	 * point3 에 다시 물어 실패로 내린다 — 복귀 페이지는 그때 실패를 본다.
+	 */
+	private PaymentResultResponse failConfirmed(Long paymentId, String reason, String orderToken) {
+		try {
+			writer.failConfirmed(paymentId, reason, PaymentActor.USER);
+		} catch (CannotCreateTransactionException | DataAccessResourceFailureException e) {
+			log.warn("결제 실패 기록 중 DB 커넥션 실패 — 대사 배치에 맡긴다: paymentId={}, cause={}",
+					paymentId, e.getMostSpecificCause().getMessage());
+			return PaymentResultResponse.pending(orderToken);
+		}
+		return PaymentResultResponse.failed(orderToken, "결제가 완료되지 않았습니다.");
 	}
 
 	/**

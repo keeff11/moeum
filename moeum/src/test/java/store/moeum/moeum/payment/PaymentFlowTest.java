@@ -1,6 +1,7 @@
 package store.moeum.moeum.payment;
 
 import com.github.tomakehurst.wiremock.WireMockServer;
+import com.zaxxer.hikari.HikariDataSource;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -33,9 +34,11 @@ import store.moeum.moeum.support.IntegrationTest;
 import store.moeum.moeum.support.OrderFixture;
 import store.moeum.moeum.support.RecordingAlertSender;
 
+import java.sql.Connection;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
@@ -43,6 +46,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import javax.sql.DataSource;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.post;
@@ -81,6 +85,8 @@ class PaymentFlowTest extends IntegrationTest {
 		// 타임아웃 분기를 보려고 짧게 잡되, 너무 짧으면 안 된다 — 클래스의 첫 요청은 JVM 이 덜 데워져
 		// 500ms 를 넘겨 엉뚱한 테스트가 세션 생성 타임아웃으로 깨졌다 (RefundFlowTest 와 같은 이유)
 		registry.add("moeum.point3.read-timeout", () -> "2s");
+		// 커넥션 풀 대기 초과는 운영과 같은 3초로 본다 (D-092). 테스트 프로파일은 기본값 30초다
+		registry.add("spring.datasource.hikari.connection-timeout", () -> "3000");
 	}
 
 	@Autowired
@@ -103,6 +109,9 @@ class PaymentFlowTest extends IntegrationTest {
 
 	@Autowired
 	private JdbcTemplate jdbcTemplate;
+
+	@Autowired
+	private DataSource dataSource;
 
 	@Autowired
 	private PlatformTransactionManager transactionManager;
@@ -369,6 +378,69 @@ class PaymentFlowTest extends IntegrationTest {
 		assertThat(groupStatus()).containsExactly("PAID");
 		assertThat(sold()).isEqualTo(3);
 		assertThat(holdStatus()).containsExactly("COMMITTED");
+	}
+
+	@Test
+	@DisplayName("출금된_뒤_커넥션_풀이_바닥나_확정을_못_적으면_실패라고_답하지_않고_대사_배치가_확정한다")
+	void 확정_커넥션_대기_초과() throws Exception {
+		String orderToken = startPayment();
+		// 승인 응답이 오는 사이에 풀을 말린다. 승인 호출은 트랜잭션 밖이라 커넥션을 쥐지 않는다
+		POINT3.stubFor(post(urlPathEqualTo("/capture/v2/" + SESSION_ID))
+				.willReturn(json(200, """
+						{"id":"%s","status":"captured"}""".formatted(SESSION_ID)).withFixedDelay(1000)));
+
+		ExecutorService buyerThread = Executors.newSingleThreadExecutor();
+		List<Connection> borrowed = new ArrayList<>();
+		PaymentResultResponse result;
+		try {
+			Future<PaymentResultResponse> confirming = buyerThread.submit(
+					() -> paymentService.confirm(buyer(), orderToken, SESSION_ID, "payer-first"));
+			awaitPaymentStatus("CAPTURE_PENDING");
+			// 다른 요청들이 재고 경합으로 커넥션을 다 쥐고 있는 상황이다 (D-092)
+			int poolSize = dataSource.unwrap(HikariDataSource.class).getMaximumPoolSize();
+			for (int i = 0; i < poolSize; i++) {
+				borrowed.add(dataSource.getConnection());
+			}
+			result = confirming.get(15, TimeUnit.SECONDS);
+		} finally {
+			for (Connection connection : borrowed) {
+				connection.close();
+			}
+			buyerThread.shutdown();
+		}
+
+		// 돈은 나갔다. 500 으로 실패처럼 보이면 안 된다
+		assertThat(result.status()).isEqualTo(PaymentResultResponse.Status.PENDING);
+		assertThat(paymentStatus()).containsExactly("CAPTURE_PENDING");
+		assertThat(holdStatus()).containsExactly("HELD");
+
+		stubGetSession("""
+				{"id":"%s","status":"captured"}""".formatted(SESSION_ID));
+		agePending();
+
+		assertThat(reconcileBatch.reconcileOnce()).isEqualTo(1);
+		assertThat(paymentStatus()).containsExactly("CAPTURED");
+		assertThat(groupStatus()).containsExactly("PAID");
+		assertThat(sold()).isEqualTo(3);
+	}
+
+	@Test
+	@DisplayName("커넥션_풀이_바닥나면_트랜잭션_시작이_CannotCreateTransactionException으로_실패한다")
+	void 커넥션_대기_초과_예외_종류() throws Exception {
+		// 전역 처리기가 503 으로, 확정이 PENDING 으로 받는 예외가 실제로 이것인지 본다
+		int poolSize = dataSource.unwrap(HikariDataSource.class).getMaximumPoolSize();
+		List<Connection> borrowed = new ArrayList<>();
+		try {
+			for (int i = 0; i < poolSize; i++) {
+				borrowed.add(dataSource.getConnection());
+			}
+			assertThatThrownBy(() -> paymentService.pay(buyer(), sessionToken))
+					.isInstanceOf(org.springframework.transaction.CannotCreateTransactionException.class);
+		} finally {
+			for (Connection connection : borrowed) {
+				connection.close();
+			}
+		}
 	}
 
 	@ParameterizedTest
