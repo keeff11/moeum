@@ -325,6 +325,18 @@ aws ssm put-parameter --region ap-northeast-2     --name /moeum/prod/HOLD_EXPIRY
 
 `.env` 는 `deploy.sh` 가 만들 때만 갱신된다. 파라미터만 바꾸고 재시작하면 반영되지 않는다.
 
+### 결과값 선제 조회 스위치 (D-091)
+
+기본값이 **켜짐**이라 등록하지 않아도 된다. 결과값이 안 온 결제를 30초마다 point3 에 묻고, 구매자가 확정했으면
+바로 승인하는 기능이다. **이상하면 끄고 다시 배포한다** — 1차금은 홀드 만료 때 묻는 이전 동작(D-063)만 남는다.
+끄면 2차금은 결과값이 안 왔을 때 묻는 곳이 없어진다.
+
+```bash
+aws ssm put-parameter --region ap-northeast-2     --name /moeum/prod/PAYMENT_SESSION_CHECK --value false --type String --overwrite
+```
+
+V24 가 `payment` 에 컬럼 두 개와 인덱스를 더한다. 배포 전에 오래 열린 DB 세션이 없는지 본다 (아래 "알아둘 것").
+
 ### 스마트택배 배송조회 키 (D-048)
 
 **무료 이용권이 월 100건이다.** 그래서 키와 별개인 스위치를 뒀다 — 키를 넣어 두고도

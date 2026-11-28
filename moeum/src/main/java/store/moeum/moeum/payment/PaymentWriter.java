@@ -32,6 +32,7 @@ import store.moeum.moeum.payment.domain.PaymentEventRepository;
 import store.moeum.moeum.payment.domain.PaymentPhase;
 import store.moeum.moeum.payment.domain.PaymentRepository;
 import store.moeum.moeum.payment.domain.PaymentStatus;
+import store.moeum.moeum.payment.domain.SessionCheckSchedule;
 import store.moeum.moeum.payment.dto.InProgressOrderResponse;
 import store.moeum.moeum.payment.dto.PaymentResultResponse;
 import store.moeum.moeum.payment.infra.Point3Session;
@@ -201,6 +202,9 @@ public class PaymentWriter {
 		}
 
 		payment.attachSession(session.id(), session.supplyAmount(), session.vat(), session.taxFreeAmount());
+		// 결과값이 안 오면 대사 배치가 이 시각부터 point3 에 묻는다 (D-091)
+		paymentRepository.scheduleSessionCheck(payment.getId(),
+				SessionCheckSchedule.first(LocalDateTime.now(JpaAuditingConfig.KST)));
 		OrderGroup group = payment.getOrderGroup();
 		if (payment.isFirst()) {
 			group.markPayPending(orderToken);
@@ -554,6 +558,29 @@ public class PaymentWriter {
 	 */
 	@Transactional(propagation = Propagation.REQUIRES_NEW)
 	public boolean rescuePayerCommitted(Long paymentId, String sessionId) {
+		return rescue(paymentId, sessionId, "홀드 만료 시 구매자 확정 확인");
+	}
+
+	/**
+	 * 선제 조회가 point3 에서 구매자 확정을 확인한 건을 {@code CAPTURE_PENDING} 으로 넘긴다 (D-091).
+	 *
+	 * 만료 배치의 구조({@link #rescuePayerCommitted})와 같은 관문을 탄다. 다른 점은 2차금도 받는다는 것이다 —
+	 * 2차금은 홀드가 없어 만료 배치가 묻지 않으므로, 여기가 아니면 아무도 승인하지 않는다.
+	 *
+	 * @return 이번 호출로 넘겼으면 true. 이미 진행됐거나, 세션이 바뀌었거나, 홀드가 회수됐으면 false
+	 */
+	@Transactional(propagation = Propagation.REQUIRES_NEW)
+	public boolean rescueOnSessionCheck(Long paymentId, String sessionId) {
+		return rescue(paymentId, sessionId, "선제 조회로 구매자 확정 확인");
+	}
+
+	/**
+	 * 실시간 confirm 의 관문(②③④)을 배치 쪽에서 다시 본다. 소유권(①)은 배치라 볼 것이 없다.
+	 *
+	 * 1차금은 홀드가 <b>아직 회수되지 않았는지</b> 잠그고 본다 — 만료 시각이 지났어도 회수 전이면 통과한다
+	 * (D-063 의 늦은 confirm 과 같은 기준). 2차금은 재고가 1차금에서 확정돼 홀드를 보지 않는다.
+	 */
+	private boolean rescue(Long paymentId, String sessionId, String reason) {
 		Payment payment = paymentRepository.findByIdForUpdate(paymentId)
 				.orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_NOT_FOUND));
 
@@ -562,14 +589,39 @@ public class PaymentWriter {
 			return false;
 		}
 		OrderGroup group = payment.getOrderGroup();
-		if (group.isPaid() || !holdsNotReleased(group)) {
+		if (payment.isFirst()) {
+			if (group.isPaid() || !holdsNotReleased(group)) {
+				return false;
+			}
+		} else if (group.isSecondPaid()) {
 			return false;
 		}
 
 		payment.markCapturePending();
-		record(payment, PaymentStatus.CREATED, PaymentStatus.CAPTURE_PENDING,
-				"홀드 만료 시 구매자 확정 확인", PaymentActor.BATCH);
+		record(payment, PaymentStatus.CREATED, PaymentStatus.CAPTURE_PENDING, reason, PaymentActor.BATCH);
 		return true;
+	}
+
+	/**
+	 * 선제 조회할 차례가 된 결제를 집고, 물어본 횟수와 다음 차례를 먼저 찍어 둔다 (D-091).
+	 *
+	 * <b>point3 에 묻기 전에 찍는다.</b> 묻는 일은 트랜잭션 밖이라(규칙 1) 이 트랜잭션이 끝나면 잠금이 풀린다.
+	 * 다음 차례를 미리 밀어 두지 않으면 다른 인스턴스가 같은 건을 바로 다시 집어 같은 세션을 두 번 묻는다.
+	 */
+	@Transactional(propagation = Propagation.REQUIRES_NEW)
+	public List<PaymentRepository.SessionCheck> claimSessionChecks(LocalDateTime now, int limit) {
+		List<PaymentRepository.SessionCheck> due = paymentRepository.findSessionChecksDueForUpdate(now, limit);
+		for (PaymentRepository.SessionCheck row : due) {
+			paymentRepository.markSessionChecked(row.getPaymentId(),
+					SessionCheckSchedule.next(now, row.getChecks()));
+		}
+		return due;
+	}
+
+	/** point3 가 결론(실패 · 만료 · 없음)을 알려 줬다. 더 묻지 않는다 */
+	@Transactional(propagation = Propagation.REQUIRES_NEW)
+	public void closeSessionCheck(Long paymentId) {
+		paymentRepository.closeSessionCheck(paymentId);
 	}
 
 	/**

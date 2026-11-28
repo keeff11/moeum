@@ -150,6 +150,8 @@ moeum:
   batch:
     # 만료 홀드를 풀기 전에 point3 에 구매자 확정을 묻는다 (D-063). false 면 이전 동작
     hold-expiry-point3-check: ${HOLD_EXPIRY_POINT3_CHECK:true}
+    # 결과값이 안 온 결제를 30초 주기로 point3 에 미리 묻는다 (D-091). false 면 이전 동작
+    payment-session-check: ${PAYMENT_SESSION_CHECK:true}
   alert:
     slack:
       # 운영 알림 (D-068). 비워 두면 Slack 으로 보내지 않고 로그만 남긴다
@@ -271,6 +273,10 @@ moeum:
     # 만료 홀드를 풀기 전에 point3 에 구매자 확정을 묻는다 (D-063).
     # 문제가 생기면 파라미터를 false 로 바꾸고 재시작한다 — 코드 배포 없이 이전 동작으로 돌아간다
     hold-expiry-point3-check: ${HOLD_EXPIRY_POINT3_CHECK:true}
+    # 결과값이 안 온 결제를 30초 주기로 point3 에 미리 묻는다 (D-091). 승인 기한이 확정 당일 자정이라
+    # 홀드 만료(최대 30분)까지 기다리지 않는다. 2차금은 이것이 없으면 아무도 묻지 않는다.
+    # 끄는 법은 위와 같다. 끄면 1차금은 만료 때 묻는 이전 동작만 남는다
+    payment-session-check: ${PAYMENT_SESSION_CHECK:true}
     orphan-sweep:
       # 어디에도 연결되지 않은 업로드 이미지를 지운다 (D-041).
       # 트래픽이 없는 새벽에 돌린다 — 버킷 전체를 훑는 일이다
